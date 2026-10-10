@@ -10,7 +10,7 @@ test("claim layout preserves scoped content, escaping, and revision context", ()
     title: "Claim",
     api_item_id: "api",
     display_path: "demo::f",
-    property: "panic_contract",
+
     signature: "unsafe fn f()",
     is_unsafe: 1,
     tool: "Demo",

@@ -18,7 +18,6 @@ pub struct Contract {
     pub first_line: usize,
     pub last_line: usize,
     pub harness: String,
-    pub properties: Vec<String>,
 }
 pub struct Record {
     pub sarif: Value,
@@ -302,12 +301,6 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
                 first_line: c.first_line,
                 last_line: c.last_line,
                 harness: format!("{}::{}", captured.lib_name, c.harness),
-                properties: config
-                    .tool
-                    .properties()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
             })
         })
         .collect::<Result<_>>()?;
@@ -918,7 +911,6 @@ mod tests {
             first_line: 1,
             last_line: 3,
             harness: "demo::check_f".into(),
-            properties: vec!["no_ub".into(), "panic_contract".into()],
         }
     }
     fn output(status: &str, outcome: &str) -> String {

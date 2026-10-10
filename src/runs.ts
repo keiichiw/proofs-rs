@@ -165,12 +165,7 @@ export function readRecord(sarif: any) {
       !Array.isArray(contract.api_paths) ||
       !contract.api_paths.length ||
       contract.api_paths.some((p: any) => typeof p !== "string") ||
-      typeof contract.precondition !== "string" ||
-      !Array.isArray(contract.properties) ||
-      !contract.properties.length ||
-      contract.properties.some(
-        (p: any) => !["no_ub", "panic_contract"].includes(p),
-      )
+      typeof contract.precondition !== "string"
     )
       throw new Fault(400, "invalid_run_contract");
   }
@@ -418,7 +413,6 @@ export async function validateReportRuns(c: Ctx, b: any, v: any) {
       !contracts.some(
         (x) =>
           x.api_paths.includes(claim.display_path) &&
-          x.properties.includes(claim.property) &&
           x.precondition === claim.precondition,
       )
     )

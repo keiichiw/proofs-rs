@@ -1,8 +1,8 @@
 # cargo-proofs
 
-A Rust CLI for publishing verification reports to [proofs.rs](https://proofs.rs). For Kani, it discovers `#[kani::proof_for_contract(...)]` harnesses and publishes two claims per API: `no_ub` and `panic_contract`, both under the target's `requires` conditions.
+A Rust CLI for publishing verification reports to [proofs.rs](https://proofs.rs). For Kani, it discovers `#[kani::proof_for_contract(...)]` harnesses and publishes one claim per API under the target's `requires` conditions.
 
-Creusot publishes only `panic_contract`, not `no_ub` or functional correctness claims.
+Creusot also publishes one claim per API. Describe the verified behavior in the report and claim text.
 
 Commit and push the source and Cargo.lock to GitHub, then run verification through `cargo proofs run` before publishing. The CLI records observed results and embeds stdout/stderr in SARIF 2.1.0. `publish` uploads only that SARIF. Source remains on GitHub; no additional push is needed between run and publish.
 
@@ -139,7 +139,7 @@ Publication state is stored in the OS local data directory under `cargo-proofs/`
 
 - Repeat `publish` revises the same report and preserves existing claim IDs. An unchanged report produces no revision.
 - A changed crate version starts a new report (the service makes report crate/version immutable).
-- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches claims by API/property and refuses duplicate matches.
+- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches claims by API and refuses duplicate matches.
 - Titles/explanations and other individual editorial fields from the server are preserved. The report title is controlled by TOML; shared optional fields are preserved when absent, or cleared when explicitly `""`. Contracts and evidence are controlled by the selected SARIF record.
 - If the server revision changed since the last publication, show the differences and stop. `publish --dry-run` previews the prospective update. `publish --force` applies the local/config-owned fields over the latest server state, preserving unspecified editorial fields. It still sends `expected_revision` so a concurrent edit after fetching is rejected.
 - Missing contracts remove claims only after a yes/no prompt. Noninteractive approval requires `--yes`. `--force` does not approve deletions or bypass recorded-run checks. Removed claims retain their history/permanent links on the service. Locally known removed claim IDs are reused if their contracts are later restored; recovering removed IDs on a different machine is not automatic.

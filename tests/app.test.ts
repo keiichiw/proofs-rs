@@ -54,8 +54,7 @@ function recordedSarif(id: string, command = ["cargo", "kani"]) {
               {
                 harness: "sample::check_safe",
                 api_paths: ["sample::safe"],
-                properties: ["no_ub"],
-                precondition: "",
+                precondition: "true",
                 file: "src/lib.rs",
                 first_line: 1,
                 last_line: 2,
@@ -229,9 +228,8 @@ export const reportInput = {
   claims: [
     {
       api_item_id: "safe",
-      property: "no_ub",
       title: "",
-      precondition: "",
+      precondition: "true",
       explanation: "",
       trusted_assumptions: "",
       evidence_url: "",
@@ -404,7 +402,7 @@ test("atomic reports, stable claims, immutable targets, revision conflicts and p
   assert.equal(v.status, 200, JSON.stringify(v.body));
   assert.equal(
     v.body.claims[0].title,
-    "No undefined behavior for sample::safe (with Kani 0.68.0)",
+    "Verification of sample::safe (with Kani 0.68.0)",
   );
   const key = { "Idempotency-Key": "report-create-key-123" };
   const made = await request("/reports", "POST", reportInput, "alice", key);
@@ -471,7 +469,7 @@ test("atomic reports, stable claims, immutable targets, revision conflicts and p
         claims: [
           {
             ...rev.claims[0],
-            property: "panic_contract",
+            api_item_id: "unsafe",
             precondition: "true",
           },
         ],
@@ -524,7 +522,7 @@ test("whole-report validation, membership, required evidence, no partial writes 
       ...reportInput,
       claims: [
         ...reportInput.claims,
-        { api_item_id: "unsafe", property: "no_ub", precondition: "" },
+        { api_item_id: "unsafe", precondition: "" },
       ],
     },
     { ...reportInput, claims: [{ ...reportInput.claims[0], id: "fake" }] },
@@ -1300,7 +1298,7 @@ test("staging fixture is repeatable and exposes report catalogue without importe
     .get()!;
   const layoutReport = (await request("/reports/" + layout.id)).body;
   assert.equal(layoutReport.revision_no, 55);
-  assert.equal(layoutReport.claims.length, 15);
+  assert.equal(layoutReport.claims.length, 8);
   assert.equal(layoutReport.run_ids.length, 2);
   assert.equal(layoutReport.comment_count, 55);
   assert.deepEqual(
@@ -2569,13 +2567,12 @@ test("crate API catalogue returns all entries and counts active claims", async (
   assert.equal(result.body.items.length, 42);
   assert.equal(result.body.next_cursor, null);
   const safe = result.body.items.find((a: any) => a.id === "safe");
-  assert.equal(safe.no_ub_count, 1);
-  assert.equal(safe.panic_count, 0);
+  assert.equal(safe.claim_count, 1);
   db.prepare("UPDATE reports SET visibility='hidden' WHERE id=?").run(
     published.body.id,
   );
   assert.equal(
-    (await read()).body.items.find((a: any) => a.id === "safe").no_ub_count,
+    (await read()).body.items.find((a: any) => a.id === "safe").claim_count,
     0,
   );
   assert.equal(
@@ -3166,7 +3163,7 @@ test("HTML includes all crate versions, API items, report claims, tool versions 
   for (let i = 0; i < 36; i++) {
     const id = "bounded-claim-" + i;
     db.prepare(
-      "INSERT INTO claims(id,report_id,api_item_id,property,created_at) VALUES(?,1,?,'no_ub',?)",
+      "INSERT INTO claims(id,report_id,api_item_id,created_at) VALUES(?,1,?,?)",
     ).run(id, "bounded-api-" + i, time);
     db.prepare(
       "INSERT INTO claim_revisions SELECT ?,report_id,report_revision,?,title,precondition,explanation,trusted_assumptions,evidence_url,limitations FROM claim_revisions WHERE report_id=1 AND position=0",

@@ -7,7 +7,7 @@ All added records are explicitly synthetic and additive/idempotent. No proof was
 | Case | Page | Checks |
 | --- | --- | --- |
 | Crate catalogue | https://proofs-rs-staging.proofs-rs.workers.dev/#/crate/report-layout-demo?version=1.0.0-demo.1 | 7 APIs, 3 active reports; all four categories plus blanket implementations; external trait paths; unsafe; long names; collapsed multiple implementations |
-| Full report | https://proofs-rs-staging.proofs-rs.workers.dev/#/report/345 | 7 API groups, 15 claim links; both labels; two Panic contract claims on decode; expanded trait groups; 55 revisions and 55 comments without More; two runs with SARIF downloads; environment after final diagnostics |
+| Full report | https://proofs-rs-staging.proofs-rs.workers.dev/#/report/345 | 7 API groups, 8 claim links; two claims on decode; expanded trait groups; 55 revisions and 55 comments without More; two runs with SARIF downloads; environment after final diagnostics |
 | Past revision | https://proofs-rs-staging.proofs-rs.workers.dev/#/report/345?v=1 | Past revision indicator; claim links retain revision 1; reproduction remains present |
 | Minimal content | https://proofs-rs-staging.proofs-rs.workers.dev/#/report/346 | No explanation, evidence, trust text, environment or runs; tool limitations still present; one API/claim |
 | Environment without runs | https://proofs-rs-staging.proofs-rs.workers.dev/#/report/347 | Reproduce contains Environment despite no recorded run; no empty run/error output |
@@ -16,8 +16,8 @@ All added records are explicitly synthetic and additive/idempotent. No proof was
 
 ## Review steps
 
-- At desktop and at 600px/390px widths, check long API names and both property labels. The right column groups labels with claim links; mobile stacks under the API name.
-- Open each API and each property claim link from the full report. Claim detail retains its title, preconditions, explanation, trust, limitations and report-revision context.
+- At desktop and at 600px/390px widths, check long API names and claim links. The right column groups claim links by API; mobile stacks under the API name.
+- Open each API and each claim link from the full report. Claim detail retains its title, preconditions, explanation, trust, limitations and report-revision context.
 - Open Reproduce, both Execution details and Diagnostics & logs, then Environment. Download both SARIF files. Collapse/reopen without another data request.
 - Open tool technical limitations and the tool version page; confirm the updated labels.
 - Check the last history entry and last comment. Open an old revision and a linked comment thread.

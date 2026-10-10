@@ -29,7 +29,7 @@ def normalize(body):
         for field in ['title', 'explanation', 'trusted_assumptions', 'limitations', 'evidence_url']:
             claim.setdefault(field, '')
         if not claim['title']:
-            claim['title'] = f"{claim['property']} for {claim['api_item_id']}"
+            claim['title'] = f"Verification of {claim['api_item_id']}"
     return result
 
 
@@ -236,7 +236,7 @@ print('Proved (2 files)')
         cli('publish', '--dry-run')
         assert not reports
         cli('publish')
-        assert len(reports[1]['claims']) == 2
+        assert len(reports[1]['claims']) == 1
         original_ids = [c['id'] for c in reports[1]['claims']]
         assert all(c['precondition'] == '(x > 0)' for c in reports[1]['claims'])
         assert all(c['evidence_url'].startswith('https://github.com/fixture/source/blob/') and '/src/lib.rs#L' in c['evidence_url'] for c in reports[1]['claims'])
@@ -252,19 +252,19 @@ print('Proved (2 files)')
         commit_push()
         cli('run', '--', 'cargo', 'kani')
         cli('publish')
-        added_ids = [c['id'] for c in reports[1]['claims'][2:]]
-        assert len(reports[1]['claims']) == 4
+        added_ids = [c['id'] for c in reports[1]['claims'][1:]]
+        assert len(reports[1]['claims']) == 2
         (work / 'src/lib.rs').write_text(source)
         commit_push()
         cli('run', '--', 'cargo', 'kani')
         assert 'Deletion requires confirmation' in cli('publish', ok=False)
         cli('publish', '--yes')
-        assert len(reports[1]['claims']) == 2
+        assert len(reports[1]['claims']) == 1
         (work / 'src/lib.rs').write_text(source + extra)
         commit_push()
         cli('run', '--', 'cargo', 'kani')
         cli('publish')
-        assert [c['id'] for c in reports[1]['claims'][2:]] == added_ids
+        assert [c['id'] for c in reports[1]['claims'][1:]] == added_ids
         (work / 'proofs.toml').write_text((work / 'proofs.toml').read_text().replace('My report', 'Changed report'))
         race = True
         assert '409' in cli('publish', ok=False)
@@ -295,7 +295,6 @@ print('Proved (2 files)')
         assert reports[2]['tool_version_id'] == 'creusot-version'
         assert len(reports[2]['claims']) == 1
         claim = reports[2]['claims'][0]
-        assert claim['property'] == 'panic_contract'
         assert claim['precondition'] == '(x@ > 0)'
         assert '/blob/' in claim['evidence_url'] and '/src/lib.rs#L' in claim['evidence_url']
         assert 'No changes' in cli('publish')
@@ -305,7 +304,6 @@ print('Proved (2 files)')
         cli('run', '--', 'cargo', 'creusot', 'prove')
         cli('publish')
         assert len(reports[2]['claims']) == 2
-        assert all(c['property'] == 'panic_contract' for c in reports[2]['claims'])
         assert reports[2]['claims'][1]['precondition'] == 'true'
         config.write_text(config.read_text().replace('target = "all"', 'target = "annotated"'))
         commit_push()

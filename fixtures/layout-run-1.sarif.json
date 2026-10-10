@@ -56,10 +56,6 @@
               "last_line": 1,
               "api_paths": [
                 "report_layout_demo::decode"
-              ],
-              "properties": [
-                "panic_contract",
-                "no_ub"
               ]
             }
           ]

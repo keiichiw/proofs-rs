@@ -1,4 +1,3 @@
-import { prop } from "./properties";
 const esc = (s: unknown) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -81,7 +80,7 @@ export function renderRecordedRun(
         ? report.claims.filter(
             (c: any) =>
               contract.api_paths.includes(c.display_path) &&
-              contract.properties.includes(c.property),
+              contract.precondition === c.precondition,
           )
         : [];
       const place =
@@ -102,7 +101,7 @@ export function renderRecordedRun(
           } as any
         )[r.kind] ||
         r.kind;
-      return `<tr><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}">${esc(prop(c.property))}</a>`).join(" · ") || "—"}</td></tr>`;
+      return `<tr><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}">Claim #${esc(c.claim_number)}</a>`).join(" · ") || "—"}</td></tr>`;
     })
     .join("");
   const item = (label: string, value: any) =>

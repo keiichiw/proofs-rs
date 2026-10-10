@@ -24,7 +24,7 @@ export function repairStagingFixture(bytes, row) {
   // Replacement metadata was explicitly added for these synthetic fixtures in
   // PR38; preserve their existing synthetic logs/results/provenance/contracts.
   const replacement = readFileSync(
-    new URL(`../fixtures/layout-run-${position}.sarif.json`, import.meta.url),
+    new URL(`../fixtures/migrations/layout-run-${position}.dependencies-v2.sarif.json`, import.meta.url),
   );
   const sha256 = hash(replacement);
   migrateRecord(replacement, { ...row, sha256, size: replacement.length });

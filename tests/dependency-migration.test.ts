@@ -54,7 +54,7 @@ const record = () =>
                 {
                   harness: "check",
                   api_paths: ["example::f"],
-                  properties: ["no_ub"],
+
                   precondition: "true",
                   file: "src/lib.rs",
                   first_line: 1,
