@@ -665,10 +665,6 @@ textarea {
   margin: 0;
   min-width: 0;
 }
-.report-api-claim {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
 .report-limitations .tool-limitations {
   margin-top: 12px;
 }
@@ -698,11 +694,6 @@ textarea {
   }
 }
 
-.report-api-claim {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
-}
 .claim-links a {
   white-space: nowrap;
 }
