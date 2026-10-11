@@ -8,6 +8,8 @@ Staging verification is optional and manual.
 
 Production now defaults to custom domain `proofs.rs`; `PRODUCTION_CUSTOM_DOMAIN=false`
 explicitly restores workers.dev deployment with notifications disabled.
+With the custom domain active, workers.dev and version preview URLs are disabled.
+Staging remains accessible on workers.dev.
 Wrangler creates the custom-domain association and certificate during deployment.
 Do not point DNS at staging. Review any conflicting existing apex DNS record before
 replacing it. The deployment token must permit Workers custom-domain setup for

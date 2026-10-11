@@ -1,5 +1,7 @@
 export interface DeploymentConfig {
   vars: Record<string, string>;
+  workers_dev?: boolean;
+  preview_urls?: boolean;
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
 }
 export function configureDeployment(

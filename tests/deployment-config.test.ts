@@ -10,6 +10,8 @@ test("production domain and email configuration fails closed; staging never send
     });
   let c = config();
   assert.equal(configureDeployment(c, "production", oauth), true);
+  assert.equal(c.workers_dev, false);
+  assert.equal(c.preview_urls, false);
   assert.equal(c.vars.EMAIL_DISABLED, "true");
   assert.equal(c.send_email, undefined);
   assert.throws(() => configureDeployment(config(), "production", {}), /OAuth/);
@@ -49,4 +51,16 @@ test("production domain and email configuration fails closed; staging never send
   );
   assert.equal(c.vars.EMAIL_DISABLED, "true");
   assert.equal(c.send_email, undefined);
+});
+
+test("only staging and an explicit pre-domain production fallback use workers.dev", () => {
+  for (const target of ["staging", "production"]) {
+    const c = { vars: {}, workers_dev: false, preview_urls: false };
+    assert.equal(
+      configureDeployment(c, target, { PRODUCTION_CUSTOM_DOMAIN: "false" }),
+      false,
+    );
+    assert.equal(c.workers_dev, true);
+    assert.equal(c.preview_urls, false);
+  }
 });

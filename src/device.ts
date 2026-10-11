@@ -35,14 +35,13 @@ const codeHash = async (value: unknown) => {
   return hash(code);
 };
 async function limit(c: Ctx, kind: string, n: number) {
-  await batch(c.env.DB, [
-    quota(
-      c.env.DB,
-      await hash(c.req.header("cf-connecting-ip") || "unknown"),
-      kind,
-      n,
-    ),
-  ]);
+  // Authenticated code checks belong to an account, including users behind NAT.
+  // Public device start/poll endpoints retain their edge-IP limits.
+  const subject =
+    kind === "device_check"
+      ? "user:" + requireUser(c).id
+      : c.req.header("cf-connecting-ip") || "unknown";
+  await batch(c.env.DB, [quota(c.env.DB, await hash(subject), kind, n)]);
 }
 async function input(c: Ctx) {
   if (

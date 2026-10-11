@@ -133,6 +133,9 @@ Before custom-domain activation:
 5. Verify HTTPS, GitHub login, Tokens, the API docs link, and `contact@proofs.rs`
    delivery before announcing launch. Tool catalogue starts empty.
 
+After custom-domain activation, production disables workers.dev and version
+preview URLs. Staging keeps its workers.dev URL. Only the explicit
+`PRODUCTION_CUSTOM_DOMAIN=false` preparation mode exposes production on workers.dev.
 Until activation, the production Worker is accessible via its workers.dev URL;
 OAuth can remain unconfigured during this preparation phase. All callbacks and
 CSRF checks use the configured APP_ORIGIN. Production tokens/users are separate
@@ -143,7 +146,7 @@ change nameservers. The Cloudflare account credentials remain in GitHub Secrets.
 
 Run Actions → Staging → Run workflow and select the PR branch when staging verification is needed. This shared environment is overwritten by each run; only deploy trusted branches from this repository because the workflow uses staging credentials. Staging is not a production gate. `scripts/provision.mjs` creates/reuses only resources named `proofs-rs-staging-*` and writes the ignored `wrangler.staging.json`. Staging is public on workers.dev, with no Cloudflare Access gate and `noindex` headers.
 
-Required GitHub Actions secrets:
+Required GitHub Actions secrets (set these on the `staging` environment):
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`: scoped to the account, Workers Scripts edit, D1 edit, R2 edit, Queues edit, and account/subdomain read as required by Cloudflare. R2 and Queues must be enabled. The account uses Workers Paid. Email sending is explicitly disabled.
@@ -155,6 +158,16 @@ Optional integration settings (missing integrations are visibly marked, not sile
 - `STAGING_EMAIL_FROM`, `STAGING_EMAIL_ALLOWLIST`, `STAGING_EMAIL_DOMAIN`, `STAGING_EMAIL_EVENT_SUBSCRIPTION`: variables after Email Service onboarding and event subscription to `proofs-rs-staging-email-events`. Staging delivers only to the explicit allowlist.
 - Secret `CLOUDFLARE_D1_BACKUP_TOKEN`, with D1 export permission. This is separate from the deploy token.
 - Optional secret `STAGING_TOKEN_SECRET`. A random Worker-only secret is generated on first deployment and preserved on subsequent deployments. It signs unsubscribe URLs.
+
+Deployment and D1 backup tokens are passed only to steps that use them; install,
+test, build and public smoke steps do not receive them. Keep separate token values
+in the GitHub `staging` and `production` environments, under the same secret names.
+Remove repository-level fallback tokens after both environment secrets are set.
+A staging token must not have production zone access. Cloudflare account-level
+Workers/D1/R2/Queues permissions can cover other resources in the same account;
+environment secrets alone do not restrict that reach. Where resource restrictions
+are unavailable, use separate Cloudflare accounts for isolation. Review the actual
+token policies in Cloudflare; workflow files cannot prove their permissions.
 
 No GitHub tokens or client secrets are committed or included in the browser build. Workflow logs contain secret names, not values.
 
