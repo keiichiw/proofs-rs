@@ -27,7 +27,7 @@ test("report body removes redundant labels and groups claims by API with revisio
       claim_number: n,
       report_revision: 3,
       title: "Claim " + n,
-      property: n <= 2 ? "panic_contract" : "no_ub",
+
       star_count: 0,
       precondition: "input is valid",
       explanation: "Claim explanation",
@@ -77,20 +77,20 @@ test("report body removes redundant labels and groups claims by API with revisio
     "Verified APIs (1)",
   );
   assert.equal(d.querySelectorAll('a[href="/api/api-1"]').length, 1);
-  assert.equal(d.querySelectorAll(".report-api-claim").length, 2);
+  assert.equal(d.querySelectorAll(".report-api-claims a").length, 3);
   assert.equal(
     d.querySelectorAll(".catalog-row > .report-api-claims").length,
     1,
   );
-  assert.equal(d.querySelector(".report-api-claim a").textContent, "Claim #1");
+  assert.equal(d.querySelector(".report-api-claims a").textContent, "Claim #1");
   assert(!d.querySelector(".report-api-claims").textContent.includes("stars"));
   assert(
     !d.querySelector(".report-api-claims").textContent.includes("Claim 1"),
   );
   assert.equal(d.querySelectorAll('a[href$="?report_revision=3"]').length, 3);
   assert.equal(
-    d.querySelector(".report-api-claim").textContent,
-    "Panic contractClaim #1, Claim #2",
+    d.querySelector(".report-api-claims").textContent,
+    "Claim #1, Claim #2, Claim #3",
   );
   assert(
     ![...d.querySelectorAll("h2")].some((n: any) =>

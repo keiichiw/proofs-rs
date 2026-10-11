@@ -149,3 +149,35 @@ for (const path of [
     throw Error(`Empty next page: ${nextPath}`);
   console.log(`Pagination verified: ${origin}${path} -> ${origin}${nextPath}`);
 }
+
+// Verify current claim rendering and evidence after seeding, not just the empty site.
+const layoutRows = await api(`/d1/database/${db.uuid}/query`, {
+  sql: "SELECT id FROM reports WHERE create_key='staging-layout-v1-full'",
+});
+const layoutID = layoutRows[0].results[0].id;
+const layoutReport = JSON.parse(await readPage(`/api/v1/reports/${layoutID}`));
+if (layoutReport.claims.length !== 8 || layoutReport.run_ids.length !== 2)
+  throw Error("Layout report contents mismatch");
+const reportHTML = await readPage(`/report/${layoutID}`);
+for (const claim of layoutReport.claims) {
+  if (!reportHTML.includes(`/claim/${claim.id}?report_revision=55`))
+    throw Error("Report claim link missing");
+  await readPage(`/claim/${claim.id}`);
+}
+const catalogue = JSON.parse(
+  await readPage("/api/v1/crates/report-layout-demo/1.0.0-demo.1/apis"),
+);
+if (catalogue.items.reduce((sum, item) => sum + item.claim_count, 0) !== 10)
+  throw Error("Active catalogue claim count mismatch");
+for (const id of layoutReport.run_ids) {
+  const sarif = JSON.parse(await readPage(`/api/v1/runs/${id}/sarif`));
+  const contract = sarif.runs[0].properties.proofs.contracts[0];
+  if (
+    Object.keys(contract).sort().join(",") !==
+    "api_paths,file,first_line,harness,last_line,precondition"
+  )
+    throw Error("Recorded contract fields mismatch");
+}
+console.log(
+  `Current report, eight claim links, catalogue counts and two SARIF downloads verified: ${origin}/report/${layoutID}`,
+);

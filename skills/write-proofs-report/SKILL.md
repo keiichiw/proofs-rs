@@ -59,7 +59,7 @@ Use this order, adapting headings and length to the case:
 
 Prefer one short paragraph or a few bullets per topic. Give each fact one primary home. Omit empty sections, repeated qualifications, phase histories, intermediate goal counts, solver logs, scratch paths, and descriptions of how hard the proof was. Keep such material in evidence artifacts when useful. Do not hide material limitations in those artifacts.
 
-Organize the overview by user-visible behavior, never by fresh versus archived runs, proof phases, or artifact types. Keep those distinctions in evidence references or brief review notes unless they change applicability. Do not narrate your investigation. Translate “satisfies its panic contract” into what that contract actually allows or rules out; if the contract is unavailable, say that the panic guarantee could not be determined from the supplied material. State evidence provenance once rather than repeatedly saying “the report says.” For a small scope, aim for roughly 150–250 words of reader-facing prose; let necessary conditions determine the final length.
+Organize the overview by user-visible behavior, never by fresh versus archived runs, proof phases, or artifact types. Keep those distinctions in evidence references or brief review notes unless they change applicability. Do not narrate your investigation. Describe the concrete behavior established by the evidence; if its specification is unavailable, say which guarantee could not be determined from the supplied material. State evidence provenance once rather than repeatedly saying “the report says.” For a small scope, aim for roughly 150–250 words of reader-facing prose; let necessary conditions determine the final length.
 
 Choose a title about the behavior and scope, e.g. “Panic freedom of Parser::advance under a non-panicking receiver,” only if that is what the evidence supports. Avoid titles implying broader coverage than the body.
 
@@ -71,7 +71,7 @@ When writing existing proofs.rs fields, inspect the current schema/configuration
 - `report.limitations`: applicability restrictions and important unanswered user questions.
 - `report.environment`: concise verification configuration and reproducibility details, not the conclusion.
 
-Keep narrative guarantees accurate even if machine-readable labels are coarser. Explain the actual supported property in prose; do not inflate or mutate machine-readable claims to match a desired narrative. Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Never invent fields or fabricate SARIF results. Use the destination's supported text format: current proofs.rs editorial fields display plain text, so do not rely on rendered Markdown tables, headings, or links there.
+Explain the actual supported guarantee in prose; do not inflate claims to match a desired narrative. Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Never invent fields or fabricate SARIF results. Use the destination's supported text format: current proofs.rs editorial fields display plain text, so do not rely on rendered Markdown tables, headings, or links there.
 
 Produce a draft or requested file edits. Publishing, rerunning verification, changing proof code, or editing contracts requires authorization beyond merely writing a report. Do not rerun expensive proofs just to restate existing results. When emitting TOML, preserve unrelated fields and parse the result to validate syntax.
 

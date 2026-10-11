@@ -367,8 +367,7 @@ api.get(
     "List crate APIs",
     S.list(
       S.apiItem.extend({
-        no_ub_count: S.integer,
-        panic_count: S.integer,
+        claim_count: S.integer,
         category: S.nullableString,
         trait_path: S.nullableString,
         self_type: S.nullableString,
@@ -383,12 +382,11 @@ api.get(
     },
   ),
   async (c) => {
-    const count = (property: string) =>
-      `(SELECT COUNT(*) FROM claims c JOIN reports p ON p.id=c.report_id JOIN claim_revisions r ON r.claim_id=c.id WHERE c.api_item_id=a.id AND c.property='${property}' AND ${activeReport} AND ${latest})`;
+    const count = `(SELECT COUNT(*) FROM claims c JOIN reports p ON p.id=c.report_id JOIN claim_revisions r ON r.claim_id=c.id WHERE c.api_item_id=a.id AND ${activeReport} AND ${latest})`;
     const items = await rows(
       c.env.DB,
       `SELECT a.*,m.category,m.trait_path,m.self_type,m.method_name,m.is_blanket,
-      ${count("no_ub")} no_ub_count,${count("panic_contract")} panic_count
+      ${count} claim_count
      FROM api_items a JOIN releases rel ON rel.id=a.release_id JOIN crates cr ON cr.id=rel.crate_id
      LEFT JOIN api_item_metadata m ON m.api_item_id=a.id
      WHERE cr.name=? AND rel.version=? AND a.display_path LIKE ? ORDER BY a.display_path,a.id`,
@@ -635,8 +633,6 @@ async function validate(c: Ctx, b: any, existing?: any) {
         rel.id,
       );
       if (!a) throw new Fault(400, "api_not_in_release");
-      if (!["no_ub", "panic_contract"].includes(x.property))
-        throw new Fault(400, "invalid_property");
       const id = x.id === undefined ? null : text(x.id, "Claim ID", 100, true);
       if (id) {
         if (ids.has(id)) throw new Fault(400, "duplicate_claim_id");
@@ -650,26 +646,20 @@ async function validate(c: Ctx, b: any, existing?: any) {
             existing.id,
           ));
         if (!old) throw new Fault(400, "invalid_claim_id");
-        if (old.api_item_id !== a.id || old.property !== x.property)
+        if (old.api_item_id !== a.id)
           throw new Fault(400, "immutable_claim_target");
       }
       const title =
         text(x.title, "Claim title", 1000) ||
-        `${x.property === "no_ub" ? "No undefined behavior" : "Panic contract"} for ${a.display_path} (with ${tv.name} ${tv.version})`;
+        `Verification of ${a.display_path} (with ${tv.name} ${tv.version})`;
       const evidence_url = optionalURL(x.evidence_url);
       if (!evidence_url && !v.evidence_url)
         throw new Fault(400, "evidence_required");
       v.claims.push({
         id,
         api_item_id: a.id,
-        property: x.property,
         title,
-        precondition: text(
-          x.precondition,
-          "Preconditions",
-          10000,
-          x.property === "panic_contract" || !!a.is_unsafe,
-        ),
+        precondition: text(x.precondition, "Preconditions", 10000, true),
         explanation: text(x.explanation, "Explanation"),
         trusted_assumptions: text(x.trusted_assumptions, "Trusted assumptions"),
         evidence_url,
@@ -782,11 +772,10 @@ function revisionStatements(
       ss.push(
         stmt(
           db,
-          `INSERT INTO claims VALUES(?,${select},?,?,?)`,
+          `INSERT INTO claims VALUES(?,${select},?,?)`,
           id,
           reportID,
           x.api_item_id,
-          x.property,
           now(),
         ),
       );

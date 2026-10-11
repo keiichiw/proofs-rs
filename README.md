@@ -64,7 +64,7 @@ No GitHub tokens or client secrets are committed or included in the browser buil
 ## Data and behavior
 
 - First explicit preparation of a crate/version imports crates.io metadata plus one docs.rs rustdoc JSON; later publications reuse D1. Unsupported rustdoc formats fail closed. Supported formats: 60 and 61. No whole-registry crawl, no re-run of proofs, no HTML scraping fallback.
-- Reports publish one crate/version and tool/version with 1–100 claims in one transaction. Claim API/property and IDs are immutable. Shared and individual fields are additive; empty claim titles are generated. Full-report revisions retain stars and history.
+- Reports publish one crate/version and tool/version with 1–100 claims in one transaction. Claim API and IDs are immutable. Shared and individual fields are additive; empty claim titles are generated. Full-report revisions retain stars and history.
 - Independent report/claim stars survive revisions. Only non-self report stars contribute to karma; one replaceable policy in `src/core.ts` supplies profile and list/detail scores.
 - Comments belong only to reports. Removed claims keep permanent links to their historical report revision.
 - Replies form an unbounded-depth tree; every reply level indents. Deleted comments retain a public tombstone and private history.
@@ -109,7 +109,7 @@ Recorded verification requires CLI 0.3.0: commit and push the source and Cargo.l
 ### Crate API catalogue display metadata
 
 The crate API endpoint now returns the complete catalogue (`next_cursor: null`),
-with current claim counts by property for active public reports. Family rows sum
+with current claim counts for active public reports. Family rows sum
 claim counts across their implementations; zero claims display as an em dash.
 The Web UI groups functions, associated functions, inherent methods, and trait
 implementations; blanket implementations are a separate subsection. Single

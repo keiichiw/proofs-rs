@@ -49,13 +49,6 @@ impl Tool {
     pub fn is_creusot(&self) -> bool {
         self.name.eq_ignore_ascii_case("creusot")
     }
-    pub fn properties(&self) -> &'static [&'static str] {
-        if self.is_creusot() {
-            &["panic_contract"]
-        } else {
-            &["no_ub", "panic_contract"]
-        }
-    }
     fn validate(&self) -> Result<()> {
         ensure!(
             self.is_creusot() || self.name.eq_ignore_ascii_case("kani"),
@@ -344,15 +337,13 @@ mod tests {
         }
     }
     #[test]
-    fn tool_targets_and_properties() {
+    fn tool_targets() {
         let mut tool: Tool = toml::from_str("name='kani'\nversion='0.66.0'").unwrap();
         assert!(tool.validate().is_ok());
-        assert_eq!(tool.properties(), ["no_ub", "panic_contract"]);
         tool.target = Some(CreusotTarget::All);
         assert!(tool.validate().is_err());
         tool.name = "creusot".into();
         assert!(tool.validate().is_ok());
-        assert_eq!(tool.properties(), ["panic_contract"]);
         tool.target = None;
         assert!(tool.validate().is_err());
         assert!(toml::from_str::<Tool>("name='creusot'\nversion='x'\ntarget='typo'").is_err());

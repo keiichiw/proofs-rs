@@ -6,10 +6,9 @@ schemas and endpoints are replaced; no compatibility layer or data conversion.
 ## Product model
 
 A report publishes verification of one crate/version using one tool/version. A
-report contains 1–100 claims about public APIs. Readers browse claims by API and
-property, inspect evidence and assumptions, and open the report for discussion.
+report contains 1–100 claims about public APIs. Readers browse claims by API, inspect evidence and assumptions, and open the report for discussion.
 Report titles are required. Claim titles may be omitted or empty; the server
-produces e.g. `Panic contract for arrayvec::ArrayVec::push (with Kani 0.66)`.
+produces e.g. `Verification of arrayvec::ArrayVec::push (with Kani 0.66)`.
 There is no execution-status field and no execution of submitted verification.
 Evidence is a URL; correctness is evaluated by readers.
 
@@ -46,7 +45,7 @@ erDiagram
 
 `reports.id` is an integer; `claims.id` is a permanent UUID. Report release and
 author are immutable (author may become null on account erasure). A claim's
-report, API and property never change. Changing API/property creates a new claim.
+report and API never change. Changing API creates a new claim.
 Report revisions use `(report_id, revision_no)`; claim snapshots reference the
 same report/revision and store presentation order. The foreign key
 `(claim_id, report_id)` prevents inserting another report's claim into a snapshot.
@@ -70,12 +69,12 @@ separate normalized tables. No token name or bio is stored.
   can preview a revision. New claim IDs are null in previews; omit `id` on publish.
 - Revision requests include the full desired claim list and `expected_revision`.
   Optimistic concurrency rejects stale edits. Existing IDs must belong to this
-  report and retain their API/property. Omitted claims leave the current list but
+  report and retain their API. Omitted claims leave the current list but
   retain history, links and stars. Previously removed IDs may be reintroduced.
 - Shared explanation, trusted assumptions, evidence and limitations apply to all
   claims; individual fields add to them. Empty explanation/assumptions are valid.
   Each claim needs a shared or individual HTTP(S) evidence URL. Preconditions are
-  required for panic contracts and for No UB on unsafe APIs; safe No UB is optional.
+  required for every claim; use `true` when there are no additional conditions.
 - Generated titles are stored in the revision. Revising with an empty title
   regenerates it from the submitted report tool/version; a supplied title remains.
 - Withdrawing a report prevents further revisions and removes its claims from

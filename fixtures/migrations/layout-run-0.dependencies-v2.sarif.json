@@ -1,0 +1,88 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "guid": "c9769922-6967-59a1-93c0-2a1fb7e1e5bf"
+      },
+      "tool": {
+        "driver": {
+          "name": "Layout demo",
+          "version": "1.0"
+        }
+      },
+      "invocations": [
+        {
+          "executableLocation": {
+            "uri": "echo"
+          },
+          "arguments": [
+            "Synthetic fixture; no verification performed"
+          ],
+          "workingDirectory": {
+            "uri": "./"
+          },
+          "executionSuccessful": true,
+          "exitCode": 0,
+          "startTimeUtc": "2026-09-10T10:00:00.000Z",
+          "endTimeUtc": "2026-09-10T10:00:00.000Z",
+          "environmentVariables": {},
+          "stdout": {
+            "index": 0
+          }
+        }
+      ],
+      "versionControlProvenance": [
+        {
+          "repositoryUri": "https://github.com/proofs-rs/proofs-rs",
+          "revisionId": "0000000000000000000000000000000000000000"
+        }
+      ],
+      "properties": {
+        "proofs": {
+          "schemaVersion": 2,
+          "dependencies": [],
+          "crate": "report-layout-demo",
+          "version": "1.0.0-demo.1",
+          "platform": "Synthetic platform",
+          "rustc": "Synthetic compiler",
+          "contracts": [
+            {
+              "harness": "demo",
+              "precondition": "Demo input only",
+              "file": "src/lib.rs",
+              "first_line": 1,
+              "last_line": 1,
+              "api_paths": [
+                "report_layout_demo::decode"
+              ],
+              "properties": [
+                "panic_contract",
+                "no_ub"
+              ]
+            }
+          ]
+        }
+      },
+      "artifacts": [
+        {
+          "contents": {
+            "text": "Synthetic diagnostics <not HTML>. No verification performed."
+          }
+        }
+      ],
+      "results": [
+        {
+          "kind": "informational",
+          "message": {
+            "text": "Synthetic example only"
+          },
+          "properties": {
+            "harness": "demo"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -20,7 +20,7 @@ Run inside the crate you verified.
 cargo proofs init --tool kani
 ```
 
-Discovers `#[kani::proof_for_contract(...)]` harnesses and creates No UB and Panic contract claims.
+Discovers `#[kani::proof_for_contract(...)]` harnesses and creates one claim per API.
 
 Edit `proofs.toml` to set the report title and check the tool version used for verification. You can also add an explanation, assumptions, limitations, and environment.
 

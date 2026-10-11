@@ -177,7 +177,6 @@ export const claim = z
     claim_number: integer,
     report_id: integer,
     api_item_id: string,
-    property: z.enum(["no_ub", "panic_contract"]),
     created_at: string,
     report_revision: integer,
     position: integer,
@@ -278,9 +277,8 @@ export const star = z.object({
 });
 const claimFields = {
   api_item_id: required(200),
-  property: z.enum(["no_ub", "panic_contract"]),
   title: optional(1000),
-  precondition: optional(),
+  precondition: required(10000),
   explanation: optional(),
   trusted_assumptions: optional(),
   evidence_url: optional(1000),
@@ -308,7 +306,6 @@ export const reportInput = z
 export const validatedClaim = z.object({
   id: nullableString,
   api_item_id: string,
-  property: claimFields.property,
   title: string,
   precondition: string,
   explanation: string,
@@ -449,9 +446,6 @@ export const sarif = z
                     harness: string,
                     api_paths: z.array(string).min(1),
                     precondition: string,
-                    properties: z
-                      .array(z.enum(["no_ub", "panic_contract"]))
-                      .min(1),
                   }),
                 )
                 .min(1)

@@ -1,4 +1,3 @@
-import { prop } from "./properties";
 export interface CatalogAPI {
   id: string;
   display_path: string;
@@ -10,8 +9,7 @@ export interface CatalogAPI {
   self_type?: string | null;
   method_name?: string | null;
   is_blanket?: number | null;
-  panic_count: number;
-  no_ub_count: number;
+  claim_count: number;
 }
 const esc = (value: string) =>
   value.replace(
@@ -61,14 +59,9 @@ export function renderAPICatalog(
     s.startsWith(prefix) ? s.slice(prefix.length) : s;
   const unsafe = (yes: boolean) =>
     yes ? ' <strong class="unsafe">unsafe</strong>' : "";
-  const claimCounts = (a: Pick<CatalogAPI, "panic_count" | "no_ub_count">) => {
+  const claimCounts = (a: Pick<CatalogAPI, "claim_count">) => {
     if (options.hideCounts) return "";
-    const text = [
-      a.panic_count ? `${esc(prop("panic_contract"))} (${a.panic_count})` : "",
-      a.no_ub_count ? `${esc(prop("no_ub"))} (${a.no_ub_count})` : "",
-    ]
-      .filter(Boolean)
-      .join(" / ");
+    const text = a.claim_count ? `${a.claim_count} claims` : "";
     return `<span class="api-claim-count${text ? "" : " muted"}">${text || "—"}</span>`;
   };
   const link = (a: CatalogAPI, text: string) =>
@@ -125,10 +118,9 @@ export function renderAPICatalog(
             if (impls.length === 1) return row(impls[0].api, name);
             const counts = impls.reduce(
               (sum, a) => ({
-                panic_count: sum.panic_count + a.api.panic_count,
-                no_ub_count: sum.no_ub_count + a.api.no_ub_count,
+                claim_count: sum.claim_count + a.api.claim_count,
               }),
-              { panic_count: 0, no_ub_count: 0 },
+              { claim_count: 0 },
             );
             return `<details class="api-family"${options.expandFamilies ? " open" : ""}><summary><span><span class="api-keyword">fn </span><code>${esc(name)}</code>${unsafe(impls.some((a) => !!a.api.is_unsafe))}<span class="implementation-count">${impls.length} implementations</span></span>${claimCounts(counts)}</summary><div class="api-implementations">${impls
               .sort((a, b) => cmp(a.self, b.self) || cmp(a.api.id, b.api.id))

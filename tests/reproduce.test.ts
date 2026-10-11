@@ -27,7 +27,7 @@ test("recorded runs render complete HTML, link claims and safely escape output",
       {
         harness: "demo::check_f",
         api_paths: ["demo::f"],
-        properties: ["no_ub"],
+        precondition: "true",
       },
     ],
   };
@@ -84,12 +84,26 @@ test("recorded runs render complete HTML, link claims and safely escape output",
     id: 42,
     revision_no: 2,
     run_ids: ["run-1"],
-    claims: [{ id: 17, display_path: "demo::f", property: "no_ub" }],
+    claims: [
+      {
+        id: 17,
+        display_path: "demo::f",
+        claim_number: 1,
+        precondition: "true",
+      },
+      {
+        id: 18,
+        display_path: "demo::f",
+        claim_number: 2,
+        precondition: "x > 0",
+      },
+    ],
   };
   w.document.querySelector("#app")!.innerHTML =
     "<details><summary>Reproduce</summary>" +
     renderRecordedRun(sarif, "run-1", 0, report, true) +
     "</details>";
+  assert.equal(w.document.querySelector('a[href*="/claim/18"]'), null);
   const section = w.document.querySelector("details")!;
   assert.equal(section.open, false);
   assert.equal(calls.length, 1);

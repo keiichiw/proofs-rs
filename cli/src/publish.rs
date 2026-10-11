@@ -37,7 +37,6 @@ const REPORT_FIELDS: &[&str] = &[
 const CLAIM_FIELDS: &[&str] = &[
     "id",
     "api_item_id",
-    "property",
     "title",
     "precondition",
     "explanation",
@@ -71,22 +70,19 @@ fn snapshot(report: &Value) -> Result<Value> {
     );
     Ok(value)
 }
-fn key(claim: &Value) -> Result<(String, String)> {
-    Ok((
-        claim["api_item_id"]
-            .as_str()
-            .context("Missing API ID")?
-            .into(),
-        claim["property"]
-            .as_str()
-            .context("Missing property")?
-            .into(),
-    ))
+fn key(claim: &Value) -> Result<String> {
+    Ok(claim["api_item_id"]
+        .as_str()
+        .context("Missing API ID")?
+        .into())
 }
-fn claims_by_key(report: &Value) -> Result<BTreeMap<(String, String), Value>> {
+fn claims_by_key(report: &Value) -> Result<BTreeMap<String, Value>> {
     let mut claims = BTreeMap::new();
     for claim in report["claims"].as_array().context("Missing claims")? {
-        ensure!(claims.insert(key(claim)?, claim.clone()).is_none(), "Existing report has multiple claims for the same API/property; this CLI cannot update it");
+        ensure!(
+            claims.insert(key(claim)?, claim.clone()).is_none(),
+            "Existing report has multiple claims for the same API; this CLI cannot update it"
+        );
     }
     Ok(claims)
 }
@@ -133,7 +129,7 @@ fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) -> Res
         } else {
             json!({})
         };
-        for f in ["api_item_id", "property", "precondition", "evidence_url"] {
+        for f in ["api_item_id", "precondition", "evidence_url"] {
             merged[f] = claim[f].clone();
         }
         claims.push(merged);
@@ -144,7 +140,7 @@ fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) -> Res
 fn same_content(a: &Value, b: &Value) -> bool {
     fn canonical(mut value: Value) -> Value {
         if let Some(claims) = value["claims"].as_array_mut() {
-            claims.sort_by_key(|c| (c["api_item_id"].to_string(), c["property"].to_string()));
+            claims.sort_by_key(|c| c["api_item_id"].to_string());
         }
         if let Some(dependencies) = value["dependencies"].as_array_mut() {
             for dependency in dependencies.iter_mut() {
@@ -193,14 +189,11 @@ fn diff(before: &Value, after: &Value) {
     let after = claims_by_key(after).unwrap_or_default();
     for (k, c) in &after {
         match before.get(k) {
-            None => eprintln!("  + claim {} / {}", k.0, k.1),
+            None => eprintln!("  + claim {}", k),
             Some(old) => {
                 for field in CLAIM_FIELDS {
                     if old[*field] != c[*field] {
-                        eprintln!(
-                            "  claim {} {} {field}: {} -> {}",
-                            k.0, k.1, old[*field], c[*field]
-                        );
+                        eprintln!("  claim {} {field}: {} -> {}", k, old[*field], c[*field]);
                     }
                 }
             }
@@ -208,7 +201,7 @@ fn diff(before: &Value, after: &Value) {
     }
     for k in before.keys() {
         if !after.contains_key(k) {
-            eprintln!("  - claim {} / {}", k.0, k.1);
+            eprintln!("  - claim {}", k);
         }
     }
 }
@@ -263,7 +256,7 @@ fn confirm_removal(removed: &[Value], yes: bool) -> Result<()> {
         removed.len()
     );
     for c in removed {
-        eprintln!("  {} — {} ({})", c["id"], c["property"], c["title"]);
+        eprintln!("  {} — {}", c["id"], c["title"]);
     }
     if yes {
         return Ok(());
@@ -313,10 +306,8 @@ fn complete(api: &Api, state: &mut State, path: &Path) -> Result<()> {
         .as_array()
         .context("Missing published claims")?
     {
-        let (api, property) = key(claim)?;
-        state
-            .known_claims
-            .insert(format!("{api}\n{property}"), claim.clone());
+        let api = key(claim)?;
+        state.known_claims.insert(api, claim.clone());
     }
     state.report_id = Some(id);
     state.revision = Some(revision);
@@ -377,10 +368,7 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
         .as_str()
         .context("Missing run ID")?;
     let source = &entry["versionControlProvenance"][0];
-    ensure!(
-        contracts.len() * config.tool.properties().len() <= 100,
-        "Too many claims"
-    );
+    ensure!(contracts.len() <= 100, "Too many claims");
     let tool = api.tool_version(&config.tool.name, &config.tool.version)?;
     if options.dry_run {
         println!(
@@ -419,9 +407,7 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
             "{} → {}\n  precondition: {}\n  evidence: {}",
             contract.harness, api_path, contract.precondition, evidence
         );
-        for property in config.tool.properties() {
-            claims.push(json!({"api_item_id":api_id,"property":property,"precondition":contract.precondition,"evidence_url":evidence}));
-        }
+        claims.push(json!({"api_item_id":api_id,"precondition":contract.precondition,"evidence_url":evidence}));
     }
     let selected = options.report.or(saved.report_id);
     let remote = selected
@@ -596,8 +582,8 @@ mod tests {
     }
     #[test]
     fn preserve_ids_and_web_text_but_update_evidence() {
-        let remote = json!({"title":"Web", "explanation":"Web report explanation", "claims":[{"id":"permanent","api_item_id":"api","property":"no_ub","title":"Web title","explanation":"Web claim explanation","precondition":"old","evidence_url":"old"}]});
-        let generated = json!({"crate":"demo","version":"1.0.0","tool_version_id":"kani","evidence_url":"shared","claims":[{"api_item_id":"api","property":"no_ub","precondition":"new","evidence_url":"new"}]});
+        let remote = json!({"title":"Web", "explanation":"Web report explanation", "claims":[{"id":"permanent","api_item_id":"api","title":"Web title","explanation":"Web claim explanation","precondition":"old","evidence_url":"old"}]});
+        let generated = json!({"crate":"demo","version":"1.0.0","tool_version_id":"kani","evidence_url":"shared","claims":[{"api_item_id":"api","precondition":"new","evidence_url":"new"}]});
         let body = merge(&config(), generated, Some(&remote)).unwrap();
         assert_eq!(body["title"], "Local");
         assert_eq!(body["explanation"], "Web report explanation");
@@ -609,8 +595,9 @@ mod tests {
     fn explicit_empty_clears_and_removed_claim_is_omitted() {
         let mut cfg = config();
         cfg.report.explanation = Some("".into());
-        let old = json!({"explanation":"Web", "claims":[{"id":"removed","api_item_id":"old","property":"no_ub"}]});
-        let new = json!({"claims":[{"api_item_id":"new","property":"no_ub","precondition":"true","evidence_url":"url"}]});
+        let old = json!({"explanation":"Web", "claims":[{"id":"removed","api_item_id":"old"}]});
+        let new =
+            json!({"claims":[{"api_item_id":"new","precondition":"true","evidence_url":"url"}]});
         let b = merge(&cfg, new, Some(&old)).unwrap();
         assert_eq!(b["explanation"], "");
         assert!(b["claims"][0].get("id").is_none());
@@ -709,7 +696,7 @@ mod tests {
     }
     #[test]
     fn rejects_ambiguous_existing_claims() {
-        let r = json!({"claims":[{"api_item_id":"a","property":"no_ub"},{"api_item_id":"a","property":"no_ub"}]});
+        let r = json!({"claims":[{"api_item_id":"a"},{"api_item_id":"a"}]});
         assert!(claims_by_key(&r).is_err());
     }
 }

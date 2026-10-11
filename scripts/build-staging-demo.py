@@ -37,11 +37,11 @@ for index,(key,items) in enumerate(groups.items()):
     created=date(15) if key[0]=='trait-demo' else date(index)
     insert('reports',create_key='staging-demo-reports-v1-'+key[0]+'-'+key[1],release_id=rel(crate),author_id=uid(author),withdrawn_at=date(10) if items[0]['id']==35 else None,created_at=created,updated_at=date(10) if rev>1 else created)
     for c in items:
-        insert('claims',id=uid('claim/'+str(c['id'])),report_id=rid(key),api_item_id=uid(c['crate']+'/'+c['api']),property='no_ub' if c['property']=='No undefined behavior' else 'panic_contract',created_at=created)
+        insert('claims',id=uid('claim/'+str(c['id'])),report_id=rid(key),api_item_id=uid(c['crate']+'/'+c['api']),created_at=created)
     for revision in range(1,rev+1):
         insert('report_revisions',report_id=rid(key),revision_no=revision,title=key[0]+' verification with '+key[1]+(' — initial scope' if revision<rev else ''),explanation='Synthetic staging report based on the original design examples.',trusted_assumptions='Illustrative tool implementation, compiler and library models.',tool_version_id=uid(t['id']+t['versions'][0]),environment='See each claim for the concrete types, bounds and features.',evidence_url='https://example.com/proofs-rs-demo/reports/'+str(index+1),limitations='Synthetic staging data. No proof was run.',created_at=created if revision==1 else date(10))
         for pos,c in enumerate(items):
-            title=c['title'] or c['property']+' for '+c['crate']+'::'+c['api']+' (with '+key[1]+' '+t['versions'][0]+')'
+            title=c['title'] or 'Verification of '+c['crate']+'::'+c['api']+' (with '+key[1]+' '+t['versions'][0]+')'
             insert('claim_revisions',claim_id=uid('claim/'+str(c['id'])),report_id=rid(key),report_revision=revision,position=pos,title=title,precondition=c['condition']+'\n'+c['formula'],explanation=c['description'],trusted_assumptions='',evidence_url='' if c['id']==104 else 'https://example.com/proofs-rs-demo/'+str(c['id']),limitations=c['scope'])
     sequence=0
     for c in items:
@@ -77,18 +77,18 @@ for mode in ['full','minimal','environment-only','withdrawn']:
     key='staging-layout-v1-'+mode
     reportid=expr('(SELECT id FROM reports WHERE create_key='+val(key)+')')
     insert('reports',create_key=key,release_id=rel(c),author_id=uid('mira'),withdrawn_at=date(10) if mode=='withdrawn' else None,created_at=date(0),updated_at=date(10))
-    entries=[(name,p) for name,*_ in apis for p in ['panic_contract','no_ub']]+[('decode','panic_contract')] if mode=='full' else [('decode','panic_contract')]
-    for n,(name,prop) in enumerate(entries):
-        insert('claims',id=uid('layout/'+mode+'/'+str(n)),report_id=reportid,api_item_id=uid('layout/api/'+name),property=prop,created_at=date(0))
+    entries=[name for name,*_ in apis]+['decode'] if mode=='full' else ['decode']
+    for n,name in enumerate(entries):
+        insert('claims',id=uid('layout/'+mode+'/'+str(n)),report_id=reportid,api_item_id=uid('layout/api/'+name),created_at=date(0))
     for rev in range(1,56 if mode=='full' else 2):
         insert('report_revisions',report_id=reportid,revision_no=rev,title='Layout demo — '+mode,explanation='Synthetic display fixture. No verification was performed.' if mode!='minimal' else '',trusted_assumptions='Synthetic compiler and tool models.' if mode=='full' else '',environment='Synthetic Linux x86_64\nRust demo toolchain\nNo actual verification was run.' if mode in ['full','environment-only'] else '',evidence_url='https://example.com/layout-demo' if mode=='full' else '',limitations='Layout demonstration only.' if mode=='full' else '',tool_version_id=uid('layout/tool'),created_at=date(0))
-        for n,(name,prop) in enumerate(entries):
+        for n,name in enumerate(entries):
             insert('claim_revisions',claim_id=uid('layout/'+mode+'/'+str(n)),report_id=reportid,report_revision=rev,position=n,title='Synthetic claim '+str(n+1),precondition='Demo input only',explanation='Synthetic claim explanation retained on the detail page.',trusted_assumptions='Synthetic claim trust',evidence_url='https://example.com/layout-demo',limitations='Not a real proof')
     if mode=='full':
         for n in range(55):insert('report_comments',id=uid('layout/comment/'+str(n)),report_id=reportid,sequence_no=n+1,revision_no=55,author_id=uid('nora'),body='Synthetic pagination comment '+str(n+1),created_at=date(0))
         for n in range(2):
             runid=uid('layout/run/'+str(n)); objectkey='staging-layout-v1/'+runid+'.sarif.json'
-            sarif={'version':'2.1.0','$schema':'https://json.schemastore.org/sarif-2.1.0.json','runs':[{'automationDetails':{'guid':runid},'tool':{'driver':{'name':'Layout demo','version':'1.0'}},'invocations':[{'executableLocation':{'uri':'echo'},'arguments':['Synthetic fixture; no verification performed'],'workingDirectory':{'uri':'./'},'executionSuccessful':True,'exitCode':0,'startTimeUtc':date(0),'endTimeUtc':date(0),'environmentVariables':{},'stdout':{'index':0}}],'versionControlProvenance':[{'repositoryUri':'https://github.com/proofs-rs/proofs-rs','revisionId':'0'*40}],'properties':{'proofs':{'schemaVersion':2,'dependencies':[],'crate':c['name'],'version':'1.0.0-demo.1','platform':'Synthetic platform','rustc':'Synthetic compiler','contracts':[{'harness':'demo','precondition':'Demo input only','file':'src/lib.rs','first_line':1,'last_line':1,'api_paths':['report_layout_demo::decode'],'properties':['panic_contract','no_ub']}]}},'artifacts':[{'contents':{'text':'Synthetic diagnostics <not HTML>. No verification performed.'}}],'results':[{'kind':'informational','message':{'text':'Synthetic example only'},'properties':{'harness':'demo'}}]}]}
+            sarif={'version':'2.1.0','$schema':'https://json.schemastore.org/sarif-2.1.0.json','runs':[{'automationDetails':{'guid':runid},'tool':{'driver':{'name':'Layout demo','version':'1.0'}},'invocations':[{'executableLocation':{'uri':'echo'},'arguments':['Synthetic fixture; no verification performed'],'workingDirectory':{'uri':'./'},'executionSuccessful':True,'exitCode':0,'startTimeUtc':date(0),'endTimeUtc':date(0),'environmentVariables':{},'stdout':{'index':0}}],'versionControlProvenance':[{'repositoryUri':'https://github.com/proofs-rs/proofs-rs','revisionId':'0'*40}],'properties':{'proofs':{'schemaVersion':2,'dependencies':[],'crate':c['name'],'version':'1.0.0-demo.1','platform':'Synthetic platform','rustc':'Synthetic compiler','contracts':[{'harness':'demo','precondition':'Demo input only','file':'src/lib.rs','first_line':1,'last_line':1,'api_paths':['report_layout_demo::decode']}]}},'artifacts':[{'contents':{'text':'Synthetic diagnostics <not HTML>. No verification performed.'}}],'results':[{'kind':'informational','message':{'text':'Synthetic example only'},'properties':{'harness':'demo'}}]}]}
             data=json.dumps(sarif,indent=2)+'\n';Path('fixtures/layout-run-'+str(n)+'.sarif.json').write_text(data)
             insert('verification_runs',id=runid,author_id=uid('mira'),crate=c['name'],version='1.0.0-demo.1',tool_version_id=uid('layout/tool'),sha256=hashlib.sha256(data.encode()).hexdigest(),size=len(data.encode()),r2_key=objectkey,created_at=date(0))
             for rev in [1,55]:insert('report_runs',report_id=reportid,revision_no=rev,run_id=runid,position=n)
@@ -111,6 +111,6 @@ for n in range(36):
     claimid=uid('pagination/claim/'+str(n))
     insert('reports',create_key=key,release_id=rel(c),author_id=uid('mira'),created_at=date(0),updated_at=date(0))
     insert('report_revisions',report_id=reportid,revision_no=1,title='Pagination demo '+str(n+1).zfill(2),explanation='Synthetic pagination fixture. No verification was performed.',trusted_assumptions='',environment='Synthetic fixture',evidence_url='https://example.com/pagination-demo',limitations='Not a real proof.',tool_version_id=uid('layout/tool'),created_at=date(0))
-    insert('claims',id=claimid,report_id=reportid,api_item_id=aid,property='panic_contract',created_at=date(0))
+    insert('claims',id=claimid,report_id=reportid,api_item_id=aid,created_at=date(0))
     insert('claim_revisions',claim_id=claimid,report_id=reportid,report_revision=1,position=0,title='Synthetic pagination claim '+str(n+1),precondition='Synthetic input only',explanation='Pagination demonstration only.',trusted_assumptions='',evidence_url='https://example.com/pagination-demo',limitations='Not a real proof.')
 Path('fixtures/staging-pagination.sql').write_text('\n'.join(Q)+'\n')

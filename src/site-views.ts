@@ -1,4 +1,3 @@
-import { prop } from "../web/properties";
 import { renderAPICatalog } from "../web/api-catalog";
 
 type Crumb = { label: string; href: string };
@@ -35,7 +34,7 @@ export function createViews(
   const notice =
     '<p class="meta">By publishing, you agree to the <a href="/terms">Terms</a> and license your original contribution under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. See our <a href="/privacy">Privacy Policy</a>.</p>';
   function claimItem(c: any) {
-    return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code> · ${prop(c.property)}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
+    return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
   }
   function reportSummary(c: any, hideCrate = false) {
     return `<article class="claim-item"><a href="/report/${c.id}">#${c.id} ${esc(c.title)}</a>${c.withdrawn_at ? " · Withdrawn" : ""}<div class="meta">${hideCrate ? "" : `${esc(c.crate)} ${esc(c.version)} · `}${esc(c.tool)} ${esc(c.tool_version)} · ${c.claim_count} claims · ${c.dependency_count ?? 0} reviewed dependencies declared by the author</div><p class="meta">${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""} · ${c.comment_count} comments · ${date(c.created_at)}</p></article>`;
@@ -142,8 +141,7 @@ export function createViews(
       kind:
         claims[0].kind ||
         (claims[0].signature?.startsWith("impl") ? "method" : "function"),
-      panic_count: claims.filter((c) => c.property === "panic_contract").length,
-      no_ub_count: claims.filter((c) => c.property === "no_ub").length,
+      claim_count: claims.length,
     }));
     return `<section class="report-apis"><h2>Verified APIs (${apis.length})</h2>${renderAPICatalog(
       apis,
@@ -153,20 +151,13 @@ export function createViews(
         hideCounts: true,
         expandFamilies: true,
         details: (api) =>
-          `<div class="report-api-claims">${["panic_contract", "no_ub"]
-            .map((property) => {
-              const claims = groups
-                .get(api.id)!
-                .filter((claim) => claim.property === property);
-              if (!claims.length) return "";
-              return `<p class="report-api-claim"><span class="claim-property">${esc(prop(property))}</span><span class="claim-links">${claims
-                .map(
-                  (claim) =>
-                    `<a href="/claim/${enc(claim.id)}?report_revision=${enc(String(claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
-                )
-                .join(", ")}</span></p>`;
-            })
-            .join("")}</div>`,
+          `<div class="report-api-claims"><span class="claim-links">${groups
+            .get(api.id)!
+            .map(
+              (claim) =>
+                `<a href="/claim/${enc(claim.id)}?report_revision=${enc(String(claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
+            )
+            .join(", ")}</span></div>`,
       },
     )}</section>`;
   }
@@ -179,7 +170,7 @@ export function createViews(
   }
   function claimContent(c: any, stars = false) {
     return `${stars ? titleWithStars("claim", c) : `<h1>Claim #${esc(c.claim_number)} — ${esc(c.title)}</h1>`}
-    <p><a href="/api/${enc(c.api_item_id)}"><code>${esc(c.display_path)}</code></a> · ${esc(prop(c.property))}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
+    <p><a href="/api/${enc(c.api_item_id)}"><code>${esc(c.display_path)}</code></a>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
     <pre class="signature">${esc(c.signature)}</pre><p>Tool: ${toolLink(c)}</p>
     <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || "None stated")}</p></section>
     ${c.explanation ? `<div class="report-explanation plain-text">${esc(c.explanation)}</div>` : ""}
