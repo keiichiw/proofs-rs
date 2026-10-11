@@ -164,8 +164,8 @@ test("reviewed dependencies keep pinned evidence links, current withdrawal, and 
     /Evidence report currently withdrawn/,
   );
   assert.match(w.document.body.textContent, /Evidence unavailable/);
-  assert.match(w.document.body.textContent, /report author declares/);
-  assert.match(
+  assert.doesNotMatch(w.document.body.textContent, /report author declares/);
+  assert.doesNotMatch(
     w.document.body.textContent,
     /not independent certification by proofs.rs/,
   );
