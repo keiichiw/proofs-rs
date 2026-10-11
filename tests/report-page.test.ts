@@ -172,7 +172,7 @@ test("reviewed dependencies keep pinned evidence links, current withdrawal, and 
   dom.window.close();
 });
 
-test("crate report summaries show the author-declared reviewed count without a denominator", () => {
+test("crate report summaries show the reviewed count without a denominator", () => {
   const { reportSummary } = createViews(
     { user: null },
     { show_star_karma: false },
@@ -186,7 +186,7 @@ test("crate report summaries show the author-declared reviewed count without a d
   );
   assert.match(
     dom.window.document.body.textContent!,
-    /3 reviewed dependencies declared by the author/,
+    /3 reviewed dependencies/,
   );
   assert.doesNotMatch(dom.window.document.body.textContent!, /3\s*\//);
   dom.window.close();
