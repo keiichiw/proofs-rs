@@ -125,7 +125,7 @@ export function createViews(
   }
   function reportDependencies(c: any) {
     const dependencies = c.dependencies ?? [];
-    return `<section class="report-section report-dependencies"><h2>Reviewed dependencies (${dependencies.length})</h2><p class="meta">The report author declares that they reviewed these dependencies using the linked evidence. This is not independent certification by proofs.rs.</p>${dependencies.length ? `<ul>${dependencies.map((dependency: any) => `<li><code>${esc(dependency.crate)} ${esc(dependency.version)}</code> · ${dependency.report != null && dependency.revision != null ? `<a href="/report/${enc(String(dependency.report))}?v=${enc(String(dependency.revision))}">Evidence report #${esc(dependency.report)} · v${esc(dependency.revision)}</a>${dependency.withdrawn ? " · <strong>Evidence report currently withdrawn</strong>" : ""}` : "Evidence unavailable"}</li>`).join("")}</ul>` : "<p>No reviewed dependencies declared.</p>"}</section>`;
+    return `<section class="report-section report-dependencies"><h2>Reviewed dependencies (${dependencies.length})</h2>${dependencies.length ? `<ul>${dependencies.map((dependency: any) => `<li><code>${esc(dependency.crate)} ${esc(dependency.version)}</code> · ${dependency.report != null && dependency.revision != null ? `<a href="/report/${enc(String(dependency.report))}?v=${enc(String(dependency.revision))}">Evidence report #${esc(dependency.report)} · v${esc(dependency.revision)}</a>${dependency.withdrawn ? " · <strong>Evidence report currently withdrawn</strong>" : ""}` : "Evidence unavailable"}</li>`).join("")}</ul>` : "<p>No reviewed dependencies declared.</p>"}</section>`;
   }
   function reportAPIs(c: any) {
     const groups = new Map<string, any[]>();
