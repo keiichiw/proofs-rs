@@ -1,6 +1,6 @@
 # proofs.rs
 
-Verification reports and claims for Rust APIs.
+A Public Registry for Rust Formal Verification Results
 
 - [Website](https://proofs.rs)
 - [Book](https://proofs.rs/book/)
