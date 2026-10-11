@@ -1,0 +1,57 @@
+/* Shared by the app and mdBook; base retains each original header. */
+html:not([data-theme="base"]) .proofs-site-header {
+  color: #242a32;
+  background: #fff;
+  border-bottom: 1px solid #e1e5e9;
+  font:
+    16px/1.65 Georgia,
+    "Times New Roman",
+    serif;
+  gap: 20px;
+}
+html:not([data-theme="base"]) .proofs-site-header a,
+html:not([data-theme="base"]) .proofs-site-header summary {
+  color: #285da0;
+  text-underline-offset: 3px;
+}
+html:not([data-theme="base"]) .proofs-site-header a:visited {
+  color: #65518a;
+}
+html:not([data-theme="base"])
+  .proofs-site-header
+  :is(.brand, .proofs-site-brand) {
+  color: #242a32;
+  font-size: 25px;
+  font-weight: bold;
+  text-decoration: none;
+}
+html:not([data-theme="base"]) .proofs-site-header nav {
+  margin-left: 0;
+  font-size: 14px;
+}
+html:not([data-theme="base"]) .proofs-site-header #account-nav {
+  font-size: 14px;
+}
+html:not([data-theme="base"]) .proofs-site-header .profile-menu {
+  border: 1px solid #bbc3cc;
+  border-radius: 3px;
+}
+html:not([data-theme="base"]) .proofs-site-header button {
+  font: inherit;
+  background: #f4f6f8;
+  color: #242a32;
+  border: 1px solid #bbc3cc;
+  border-radius: 3px;
+  padding: 7px 10px;
+}
+html:not([data-theme="base"])
+  .proofs-site-header
+  :is(a, summary, button):focus-visible {
+  outline: 2px solid #285da0;
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  html:not([data-theme="base"]) .proofs-site-header {
+    gap: 10px;
+  }
+}

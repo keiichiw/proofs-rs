@@ -123,3 +123,44 @@ html:not(.proofs-sidebar-ready) .sidebar,
 html:not(.proofs-sidebar-ready) .page-wrapper {
   transition: none !important;
 }
+
+/* Theme A shares the site's typography and links, with room for book controls. */
+html:not([data-theme="base"]) {
+  --proofs-header-height: 92px;
+}
+html:not([data-theme="base"]) .proofs-site-header {
+  padding: 28px max(32px, calc((100vw - 1056px) / 2)) 22px;
+}
+html:not([data-theme="base"]) .content {
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.65;
+}
+@media (max-width: 900px) {
+  html:not([data-theme="base"]) {
+    --proofs-header-height: 132px;
+  }
+  html:not([data-theme="base"]) .proofs-site-header {
+    flex-wrap: wrap;
+  }
+  html:not([data-theme="base"]) .proofs-site-header nav {
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  html:not([data-theme="base"]) {
+    --proofs-header-height: 110px;
+  }
+  html:not([data-theme="base"]) .proofs-site-header {
+    padding: 16px;
+  }
+  html:not([data-theme="base"]) .proofs-site-header nav {
+    gap: 8px 14px;
+  }
+}
+@media (max-width: 360px) {
+  html:not([data-theme="base"]) {
+    --proofs-header-height: 140px;
+  }
+}
