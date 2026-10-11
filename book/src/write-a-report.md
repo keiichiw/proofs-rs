@@ -1,4 +1,4 @@
-# Write a useful report
+# Use the write-proofs-report skill
 
 If you use an AI agent to write your report, use the
 [write-proofs-report skill](https://github.com/proofs-rs/proofs-rs/tree/main/skills/write-proofs-report).

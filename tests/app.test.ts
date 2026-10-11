@@ -2982,6 +2982,20 @@ test("HTML page links paginate growing lists and retain filters while bounded co
       .searchParams)
       assert.equal(nextURL.searchParams.get(key), value);
     const second = await read(nextURL.href);
+    if (path === "/api/safe") {
+      assert.equal(
+        first.window.document.querySelector("#claims")?.textContent,
+        "Claims (35)",
+      );
+      assert.equal(
+        second.window.document.querySelector("#claims")?.textContent,
+        "Claims (35)",
+      );
+      assert.doesNotMatch(
+        first.window.document.querySelector("main")!.textContent!,
+        /Target:|Catalogue uses|Publish a report/,
+      );
+    }
     assert.equal(
       second.window.document.querySelector('a[rel="next"]'),
       null,
@@ -3198,8 +3212,9 @@ test("HTML includes all crate versions, API items, report claims, tool versions 
     37,
   );
   assert.equal(
-    crate.window.document.querySelectorAll('a[href^="/api/bounded-api-"]')
-      .length,
+    crate.window.document.querySelectorAll(
+      'a.api-name[href^="/api/bounded-api-"]',
+    ).length,
     36,
   );
   const report = await read("/report/1");

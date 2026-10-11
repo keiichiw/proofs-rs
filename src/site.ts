@@ -1,5 +1,5 @@
 import type { Ctx } from "./core";
-import { Fault, rows } from "./core";
+import { Fault, rows, latest } from "./core";
 import { legal } from "../web/legal";
 import { renderAPICatalog } from "../web/api-catalog";
 import { renderRecordedRun } from "../web/recorded-run";
@@ -332,9 +332,14 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         return c.redirect("/api/" + enc(a.id), 302);
       }
       const a = await get("/apis/" + enc(id));
+      const counts = await rows(
+        c.env.DB,
+        `SELECT COUNT(*) n FROM claims c JOIN reports p ON p.id=c.report_id JOIN claim_revisions r ON r.claim_id=c.id WHERE c.api_item_id=? AND p.visibility='public' AND p.withdrawn_at IS NULL AND ${latest}`,
+        id,
+      );
       return result(
         a.display_path,
-        `${breadcrumbs(crateCrumbs(a, "apis"))}<h1 class="code">${esc(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${esc(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><p class="meta">Target: ${esc(a.target)}. Catalogue uses the docs.rs build configuration.</p><p><a href="/book/publish-a-report.html">Publish a report</a></p><h2>Claims</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
+        `${breadcrumbs(crateCrumbs(a, "apis"))}<h1 class="code">${esc(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${esc(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
       );
     }
     if (p === "reports")
@@ -422,7 +427,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         );
       }
       const commentForm = (editing: any, replying: any) =>
-        `${editing ? "" : `<h3>${replying ? "Reply to #" + replying.sequence_no : "Add a comment"}</h3>`}<form method="post" action="/_actions/${editing ? "edit-comment" : "comment"}" id="${editing ? "comment-editor-form" : "comment-form"}"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_back" value="/report/${item.id}?v=${item.revision_no}#discussion"><input type="hidden" name="id" value="${esc(editing?.id || item.id)}"><input type="hidden" name="edit_version" value="${editing?.edit_version || 0}"><input type="hidden" name="reply_to_id" value="${esc(replying?.id || "")}"><input type="hidden" name="_key" value="${crypto.randomUUID()}">${editing ? "" : `<label>Report revision <select name="revision_no">${history.map((h) => `<option value="${h.revision_no}"${h.revision_no === (replying?.revision_no || item.revision_no) ? " selected" : ""}>v${h.revision_no}</option>`).join("")}</select></label>`}<textarea name="body" required maxlength="5000" aria-label="Comment">${esc(editing?.body || "")}</textarea><p class="meta">By publishing, you agree to the <a href="/terms">Terms</a> and license your original contribution under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. See our <a href="/privacy">Privacy Policy</a>.</p><button>${editing ? "Save" : "Post comment"}</button>${editing || replying ? ` <a href="/report/${item.id}?v=${item.revision_no}#discussion">Cancel</a>` : ""}</form>`;
+        `${editing ? "" : `<h3>${replying ? "Reply to #" + replying.sequence_no : "Add a comment"}</h3>`}<form method="post" action="/_actions/${editing ? "edit-comment" : "comment"}" id="${editing ? "comment-editor-form" : "comment-form"}"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_back" value="/report/${item.id}?v=${item.revision_no}#discussion"><input type="hidden" name="id" value="${esc(editing?.id || item.id)}"><input type="hidden" name="edit_version" value="${editing?.edit_version || 0}"><input type="hidden" name="reply_to_id" value="${esc(replying?.id || "")}"><input type="hidden" name="_key" value="${crypto.randomUUID()}">${editing ? "" : `<label>Report revision <select name="revision_no">${history.map((h) => `<option value="${h.revision_no}"${h.revision_no === (replying?.revision_no || item.revision_no) ? " selected" : ""}>v${h.revision_no}</option>`).join("")}</select></label>`}<textarea name="body" required maxlength="5000" aria-label="Comment">${esc(editing?.body || "")}</textarea><button>${editing ? "Save" : "Post comment"}</button>${editing || replying ? ` <a href="/report/${item.id}?v=${item.revision_no}#discussion">Cancel</a>` : ""}</form>`;
       const byParent = new Map<string | null, any[]>();
       for (const cm of comments) {
         const key = cm.reply_to_id || null;
@@ -533,7 +538,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const tools = await get("/tools");
       return result(
         "Verification tools",
-        `<h1>Verification tools</h1><p><a href="https://github.com/proofs-rs/proofs-rs/blob/main/cli/README.md" target="_blank" rel="noopener noreferrer">CLI setup and usage instructions</a></p>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p></article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
+        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p></article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
       );
     }
     if (p === "tool" && id) {
