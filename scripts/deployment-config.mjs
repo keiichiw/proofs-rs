@@ -11,6 +11,8 @@ export function configureDeployment(config, target, env) {
     !["true", "false"].includes(env.PRODUCTION_EMAIL_ENABLED)
   )
     throw Error("PRODUCTION_EMAIL_ENABLED must be true or false.");
+  config.workers_dev = !customDomain;
+  if (target === "production") config.preview_urls = false;
   const emailEnabled =
     target === "production" && env.PRODUCTION_EMAIL_ENABLED === "true";
   config.vars.EMAIL_DISABLED = emailEnabled ? "false" : "true";

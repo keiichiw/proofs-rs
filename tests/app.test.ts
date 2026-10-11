@@ -3524,3 +3524,66 @@ test("SSR retains the original controls, comment editor placement and inline log
     2,
   );
 });
+
+test("browser and API device checks share an account limit without blocking other users", async () => {
+  for (const ip of ["192.0.2.1", ""]) {
+    const { db, env } = await fixture();
+    const bucket = new Date().toISOString().slice(0, 10);
+    db.prepare("INSERT INTO rate_limits VALUES(?,?,?,?,?)").run(
+      await hash("user:alice"),
+      "device_check",
+      bucket,
+      99,
+      100,
+    );
+    // Exhausting the old missing-IP bucket must not block any account.
+    db.prepare("INSERT INTO rate_limits VALUES(?,?,?,?,?)").run(
+      await hash("unknown"),
+      "device_check",
+      bucket,
+      100,
+      100,
+    );
+    const headers = (user: string) => ({
+      Origin: env.APP_ORIGIN,
+      Cookie: "__Host-proofsr_session=" + user,
+      ...(ip ? { "CF-Connecting-IP": ip } : {}),
+    });
+    const inspect = await app.request(
+      env.APP_ORIGIN + "/device?code=ABCDEFGH",
+      { headers: headers("alice") },
+      env,
+    );
+    assert.equal(inspect.status, 400); // Invalid code still consumes a check.
+    const approve = (user: string) =>
+      app.request(
+        env.APP_ORIGIN + "/_actions/device",
+        {
+          method: "POST",
+          headers: {
+            ...headers(user),
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({ _csrf: "csrf", user_code: "ABCDEFGH" }),
+        },
+        env,
+      );
+    assert.equal((await approve("alice")).status, 429);
+    assert.equal((await approve("bob")).status, 409); // Same IP, separate account.
+    const direct = await app.request(
+      env.APP_ORIGIN + "/auth/device/inspect",
+      {
+        method: "POST",
+        headers: {
+          ...headers("alice"),
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "csrf",
+          "CF-Connecting-IP": "192.0.2.2",
+        },
+        body: JSON.stringify({ user_code: "ABCDEFGH" }),
+      },
+      env,
+    );
+    assert.equal(direct.status, 429); // Changing route or IP cannot reset the limit.
+  }
+});

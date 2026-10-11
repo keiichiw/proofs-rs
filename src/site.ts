@@ -75,6 +75,9 @@ function localRequest(
   key?: string,
 ) {
   const headers = new Headers({ Cookie: c.req.header("cookie") || "" });
+  // Preserve the edge-provided address for API rate limits in internal requests.
+  const ip = c.req.header("cf-connecting-ip");
+  if (ip) headers.set("CF-Connecting-IP", ip);
   if (method !== "GET") {
     headers.set("Origin", c.req.header("origin") || "");
     headers.set("X-CSRF-Token", csrf);
@@ -633,18 +636,15 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           `<h1>Connect CLI</h1>${account}<form action="/device" method="get"><label>Code from your terminal <input name="code" autocomplete="off" maxlength="12" required></label><button>Continue</button></form>`,
         );
       // Inspection remains a read of the existing protocol; its API uses POST.
-      const inspected = await fetch(
-        new Request(new URL("/auth/device/inspect", c.req.url), {
-          method: "POST",
-          headers: {
-            Cookie: c.req.header("cookie") || "",
-            Origin: c.env.APP_ORIGIN,
-            "X-CSRF-Token": me.csrf,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ user_code: code }),
-        }),
+      const inspection = localRequest(
+        c,
+        "/auth/device/inspect",
+        "POST",
+        { user_code: code },
+        me.csrf,
       );
+      inspection.headers.set("Origin", c.env.APP_ORIGIN);
+      const inspected = await fetch(inspection);
       const d: any = await inspected.json();
       if (!inspected.ok)
         return result(

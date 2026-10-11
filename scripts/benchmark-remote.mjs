@@ -5,6 +5,12 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 const token = process.env.CLOUDFLARE_API_TOKEN;
+// The comparison also builds an older checkout; do not pass deployment secrets
+// to either build subprocess.
+const buildEnv = { ...process.env };
+for (const key of Object.keys(buildEnv))
+  if (key.startsWith("CLOUDFLARE_") && key.includes("TOKEN"))
+    delete buildEnv[key];
 if (!account || !token) throw Error("Cloudflare credentials required");
 const api = async (path, method = "GET") => {
   const r = await fetch(
@@ -39,7 +45,7 @@ try {
     ["before", baseline],
     ["after", root],
   ]) {
-    execFileSync("npm", ["run", "build"], { cwd, stdio: "inherit" });
+    execFileSync("npm", ["run", "build"], { cwd, stdio: "inherit", env: buildEnv });
     const name = `proofs-perf-${process.env.GITHUB_RUN_ID}-${label}`;
     const origin = `https://${name}.${domain.subdomain}.workers.dev`;
     targets.push({ name, origin, label });
