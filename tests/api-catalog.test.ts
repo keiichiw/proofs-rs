@@ -75,7 +75,7 @@ test("catalogue groups methods, links single implementations and aggregates fami
     /2 implementations.*6 claims/,
   );
   assert(d.querySelector("summary .unsafe"));
-  assert.equal(d.querySelectorAll("details a").length, 2);
+  assert.equal(d.querySelectorAll("details a.api-name").length, 2);
   assert.equal(d.querySelector('a[href="/api/clone"]')!.textContent, "clone");
   assert.match(d.body.textContent!, /impl core::clone::Clone for Thing/);
   assert.equal(d.querySelectorAll("aside, button").length, 0);
@@ -102,7 +102,7 @@ test("hex metadata keeps identities and renders 160 FromHex impls plus direct To
   }));
   const d = new JSDOM(renderAPICatalog(items, "hex")).window.document;
   assert.equal(d.querySelectorAll("details").length, 1);
-  assert.equal(d.querySelectorAll("details a").length, 160);
+  assert.equal(d.querySelectorAll("details a.api-name").length, 160);
   assert.match(
     d.querySelector("summary")!.textContent!,
     /from_hex.*160 implementations/,
@@ -209,4 +209,36 @@ test("rustdoc metadata distinguishes receivers and qualifies external traits wit
     "sample::Thing",
   );
   assert.equal(metadata.get("<sample::Thing as Any>::type_id").is_blanket, 1);
+});
+
+test("unsafe precedes fn and nonzero claim counts link to the API claims section", () => {
+  const dom = new JSDOM(
+    renderAPICatalog(
+      [
+        api({
+          id: "unsafe/id",
+          display_path: "sample::get_unchecked",
+          is_unsafe: 1,
+          claim_count: 1,
+        }),
+        api({ id: "empty", display_path: "sample::empty", claim_count: 0 }),
+      ],
+      "sample",
+    ),
+  );
+  const d = dom.window.document;
+  const unsafeRow = d.querySelector(
+    'a.api-name[href="/api/unsafe%2Fid"]',
+  )!.parentElement!;
+  assert.equal(unsafeRow.textContent, "unsafe fn get_unchecked");
+  assert.equal(
+    d.querySelector('a[href="/api/unsafe%2Fid#claims"]')?.textContent,
+    "1 claims",
+  );
+  const emptyRow = d
+    .querySelector('a.api-name[href="/api/empty"]')!
+    .closest(".catalog-row")!;
+  assert.equal(emptyRow.querySelector(".api-claim-count")!.textContent, "—");
+  assert.equal(emptyRow.querySelector(".api-claim-count a"), null);
+  dom.window.close();
 });
