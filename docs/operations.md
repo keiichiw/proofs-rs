@@ -44,6 +44,10 @@ Use separate OAuth registrations for local/staging/production. GitHub username a
 
 Cloudflare Email Service requires an onboarded DNS domain. The custom domain is a later setup step; deploy the application independently. Set the sending binding, allowlist and event subscription metadata together. Unknown event sources are refused and go to the dead-letter queue. The service does not parse or link @mentions. Notification content is plain text and contains a permalink, not the comment body.
 
+### Disabling email
+
+`EMAIL_DISABLED=true` skips new email notifications and cancels pending/retry deliveries; it never accumulates a backlog for later sending. The email binding and email-event consumer are omitted. Existing user preferences are retained. Enabling arbitrary-recipient email later requires Workers Paid and deliberate configuration changes.
+
 ## Terms updates and contact
 
 Update the Terms and summary, increment `TERMS_VERSION`, then deploy. Existing accounts must explicitly agree before publishing, starring or voting. Reading, notification preferences, logout and requesting account deletion remain available. Signup consent is a notice beside the GitHub button. Retain the last accepted version/time on the account, not a per-post consent log. Keep `contact@proofs.rs` reachable before production and document a temporary direct operator channel during staging while the domain is not configured.
@@ -135,6 +139,27 @@ CSRF checks use the configured APP_ORIGIN. Production tokens/users are separate
 from staging. `scripts/domain-status.mjs` only reads onboarding status and cannot
 change nameservers. The Cloudflare account credentials remain in GitHub Secrets.
 
+## Staging deployment and configuration
+
+Run Actions → Staging → Run workflow and select the PR branch when staging verification is needed. This shared environment is overwritten by each run; only deploy trusted branches from this repository because the workflow uses staging credentials. Staging is not a production gate. `scripts/provision.mjs` creates/reuses only resources named `proofs-rs-staging-*` and writes the ignored `wrangler.staging.json`. Staging is public on workers.dev, with no Cloudflare Access gate and `noindex` headers.
+
+Required GitHub Actions secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`: scoped to the account, Workers Scripts edit, D1 edit, R2 edit, Queues edit, and account/subdomain read as required by Cloudflare. R2 and Queues must be enabled. The account uses Workers Paid. Email sending is explicitly disabled.
+
+Optional integration settings (missing integrations are visibly marked, not silently simulated):
+
+- Repository variable `STAGING_GITHUB_CLIENT_ID`, secret `STAGING_GITHUB_CLIENT_SECRET`. OAuth callback: the deployed origin plus `/auth/github/callback`. Use a separate staging OAuth app.
+- Variable `ADMIN_GITHUB_IDS`, comma-separated GitHub numeric IDs. Defaults to nyuichi (`540144`).
+- `STAGING_EMAIL_FROM`, `STAGING_EMAIL_ALLOWLIST`, `STAGING_EMAIL_DOMAIN`, `STAGING_EMAIL_EVENT_SUBSCRIPTION`: variables after Email Service onboarding and event subscription to `proofs-rs-staging-email-events`. Staging delivers only to the explicit allowlist.
+- Secret `CLOUDFLARE_D1_BACKUP_TOKEN`, with D1 export permission. This is separate from the deploy token.
+- Optional secret `STAGING_TOKEN_SECRET`. A random Worker-only secret is generated on first deployment and preserved on subsequent deployments. It signs unsubscribe URLs.
+
+No GitHub tokens or client secrets are committed or included in the browser build. Workflow logs contain secret names, not values.
+
+Same-repository PRs whose branch starts with `staging/` also trigger this workflow. It checks out the exact PR head commit; other PRs and fork PRs do not deploy.
+
 ## Staging demo fixtures
 
 `Seed staging demo` adds the original Sites-style examples to the existing staging
@@ -184,7 +209,6 @@ After deploying rustdoc format 60 support, retry a failed import by calling
 `POST /api/v1/publish/prepare` for the same crate/version. Failed jobs do not block
 a new preparation job; no database migration or manual job edit is required.
 
-
 ### Dependency-review rollout automation
 
 Normal Production deployment requires the completed SARIF v2 rollout marker and
@@ -196,3 +220,27 @@ run it. The migration deploys maintenance, drains old invocations, writes privat
 D1/R2 backups, atomically migrates/validates evidence, and deploys the reviewed new
 Worker. Failure leaves maintenance rather than reverting to schema-v1 code.
 See [the full workflow and recovery procedure](dependency-migration.md).
+
+## UI visibility flags
+
+`SHOW_STAR_KARMA` and `SHOW_HOME_DISCUSSION` are independent Worker variables,
+exposed by `/api/v1/config` as `show_star_karma` and `show_home_discussion`. Only
+the string `"true"` enables a flag; missing values default off. Both deployment
+configs currently set them to `"false"`. Redeploy with the relevant variable set
+to `"true"` to restore its UI.
+
+The first flag controls report/claim stars, stargazer pages, karma, personal
+starred lists, account menus and the Book's Star / Karma guidance. Old stargazer
+URLs return to their report/claim while hidden. The second controls Latest
+discussion and the desktop two-column homepage; mobile remains stacked. Comment
+counts, posting, replies and votes remain visible. Storage, API endpoints and
+privacy disclosures about retained/API-accessible reaction data are unchanged.
+
+## API catalogue metadata refresh
+
+For an existing database, apply migration `0006_api_item_metadata.sql` before using catalogue display metadata. New imports populate metadata from rustdoc. For existing catalogues, run
+`node --import tsx scripts/refresh-catalogs.mjs <wrangler-config>` or refresh each
+catalogue through `POST /api/v1/admin/catalogs/:id/refresh`. Refresh fills display
+metadata without changing existing API IDs or report references. Before refresh,
+the UI retains legacy paths and basic grouping; full external paths and blanket
+classification require the archived rustdoc metadata.
