@@ -1,6 +1,6 @@
 # proofs.rs
 
-A Public Registry for Rust Formal Verification Results
+A public registry for Rust formal verification results.
 
 - [Website](https://proofs.rs)
 - [Book](https://proofs.rs/book/)
