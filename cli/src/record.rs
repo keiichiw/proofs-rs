@@ -718,13 +718,13 @@ pub fn kani_results(output: &str, contracts: &[Contract]) -> Result<(Vec<Value>,
                 .iter()
                 .filter(|c| {
                     c.harness == harness
-                        || harness.strip_prefix(&format!(
+                        || c.harness.strip_prefix(&format!(
                             "{}::",
                             c.api_paths
                                 .first()
                                 .and_then(|s| s.split("::").next())
                                 .unwrap_or("")
-                        )) == Some(c.harness.as_str())
+                        )) == Some(harness.as_str())
                 })
                 .collect();
             if outcome == "SUCCESSFUL"
@@ -1159,6 +1159,24 @@ mod tests {
         let mut other = c;
         other.harness = "demo::unexecuted".into();
         assert!(kani_results(&output("SUCCESS", "SUCCESSFUL"), &[other])
+            .unwrap()
+            .1
+            .is_empty());
+    }
+    #[test]
+    fn accepts_crate_relative_harness_without_suffix_guessing() {
+        let output = output("SUCCESS", "SUCCESSFUL").replace(
+            "Checking harness demo::check_f...",
+            "Checking harness check_f...",
+        );
+        let (_, verified) = kani_results(&output, &[contract()]).unwrap();
+        assert_eq!(verified.len(), 1);
+        let nested = output.replace(
+            "Checking harness check_f...",
+            "Checking harness other::check_f...",
+        );
+        assert!(kani_results(&nested, &[contract()]).unwrap().1.is_empty());
+        assert!(kani_results(&output, &[contract(), contract()])
             .unwrap()
             .1
             .is_empty());
