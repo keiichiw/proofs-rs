@@ -505,7 +505,11 @@ export function extractAPIs(
   }
   return [...output.values()];
 }
-async function safeFetch(url: string, hosts: string[], signal: AbortSignal) {
+export async function safeFetch(
+  url: string,
+  hosts: string[],
+  signal: AbortSignal,
+) {
   for (let i = 0; i < 5; i++) {
     const u = new URL(url);
     if (u.protocol !== "https:" || !hosts.includes(u.hostname))
@@ -530,7 +534,7 @@ async function safeFetch(url: string, hosts: string[], signal: AbortSignal) {
   }
   throw new Fault(422, "too_many_redirects");
 }
-async function bounded(stream: ReadableStream<Uint8Array>, max: number) {
+export async function bounded(stream: ReadableStream<Uint8Array>, max: number) {
   const reader = stream.getReader(),
     chunks = [];
   let n = 0;
