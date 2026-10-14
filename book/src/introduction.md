@@ -12,7 +12,7 @@ Most existing verification tools manage formal specifications and proofs by embe
 
 In practice, implementation and verification need not share the same maintenance lifecycle. The fact that a particular version was successfully verified under recorded assumptions remains relevant even after the implementation evolves. If a later version needs to be verified, someone with the necessary expertise can verify that version when the need arises. What matters, then, is that past verification results be preserved and remain easily accessible.
 
-proofs.rs does not require verification results to be incorporated into the upstream project. A third party, who need not be an author of the implementation, can add specifications and proofs in a separate verification fork and publish the resulting claims against the relevant crate, version, and APIs. At present, however, correspondence between the verification fork and the crate as published must be established separately.
+proofs.rs does not require verification results to be incorporated into the upstream project. A third party, who need not be an author of the implementation, can add specifications and proofs in a separate verification fork and publish the resulting claims against the relevant crate, version, and APIs.
 
 This separation allows implementers, verifiers, and users to be different parties. Implementers need not assume responsibility for maintaining proofs, verifiers can publish results independently of upstream development, and users can consult existing results for the versions they depend on. In this way, the cost of formal verification can be distributed across the community while its benefits remain broadly available.
 
