@@ -101,75 +101,120 @@ test("report body removes redundant labels and groups claims by API with revisio
   dom.window.close();
 });
 
-test("reviewed dependencies keep pinned evidence links, current withdrawal, and author attribution", () => {
-  const { reportBody, reportSummary } = createViews(
+test("dependencies list all direct crates with reports on the right and API-style empty markers", () => {
+  const { reportBody } = createViews(
     { user: null },
     { show_star_karma: false },
     () => "",
   );
-  const dom = new JSDOM("<main></main>");
-  const w = dom.window as any;
-  w.render = (c: any) => {
-    w.document.querySelector("main").innerHTML = reportBody(c);
-  };
-  for (const c of [{}, { dependencies: [] }]) {
-    w.render(c);
-    assert.equal(
-      w.document.querySelector("h2").textContent,
-      "Reviewed dependencies (0)",
-    );
-    assert.match(
-      w.document.body.textContent,
-      /No reviewed dependencies declared/,
-    );
-  }
-  w.render({
-    dependencies: [
-      {
-        crate: "dependency<script>",
-        version: "1.2.3",
-        report: 10,
-        revision: 2,
-        withdrawn: false,
-      },
-      {
-        crate: "withdrawn",
-        version: "2.0.0",
-        report: 11,
-        revision: 1,
-        withdrawn: true,
-      },
-      {
-        crate: "private",
-        version: "3.0.0",
-        report: null,
-        revision: null,
-        withdrawn: true,
-      },
-    ],
-  });
-  assert.equal(
-    w.document.querySelector("h2").textContent,
-    "Reviewed dependencies (3)",
+  const dom = new JSDOM(
+    reportBody({
+      direct_dependencies: [
+        {
+          crate: "dependency<script>",
+          requirement: "^1.2",
+          kind: "normal",
+          optional: false,
+          target: null,
+          reports: [
+            { report: 10, revision: 2, version: "1.2.3", reviewed: true },
+          ],
+        },
+        {
+          crate: "withdrawn",
+          requirement: "2",
+          kind: "build",
+          optional: true,
+          target: 'cfg(target_os = "linux")',
+          reports: [
+            {
+              report: 11,
+              revision: 1,
+              version: "2.0.0",
+              reviewed: true,
+              withdrawn: true,
+            },
+          ],
+        },
+        {
+          crate: "without-report",
+          requirement: "3",
+          kind: "dev",
+          optional: false,
+          target: null,
+          reports: [],
+        },
+      ],
+      dependencies: [
+        {
+          crate: "dependency<script>",
+          version: "1.2.3",
+          report: 10,
+          revision: 2,
+        },
+        {
+          crate: "withdrawn",
+          version: "2.0.0",
+          report: 11,
+          revision: 1,
+          withdrawn: true,
+        },
+        { crate: "transitive", version: "4.0.0", report: 12, revision: 3 },
+        { crate: "private", version: "3.0.0", report: null, revision: null },
+      ],
+    }),
   );
-  assert.equal(w.document.querySelectorAll("li").length, 3);
+  const d = dom.window.document;
+  assert.equal(d.querySelector("h2")!.textContent, "Dependencies (3)");
+  const rows = d.querySelectorAll(".catalog-row");
+  assert.equal(rows.length, 3);
   assert.equal(
-    w.document.querySelector("a").getAttribute("href"),
+    rows[0].querySelector('a[href^="/report/"]')!.getAttribute("href"),
     "/report/10?v=2",
   );
-  assert.equal(w.document.querySelector("script"), null);
-  assert.match(w.document.body.textContent, /dependency<script> 1\.2\.3/);
-  assert.match(
-    w.document.body.textContent,
-    /Evidence report currently withdrawn/,
+  assert.match(rows[0].textContent!, /reviewed/);
+  assert.equal(rows[2].querySelector(".api-claim-count")!.textContent, "—");
+  assert.match(rows[1].textContent!, /build · optional/);
+  assert.match(rows[1].textContent!, /cfg\(target_os = "linux"\)/);
+  assert.match(rows[1].textContent!, /Withdrawn/);
+  assert.equal(d.querySelector("script"), null);
+  assert.match(rows[0].textContent!, /dependency<script>/);
+  assert.equal(
+    d.querySelector(".dependency-reviews summary")!.textContent,
+    "Other reviewed evidence (2)",
   );
-  assert.match(w.document.body.textContent, /Evidence unavailable/);
-  assert.doesNotMatch(w.document.body.textContent, /report author declares/);
-  assert.doesNotMatch(
-    w.document.body.textContent,
-    /not independent certification by proofs.rs/,
+  assert.equal(
+    d.querySelector(".dependency-reviews a")!.getAttribute("href"),
+    "/report/12?v=3",
   );
+  assert.equal(d.querySelectorAll(".dependency-reviews a").length, 1);
   dom.window.close();
+});
+
+test("missing metadata is distinct from a crate with zero dependencies", () => {
+  const { reportDependencies } = createViews({ user: null }, {}, () => "");
+  const empty = new JSDOM(reportDependencies({ direct_dependencies: [] }));
+  assert.equal(
+    empty.window.document.querySelector("h2")!.textContent,
+    "Dependencies (0)",
+  );
+  assert.match(
+    empty.window.document.body.textContent!,
+    /No direct dependencies/,
+  );
+  const unavailable = new JSDOM(
+    reportDependencies({ direct_dependencies: null }),
+  );
+  assert.equal(
+    unavailable.window.document.querySelector("h2")!.textContent,
+    "Dependencies",
+  );
+  assert.match(
+    unavailable.window.document.body.textContent!,
+    /Unable to load dependencies/,
+  );
+  empty.window.close();
+  unavailable.window.close();
 });
 
 test("crate report summaries show the reviewed count without a denominator", () => {

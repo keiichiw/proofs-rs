@@ -169,8 +169,11 @@ export async function fixture(seedTools = true) {
     EMAIL_ALLOWLIST: "",
     ARCHIVE: {
       put: async () => {},
-      get: async () => ({
-        json: async () => recordedSarif("11111111-1111-4111-8111-111111111111"),
+      get: async (key: string) => ({
+        json: async () =>
+          key.startsWith("cache/crates.io/dependencies/")
+            ? []
+            : recordedSarif("11111111-1111-4111-8111-111111111111"),
         body: new Response(
           JSON.stringify(recordedSarif("11111111-1111-4111-8111-111111111111")),
         ).body,
@@ -3586,4 +3589,98 @@ test("browser and API device checks share an account limit without blocking othe
     );
     assert.equal(direct.status, 429); // Changing route or IP cannot reset the limit.
   }
+});
+
+test("report dependency catalog shows unreviewed direct crates and only matching public reports", async (t) => {
+  const { JSDOM } = await import("jsdom");
+  const { db, env, request } = await fixture();
+  const parent = await request("/reports", "POST", reportInput);
+  assert.equal(parent.status, 201);
+  db.exec(`
+    INSERT INTO crates(id,name) VALUES(2,'dependency');
+    INSERT INTO releases VALUES(2,2,'1.2.0',NULL,0,'2026-10-14'),(3,2,'2.0.0',NULL,0,'2026-10-14');
+    INSERT INTO reports(id,create_key,release_id,author_id,visibility,created_at,updated_at)
+    VALUES(10,'direct-public',2,'alice','public','2026-10-14','2026-10-14'),
+          (11,'direct-hidden',2,'alice','hidden','2026-10-14','2026-10-14'),
+          (12,'direct-withdrawn',2,'alice','public','2026-10-14','2026-10-14'),
+          (13,'direct-mismatch',3,'alice','public','2026-10-14','2026-10-14');
+    UPDATE reports SET withdrawn_at='2026-10-14' WHERE id=12;
+    INSERT INTO report_revisions
+    SELECT id,1,'Dependency evidence','','','kani-0.68.0','','','','2026-10-14' FROM reports WHERE id>=10;
+    INSERT INTO report_revisions VALUES(10,2,'New evidence','','','kani-0.68.0','','','','2026-10-14');
+  `);
+  const upstream = [
+    {
+      crate_id: "dependency",
+      req: "1",
+      kind: "normal",
+      optional: false,
+      target: null,
+    },
+    {
+      crate_id: "without-report",
+      req: "2",
+      kind: "build",
+      optional: true,
+      target: "cfg(unix)",
+    },
+  ];
+  const getRun = env.ARCHIVE.get.bind(env.ARCHIVE);
+  const cache = new Map<string, string>();
+  t.mock.method(env.ARCHIVE, "get", async (key: string) => {
+    if (!key.startsWith("cache/crates.io/dependencies/")) return getRun(key);
+    return cache.has(key)
+      ? { json: async () => JSON.parse(cache.get(key)!) }
+      : null;
+  });
+  t.mock.method(env.ARCHIVE, "put", async (key: string, body: string) => {
+    cache.set(key, body);
+  });
+  const fetched = t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ dependencies: upstream }),
+  );
+  const read = async () => {
+    const response = await app.request(
+      env.APP_ORIGIN + `/report/${parent.body.id}`,
+      {},
+      env,
+    );
+    assert.equal(response.status, 200);
+    return new JSDOM(await response.text()).window.document;
+  };
+  let d = await read();
+  assert.equal(
+    d.querySelector(".report-dependencies h2")!.textContent,
+    "Dependencies (2)",
+  );
+  assert.equal(
+    d.querySelectorAll(".report-dependencies .catalog-row").length,
+    2,
+  );
+  assert.deepEqual(
+    [...d.querySelectorAll('.report-dependencies a[href^="/report/"]')].map(
+      (a) => a.getAttribute("href"),
+    ),
+    ["/report/10?v=2"],
+  );
+  assert.equal(d.querySelectorAll(".report-dependencies .muted").length, 1);
+  assert.match(
+    (
+      await request(`/reports/${parent.body.id}`)
+    ).body.dependency_count.toString(),
+    /^0$/,
+  );
+  assert.deepEqual(
+    (await request(`/reports/${parent.body.id}`)).body.dependencies,
+    [],
+  );
+  // Reports are queried on every render even when release metadata is cached.
+  db.prepare("UPDATE reports SET visibility='hidden' WHERE id=10").run();
+  d = await read();
+  assert.equal(
+    d.querySelectorAll('.report-dependencies a[href^="/report/"]').length,
+    0,
+  );
+  assert.equal(d.querySelectorAll(".report-dependencies .muted").length, 2);
+  assert.equal(fetched.mock.callCount(), 1);
 });
