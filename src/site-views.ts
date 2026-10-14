@@ -124,8 +124,30 @@ export function createViews(
     `;
   }
   function reportDependencies(c: any) {
-    const dependencies = c.dependencies ?? [];
-    return `<section class="report-section report-dependencies"><h2>Reviewed dependencies (${dependencies.length})</h2>${dependencies.length ? `<ul>${dependencies.map((dependency: any) => `<li><code>${esc(dependency.crate)} ${esc(dependency.version)}</code> · ${dependency.report != null && dependency.revision != null ? `<a href="/report/${enc(String(dependency.report))}?v=${enc(String(dependency.revision))}">Evidence report #${esc(dependency.report)} · v${esc(dependency.revision)}</a>${dependency.withdrawn ? " · <strong>Evidence report currently withdrawn</strong>" : ""}` : "Evidence unavailable"}</li>`).join("")}</ul>` : "<p>No reviewed dependencies declared.</p>"}</section>`;
+    const dependencies = c.direct_dependencies;
+    const reviews = c.dependencies ?? [];
+    const reportLink = (r: any) =>
+      r.report != null && r.revision != null
+        ? `<a href="/report/${enc(String(r.report))}?v=${enc(String(r.revision))}">Report #${esc(r.report)} · v${esc(r.revision)}</a>${r.reviewed ? " · reviewed" : ""}${r.withdrawn ? " · <strong>Withdrawn</strong>" : ""}`
+        : '<span class="muted">—</span>';
+    const catalog =
+      dependencies == null
+        ? '<p class="muted">Unable to load dependencies from crates.io.</p>'
+        : dependencies.length
+          ? `<div class="catalog-columns"><span>Crate</span><span>Reports</span></div>${dependencies.map((d: any) => `<div class="catalog-row"><span><a href="https://crates.io/crates/${enc(d.crate)}" target="_blank" rel="noopener noreferrer"><code>${esc(d.crate)}</code></a> <code>${esc(d.requirement)}</code>${d.kind !== "normal" ? ` · ${esc(d.kind)}` : ""}${d.optional ? " · optional" : ""}${d.target ? ` · <code>${esc(d.target)}</code>` : ""}</span><span class="api-claim-count${d.reports.length ? "" : " muted"}">${d.reports.length ? d.reports.map((r: any) => `${reportLink(r)} <span class="meta">(${esc(r.version)})</span>`).join("<br>") : "—"}</span></div>`).join("")}`
+          : "<p>No direct dependencies.</p>";
+    // Reviews may refer to transitive packages or a verification fork. Keep their
+    // pinned evidence accessible without adding those packages to the direct list.
+    const otherReviews = reviews.filter(
+      (r: any) =>
+        !dependencies?.some((d: any) =>
+          d.reports.some(
+            (p: any) =>
+              p.reviewed && p.report === r.report && p.revision === r.revision,
+          ),
+        ),
+    );
+    return `<section class="report-section report-dependencies"><h2>Dependencies${dependencies == null ? "" : ` (${dependencies.length})`}</h2>${catalog}${otherReviews.length ? `<details class="dependency-reviews"><summary>Other reviewed evidence (${otherReviews.length})</summary><ul>${otherReviews.map((r: any) => `<li><code>${esc(r.crate)} ${esc(r.version)}</code> · ${reportLink(r)}</li>`).join("")}</ul></details>` : ""}</section>`;
   }
   function reportAPIs(c: any) {
     const groups = new Map<string, any[]>();

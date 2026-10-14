@@ -5,6 +5,7 @@ import { renderAPICatalog } from "../web/api-catalog";
 import { renderRecordedRun } from "../web/recorded-run";
 import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
+import { dependencyCatalog } from "./dependencies";
 
 export type SiteFetch = (request: Request) => Promise<Response>;
 const enc = encodeURIComponent;
@@ -403,6 +404,12 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         ),
         reportDiscussion(c.env.DB, item.id, me.user?.id),
       ]);
+      item.direct_dependencies = await dependencyCatalog(
+        c.env,
+        item.crate,
+        item.version,
+        item.dependencies,
+      );
       let content = reportBody(item);
       if (item.run_ids.length) {
         // Parse one potentially large SARIF record at a time to bound Worker memory.
