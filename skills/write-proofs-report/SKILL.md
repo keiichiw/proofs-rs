@@ -5,86 +5,74 @@ description: Write or revise proofs.rs verification reports for Rust crate and A
 
 # Write a proofs.rs report
 
-Write for a developer who wants to use the crate or API and needs to judge its reliability. Assume familiarity with Rust, not with the verifier. Answer: **For my use of this API, what behavior is established, under what conditions, and what remains uncertain?**
+Write for a Rust developer deciding whether to use the crate or API, without assuming verifier knowledge. Answer: **What behavior is established, why is the evidence meaningful, under what conditions, and what remains uncertain?** Use the requested language; default to English for public proofs.rs contributions.
 
-## 1. Establish what the evidence supports
+## 1. Inspect the evidence
 
-Read the supplied source, contracts or harnesses, verification results, and configuration before drafting. Follow evidence links when available. Treat old report prose as claims to check, not as proof. If only summaries are accessible, identify the draft as based on those summaries and list the missing evidence separately. Never imply that you inspected or reran unavailable artifacts.
+Read the source, contracts or harnesses, recorded verification results, and run configuration. Follow relevant evidence links; old report prose and tool READMEs are claims to check. If only summaries are accessible, attribute claims to them and identify material missing evidence separately. Never imply you inspected or reran unavailable artifacts.
 
-Build a small working inventory; do not dump it into the report:
+Keep a working inventory, not a report appendix:
 
-- Exact crate version, source revision, API, and relationship to the published crate. Identify verification-only changes and the evidence connecting changed code to the released implementation. Shared names or version numbers do not establish equivalence.
-- Verified target, features, input domains, preconditions, harness bounds, and relevant dependencies or callbacks. Distinguish arbitrary inputs from a finite set of test cases or a bounded model.
-- Actual behavioral specifications and successful results for that source. Separate body proofs from assumptions, helper contracts, specifications, tests, audits, and archived runs. A specification's existence does not establish that its implementation satisfies it.
-- Assumptions and uncovered behavior that affect the reader's use. An absent assumption list does not mean there are no assumptions. Zero declared dependency reviews does not mean zero dependencies.
+- Exact crate version, source revision, public APIs, target, features, input domains, preconditions, callbacks, dependencies, and harness bounds. Distinguish arbitrary inputs from finite tests or bounded models.
+- Relationship to the crates.io release: executable adaptations, verification-only changes, and evidence connecting the verified implementation to the published one. Matching names and versions do not establish equivalence.
+- Behavioral specifications and successful results supporting each guarantee, including relevant callee bodies and their composition. Proving a caller against helper contracts does not prove the helpers. Distinguish body proofs, trusted contracts, specifications, source review, tests, and archived runs. Associate claims with the right source and run; do not combine differing scopes into a fictitious complete run.
+- Material assumptions and uncovered behavior. An absent assumption list does not establish absence of assumptions; zero dependency reviews does not establish absence of dependencies.
+- Whether the toolchain was patched: check the actual wrapper and configuration, not only the advertised tool version. If patched, follow the active compiler/model patches, overlays, and custom solver drivers to their rationale, diffs, and validation. Distinguish semantic changes, added or strengthened assumptions, proved lemmas, and proof-search changes.
 
-For each proposed guarantee, record its source/contract, supporting result, conditions, and assumptions. Check that evidence covers callees and compositions needed by the claim: proving a caller against helper contracts does not prove the helpers. If old and new runs cover different scopes, attach each claim to the right run and source; do not combine them into a fictitious complete run.
+When evidence is insufficient or contradictory, narrow the claim and state the gap. Do not invent proofs, diagnoses, bugs, or historical reviews. Ask only to resolve material uncertainty; otherwise deliver a qualified draft. Do not rerun expensive proofs merely to write the report.
 
-If evidence is insufficient or contradictory, narrow the claim and identify the gap. Ask only for information needed to resolve a material uncertainty; otherwise produce a clearly qualified draft. Do not invent a proof, diagnosis, or bug to complete a report.
+## 2. Explain the behavior
 
-## 2. Translate guarantees into API behavior
+Lead with what the crate/API does and the useful guarantee. When helpful, orient an unfamiliar user in one or two sentences: inputs, operation, and result. Describe concrete supported behavior, including boundary values and important error cases. Prefer “For every input in [domain], [API] returns [result]” to “exact functional contracts were verified.” Examples illustrate established claims; they are not proof.
 
-Lead with the useful behavior, not the verifier, workflow, difficulty, or number of checks. Use the API's actual semantics:
+Cover distinct useful properties actually established, including panic freedom when supported; do not lose a secondary guarantee while explaining output correctness. Keep the boundaries precise:
 
-- Explain which inputs produce which results, including important error cases, when the contracts establish them.
-- State absence of panics only over the proved input domain and relevant dependencies/callbacks. Distinguish termination, panics, aborts, and allocation failures when material.
-- State memory-safety coverage independently of output correctness. Proving scalar-value or UTF-8 preconditions at one unsafe call does not establish all Rust undefined-behavior obligations.
-- Explain stateful guarantees over repeated calls only when the evidence establishes the invariant and its initialization/preservation. One-step correctness alone may not establish end-to-end output histories.
-- Keep domain distinctions: a hash algorithm's exact output does not establish collision resistance; a parser's state-table conformance does not by itself establish conformance to a format specification.
+- State panic freedom over the proved domain and dependencies/callbacks. Inspect the panic specification or generated obligations when needed; an annotation or successful native no-panic check alone does not establish a formal guarantee. Distinguish termination, panics, aborts, and allocation failures when relevant.
+- Separate output correctness from complete memory safety. Proving bounds, initialization, or UTF-8 preconditions at an unsafe call does not discharge all Rust undefined-behavior obligations.
+- Describe repeated-call guarantees only when initialization and invariant preservation support them.
+- Preserve domain distinctions: exact hash outputs do not establish collision resistance; parser state-table conformance alone does not establish format conformance.
 
-Prefer “For every input in [domain], [API] returns [specified result]” to “exact functional contracts were verified.” Include a short example only when it clarifies a guarantee already supported by evidence; never present the example as proof.
+Translate formulas accurately. Preserve widths, powers, bounds, signedness, and quantifiers when paraphrasing; if plain words would change the meaning, retain a short exact formula.
 
-Do not infer confidence percentages, security ratings, or “safe to adopt” verdicts. Avoid unqualified “safe,” “fully verified,” “cannot crash,” and “production-ready.” Give the reader the evidence needed to make that judgment.
+Do not invent confidence percentages, security ratings, or adoption verdicts. Avoid unqualified “safe,” “fully verified,” “cannot crash,” or “production-ready.”
 
-## 3. Make conditions and remaining uncertainty usable
+## 3. Explain why the qualifications are acceptable
 
-Put a condition that materially changes the opening guarantee next to that guarantee, even if it also belongs in a limitations field. In particular, surface a modified verification fork, important input bounds, or an unchecked callback immediately. State the relationship to the crates.io release explicitly; if equivalence is unestablished, say the result applies to the fork and does not establish the same guarantee for the release.
+Put conditions that change the opening guarantee beside it. Make the verified source and target clear, while reserving concrete details for their primary home below. Do not repeat the same fork/trust warning throughout the report.
 
-For each material assumption, explain **what behavior is assumed and which guarantee depends on it**. A helper name or “physical permissions unproved” is not enough. For example, explain that a raw buffer conversion is assumed to preserve valid access to initialized bytes, so the result is conditional on that conversion and does not establish complete memory safety.
+For material **trusted operations**, explain their mechanism, what the caller proves, what remains assumed, and which guarantee depends on that assumption. Give the concrete source-based argument or other evidence for accepting the boundary when available: relevant layout, bounds, borrowing, value-preservation, or other invariants. A reasoned review can justify narrow trust without being a formal proof. Label your own source reasoning as such; never claim a historical audit occurred without evidence. “Trusted helper” or “permissions unproved” alone does not let the reader assess the boundary.
 
-For each material gap, explain **which user question the evidence leaves unanswered**. Distinguish behavior proved under assumptions, behavior checked only by tests or review, behavior not established, and actual observed failures. Preserve their actual scope.
+For material **crate adaptations**, explain what executable behavior changed, why verification needed the change, and the evidence or reasoning that it preserves the relevant behavior. “Small change,” “safe Rust,” or an unexplained “modified fork” is insufficient. State whether equivalence to the published implementation was formally established; source reasoning is not formal equivalence. A patched verifier alone does not mean the crate source is a modified fork.
 
-Do not describe an unproved property as a known vulnerability, or present a trusted assumption as a discovered defect. Avoid a generic catalogue of hypothetical risks. Include common tool assumptions compactly with a link when needed; foreground unusual local assumptions and limitations relevant to this API. Do not paste unrelated tool caveats into every report.
+Only when the **toolchain is patched**, include a concise reader-facing account of **why the patch was needed, what it changed, and why verification with it supports this report's guarantees**. Link the implementation and validation. Substantiate correspondence to Rust semantics, derivation of helper lemmas from identified assumptions, or unchanged logical statements under trigger edits. Inspect active driver transformations as well as compiler patches. Passing verification or adding no axioms alone does not establish model adequacy. State remaining validation gaps; do not imply unmodified tools reproduce the result. For unpatched tools, leave routine versions, configuration, and generic tool caveats to existing environment/evidence references.
 
-## 4. Write the report
+For remaining gaps, explain which user question is unanswered. Distinguish formal proof under assumptions, tests or source reasoning, unestablished properties, and observed failures. Do not turn an unproved property into a vulnerability or trust into a defect. Include only gaps that affect interpretation; keep resolved development failures and unrelated hypothetical risks in evidence artifacts.
 
-Use the requested language; default to English for public proofs.rs contributions. Aim for a short overview that can be understood without opening an artifact. Add detail only when it changes applicability or the meaning of a guarantee.
+## 4. Compose the report
 
-Use this order, adapting headings and length to the case:
+Aim for a short account understandable without opening artifacts. Give each fact one primary home. Allow concise paragraphs needed to understand the API, source adaptations, trust, and patched tools; do not force them into a fixed word budget. Keep detailed commands, revisions, solver logs, goal counts, phase histories, scratch paths, and proof-development difficulty in evidence/reproduction material.
 
-1. **Summary:** identify the API/version and concrete behavior established, with any qualification essential to understanding it.
-2. **What is established:** a few distinct, user-facing guarantees with relevant domains and concise evidence references. Omit this section if the summary already states everything.
-3. **Applicability and remaining uncertainty:** explain whether this applies to the published crate, relevant configuration, material assumptions, and unanswered questions.
-4. **Evidence:** link to exact source/specifications and recorded results; put detailed reproduction information here or in an attached artifact.
+Use the destination's schema and supported format. For current proofs.rs editorial fields, use plain text and these roles:
 
-Prefer one short paragraph or a few bullets per topic. Give each fact one primary home. Omit empty sections, repeated qualifications, phase histories, intermediate goal counts, solver logs, scratch paths, and descriptions of how hard the proof was. Keep such material in evidence artifacts when useful. Do not hide material limitations in those artifacts.
+- `report.title`: behavior and scope; a straightforward correctness title is appropriate when the body supports it and states qualifications clearly.
+- `report.explanation`: API orientation, concrete guarantees and essential conditions; if tools were patched, their rationale, changes, and evidence-based justification.
+- `report.trusted_assumptions`: material assumed behavior, mechanism, acceptance argument, and consequences.
+- `report.limitations`: source adaptations and their justification, relationship to the release, target restrictions, and unanswered questions.
+- `report.environment`: concise run configuration and reproduction/evidence references, including patch revisions when applicable.
 
-Organize the overview by user-visible behavior, never by fresh versus archived runs, proof phases, or artifact types. Keep those distinctions in evidence references or brief review notes unless they change applicability. Do not narrate your investigation. Describe the concrete behavior established by the evidence; if its specification is unavailable, say which guarantee could not be determined from the supplied material. State evidence provenance once rather than repeatedly saying “the report says.” For a small scope, aim for roughly 150–250 words of reader-facing prose; let necessary conditions determine the final length.
+For a standalone report, use the same order, combining sections when a short scope makes them redundant, and add exact evidence links. If the user supplies a successful report as a reference, retain its useful structure and explanatory depth while checking its claims against the evidence; do not copy outdated facts or unsupported assurances.
 
-Choose a title about the behavior and scope, e.g. “Panic freedom of Parser::advance under a non-panicking receiver,” only if that is what the evidence supports. Avoid titles implying broader coverage than the body.
+Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Do not invent fields, inflate claims, or fabricate SARIF. Current editorial fields do not render Markdown tables, headings, or links. Parse any edited TOML to check syntax. Writing a report alone does not authorize publication, proof/code changes, or rerunning verification; follow the user's actual authorized scope.
 
-When writing existing proofs.rs fields, inspect the current schema/configuration first. Where these fields are supported, use:
-
-- `report.title`: behavior and scope.
-- `report.explanation`: the short user-facing account of guarantees, with essential qualifications inline.
-- `report.trusted_assumptions`: assumed behavior and consequences for the stated guarantees.
-- `report.limitations`: applicability restrictions and important unanswered user questions.
-- `report.environment`: concise verification configuration and reproducibility details, not the conclusion.
-
-Explain the actual supported guarantee in prose; do not inflate claims to match a desired narrative. Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Never invent fields or fabricate SARIF results. Use the destination's supported text format: current proofs.rs editorial fields display plain text, so do not rely on rendered Markdown tables, headings, or links there.
-
-Produce a draft or requested file edits. Publishing, rerunning verification, changing proof code, or editing contracts requires authorization beyond merely writing a report. Do not rerun expensive proofs just to restate existing results. When emitting TOML, preserve unrelated fields and parse the result to validate syntax.
-
-## 5. Review from the user's side
+## 5. Review as a crate user
 
 Before delivering, check:
 
-- Can a crate user state the concrete guarantee after the opening paragraph?
-- Can they tell whether their release, target, features, and input/callback behavior are covered?
-- Is every positive guarantee supported by an inspected artifact, or explicitly attributed to an unverified source summary?
-- Are important assumptions next to the guarantees they qualify, with their consequences explained?
-- Are output correctness, panic behavior, memory safety, and security properties kept distinct where relevant?
-- Does the draft distinguish “not established” from “unsafe,” and bounded checks from broader proofs?
+- Is the API and concrete guarantee clear, including useful secondary properties?
+- Can the reader tell whether their release, target, features, inputs, and callbacks are covered?
+- Does each guarantee match inspected source/specifications and results, or explicitly attributed summaries, with precise mathematical meaning?
+- Can they assess why source adaptations, trusted boundaries, and any tool patches are acceptable, while distinguishing reasoning from formal proof and seeing remaining gaps?
+- Are material conditions visible, facts stated once, and routine tool details omitted from prose when unpatched?
 - Can they find evidence without reading a proof-development history?
 
-Remove any sentence that neither helps interpret a guarantee nor helps locate its evidence. Deliver the report plus only material evidence gaps or review notes; do not append the working inventory or this checklist.
+Deliver the report and only material evidence gaps or review notes. Do not append the working inventory or checklist.
