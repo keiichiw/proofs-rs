@@ -58,6 +58,13 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --manifest-path cli/Cargo.toml --check
       - run: cargo test --manifest-path cli/Cargo.toml --locked
+      - name: Install pinned Lean for theorem audit checks
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.35.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Check generated audit with real Lean
+        run: cargo test --manifest-path cli/Cargo.toml --locked aeneas::tests::real_lean_checks_theorems_and_transitive_axioms -- --ignored
       - run: cargo clippy --manifest-path cli/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo build --manifest-path cli/Cargo.toml --locked
       - run: python3 cli/tests/e2e.py cli/target/debug/cargo-proofs

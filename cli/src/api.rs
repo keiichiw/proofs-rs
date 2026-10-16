@@ -172,7 +172,7 @@ impl Api {
                 v["tool_id"] == tool["id"] && v["version"] == version && enabled(&v["selectable"])
             })
             .collect();
-        ensure!(matches.len() == 1, "Kani version {version} is not registered/selectable on this server; request it before publishing");
+        ensure!(matches.len() == 1, "{name} version {version} is not registered/selectable on this server; request it before publishing");
         Ok(matches[0]["id"]
             .as_str()
             .context("Invalid tool version ID")?
