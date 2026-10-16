@@ -4,6 +4,9 @@ if (!origin?.startsWith("https://")) throw Error("Expected HTTPS URL");
 for (const path of [
   "/",
   "/api/docs",
+  "/tools",
+  "/tool/aeneas",
+  "/book/aeneas.html",
   "/book/review-a-dependency.html",
   "/openapi.json",
   "/api/v1/health",
@@ -26,6 +29,32 @@ for (const path of [
     !r.headers.get("x-robots-tag")?.includes("noindex")
   )
     throw Error("Missing staging noindex header");
+  if (path === "/api/v1/tools") {
+    const catalogue = await r.json();
+    if (
+      !catalogue.items.some((t) => t.id === "aeneas") ||
+      !catalogue.versions.some(
+        (v) =>
+          v.tool_id === "aeneas" &&
+          /^[a-f0-9]{40}$/.test(v.version) &&
+          v.limitations,
+      )
+    )
+      throw Error("Aeneas tool or registered pinned revision missing");
+  }
+  if (path === "/tool/aeneas") {
+    const html = await r.text();
+    if (!html.includes('href="/book/aeneas.html"'))
+      throw Error("Aeneas tool setup guide link missing");
+  }
+  if (path === "/book/aeneas.html") {
+    const html = await r.text();
+    if (
+      !html.includes("Publish Aeneas Lean proofs") ||
+      !html.includes("tool.proofs")
+    )
+      throw Error("Aeneas tutorial heading or proof configuration missing");
+  }
   if (path === "/book/review-a-dependency.html") {
     const html = await r.text();
     if (

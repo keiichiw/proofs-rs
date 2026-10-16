@@ -889,11 +889,81 @@ test("catalog uses public trait and type aliases without exposing private paths"
   );
 });
 
-test("empty catalogue can be managed through the authenticated admin API", async () => {
+test("Aeneas registration is usable through API and HTML, with a matching Book guide", async () => {
+  const { env, request } = await fixture(false);
+  const catalogue = await request("/tools");
+  const tool = catalogue.body.items.find((t: any) => t.id === "aeneas");
+  assert.equal(tool.active, 1);
+  const version = catalogue.body.versions.find(
+    (v: any) => v.tool_id === "aeneas",
+  );
+  assert.match(version.version, /^[a-f0-9]{40}$/);
+  assert.equal(version.selectable, 1);
+  assert.match(version.limitations, /extraction is not rerun/);
+  const detail = await request("/tools/aeneas");
+  assert.equal(detail.body.versions[0].id, version.id);
+  assert.equal((await request(`/tool-versions/${version.id}`)).status, 200);
+  for (const path of [
+    "/tools",
+    "/tool/aeneas",
+    `/tool-version/${version.id}`,
+  ]) {
+    const response = await app.request("https://example.test" + path, {}, env);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Aeneas/);
+    if (path === "/tool/aeneas")
+      assert.match(html, /href="\/book\/aeneas.html"/);
+  }
+  const guide = readFileSync(
+    new URL("../book/src/aeneas.md", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    guide.includes(version.version),
+    "Book must use a registered revision",
+  );
+  assert.ok(
+    readFileSync(
+      new URL("../book/src/SUMMARY.md", import.meta.url),
+      "utf8",
+    ).includes("(aeneas.md)"),
+  );
+});
+
+test("Aeneas migration is additive and preserves curated metadata and retirement", () => {
+  const { db } = database();
+  db.exec(
+    "UPDATE tools SET description='Curated description',active=0 WHERE id='aeneas'",
+  );
+  db.exec(
+    "UPDATE tool_versions SET limitations='Curated limitations',selectable=0 WHERE tool_id='aeneas'",
+  );
+  db.exec(
+    readFileSync(
+      new URL("../migrations/0009_aeneas_catalog.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  const tool = db.prepare("SELECT * FROM tools WHERE id='aeneas'").get()!;
+  assert.equal(tool.description, "Curated description");
+  assert.equal(tool.active, 0);
+  const versions = db
+    .prepare("SELECT * FROM tool_versions WHERE tool_id='aeneas'")
+    .all();
+  assert.equal(versions.length, 1);
+  assert.equal(versions[0].limitations, "Curated limitations");
+  assert.equal(versions[0].selectable, 0);
+});
+
+test("catalogue with registered Aeneas can be managed through the authenticated admin API", async () => {
   const { request } = await fixture(false);
-  const empty = await request("/tools");
-  assert.deepEqual(empty.body.items, []);
-  assert.deepEqual(empty.body.versions, []);
+  const baseline = await request("/tools");
+  assert.deepEqual(
+    baseline.body.items.map((t: any) => t.id),
+    ["aeneas"],
+  );
+  assert.equal(baseline.body.versions.length, 1);
   const tool = {
     action: "tool",
     target: "test-verifier",
@@ -936,9 +1006,15 @@ test("empty catalogue can be managed through the authenticated admin API", async
     200,
   );
   const catalogue = await request("/tools");
-  assert.equal(catalogue.body.items.length, 1);
-  assert.equal(catalogue.body.items[0].name, "Updated verifier");
-  assert.equal(catalogue.body.versions[0].version, "1.0");
+  assert.equal(catalogue.body.items.length, 2);
+  assert.equal(
+    catalogue.body.items.find((t: any) => t.id === tool.target).name,
+    "Updated verifier",
+  );
+  assert.equal(
+    catalogue.body.versions.find((v: any) => v.tool_id === tool.target).version,
+    "1.0",
+  );
 });
 
 test("device expiry, token expiry, suspension, quotas, and user erasure", async () => {
@@ -1787,7 +1863,9 @@ test("existing bearer tokens use current admin IDs with audit and authentication
     200,
   );
   assert.equal(
-    db.prepare("SELECT limitations FROM tool_versions").get()!.limitations,
+    db
+      .prepare("SELECT limitations FROM tool_versions WHERE id='kani-0.68.0'")
+      .get()!.limitations,
     "Test limitations",
   );
   const audit = await call("/admin/audit");
@@ -2396,11 +2474,15 @@ test("catalogue, crate and comment reads batch database round trips without chan
     const tools = await read("/tools", user);
     assert.deepEqual(
       tools.body.items.map((x: any) => x.id),
-      ["empty", "kani"],
+      ["aeneas", "empty", "kani"],
     );
     assert.deepEqual(
       tools.body.versions.map((x: any) => x.id),
-      ["kani-retired", "kani-0.68.0"],
+      [
+        "aeneas-be86ab0f1989d04944292b345b24c435be3ad10a",
+        "kani-retired",
+        "kani-0.68.0",
+      ],
     );
     const detail = await read("/tools/kani", user);
     assert.equal(detail.body.id, "kani");

@@ -73,8 +73,7 @@ migration set to a pre-report database or restore an old claim-schema backup int
 The account has been upgraded to Workers Paid. Email remains explicitly disabled
 in both committed configurations (`EMAIL_DISABLED=true`), with no sending binding
 or event consumer. Existing OAuth secrets are reused. A new database requires
-users to sign in again and reauthorize CLIs. Production gets an empty tool catalogue;
-staging alone gets fixture tools. Live import/email tests remain excluded.
+users to sign in again and reauthorize CLIs. The original reset started production with an empty tool catalogue; staging alone gets fixture tools. Migration 0009 now registers Aeneas and its initial pinned Lean revision in both environments, preserving existing operator edits and retirement settings. Live import/email tests remain excluded.
 
 ## Production deployment and proofs.rs
 
@@ -257,3 +256,21 @@ catalogue through `POST /api/v1/admin/catalogs/:id/refresh`. Refresh fills displ
 metadata without changing existing API IDs or report references. Before refresh,
 the UI retains legacy paths and basic grouping; full external paths and blanket
 classification require the archived rustdoc metadata.
+
+## Tool catalogue changes
+
+CLI adapter releases and the service tool catalogue are separate. A new adapter
+must have a tool row and at least one selectable version before reports can be
+published. Include reviewed, additive catalogue migrations when shipping a new
+adapter; production applies migrations before deploying the Worker. Continue to
+use the audited admin API for routine additions, limitations updates, and
+retirement. Do not overwrite curated metadata or re-enable retired versions in
+subsequent migrations. A new tool should have a Book setup guide linked from its
+tool page and the publishing chapter.
+
+Migration 0009 registers Aeneas Lean revision
+`be86ab0f1989d04944292b345b24c435be3ad10a` (Lean 4.35.0), for cargo-proofs
+0.4.0 or later. After deployment, check `/api/v1/tools`, `/tool/aeneas`,
+`/tool-version/aeneas-be86ab0f1989d04944292b345b24c435be3ad10a`, and
+`/book/aeneas.html`. Further upstream revisions require explicit catalogue
+registration; following an upstream branch does not register new versions.
