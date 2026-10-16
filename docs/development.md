@@ -9,7 +9,7 @@ See [backend design](backend-design.md) for the data model and
 
 Requires Node 24 and mdBook 0.4.45 (`cargo install mdbook --version 0.4.45 --locked`). `npm ci`, `npm run build`, `npm run db:local`, then `npm run dev`. Copy `.dev.vars.example` to `.dev.vars` and configure a development GitHub OAuth app to enable sign-in. Callback: `http://localhost:8787/auth/github/callback`. No local auth bypass is exposed by the Worker. `npm test` uses an in-memory SQLite adapter and fixture rustdoc JSON, never a live docs.rs request or email send.
 
-`npm run typecheck`, `npm test`, and `npm run build` are required checks. The first migration creates immutable revisions, transaction guards, comment history, independent report/claim stars, comment votes, outbox events and delivery states. A keyset cursor is used for lists. The tool catalogue starts empty. Tools and versions are stored in D1 and can be added or updated through the audited admin API without a deployment.
+`npm run typecheck`, `npm test`, and `npm run build` are required checks. The first migration creates immutable revisions, transaction guards, comment history, independent report/claim stars, comment votes, outbox events and delivery states. A keyset cursor is used for lists. Migration 0009 registers Aeneas and an initial pinned Lean revision; other catalogue entries remain operator-managed. Tools and versions are stored in D1 and can be added or updated through the audited admin API without a deployment.
 
 ## HTML pages
 
