@@ -76,6 +76,10 @@ fn external_trait_paths(path: &str) -> Vec<String> {
             | "std::clone::Clone"
             | "core::hash::Hasher"
             | "std::hash::Hasher"
+            | "core::fmt::Display"
+            | "std::fmt::Display"
+            | "core::str::FromStr"
+            | "std::str::FromStr"
     ) {
         paths.push(path.rsplit("::").next().unwrap().to_owned());
     }
@@ -668,7 +672,9 @@ impl Scanner<'_> {
                 let traits = if local_trait {
                     self.creusot_public_paths(&tr)?
                 } else {
-                    external_trait_paths(&tr)
+                    // Use the same resolved external path as the harness. resolve()
+                    // can retain a private module prefix for imported extern paths.
+                    external_trait_paths(&self.render_path(&bare_trait, module, generics)?)
                 };
                 Ok(types
                     .iter()
@@ -1480,6 +1486,94 @@ pub fn cfg(x: u32) {}
     fn creusot_trait_impl_method() {
         let c = creusot_contracts("pub struct S; pub trait T { fn m(&self); } impl T for S { #[requires(true)] fn m(&self) {} }", CreusotTarget::Annotated);
         assert_eq!(c[0].api_paths, ["<demo::S as demo::T>::m"]);
+    }
+
+    #[test]
+    fn nested_external_trait_paths_do_not_include_private_module() {
+        let c = creusot_contracts(
+            r#"
+mod date {
+    use std::fmt::Display;
+    use std::str::FromStr;
+    pub struct HttpDate;
+    impl Display for HttpDate { #[ensures(true)] fn fmt(&self) {} }
+    impl FromStr for HttpDate { #[ensures(true)] fn from_str() {} }
+}
+pub use date::HttpDate;
+"#,
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            c[0].api_paths,
+            [
+                "<demo::HttpDate as Display>::fmt",
+                "<demo::HttpDate as std::fmt::Display>::fmt"
+            ]
+        );
+        assert_eq!(
+            c[1].api_paths,
+            [
+                "<demo::HttpDate as FromStr>::from_str",
+                "<demo::HttpDate as std::str::FromStr>::from_str"
+            ]
+        );
+        assert_eq!(
+            c[0].harness,
+            "<demo::date::HttpDate as std::fmt::Display>::fmt"
+        );
+    }
+
+    #[test]
+    fn nested_external_traits_keep_qualification_and_local_trait_identity() {
+        let c = creusot_contracts(
+            "mod hidden { use custom::Default; pub struct S; pub trait T {} impl Default for S { #[ensures(true)] fn default() {} } impl T for S { #[ensures(true)] fn m() {} } } pub use hidden::{S, T};",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as custom::Default>::default"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as demo::T>::m"]);
+    }
+
+    #[test]
+    fn core_parser_formatter_traits_have_catalog_aliases() {
+        let c = creusot_contracts(
+            "use core::fmt::Display; use core::str::FromStr; pub struct S; impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} }",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            c[0].api_paths,
+            [
+                "<demo::S as Display>::fmt",
+                "<demo::S as core::fmt::Display>::fmt"
+            ]
+        );
+        assert_eq!(
+            c[1].api_paths,
+            [
+                "<demo::S as FromStr>::from_str",
+                "<demo::S as core::str::FromStr>::from_str"
+            ]
+        );
+    }
+
+    #[test]
+    fn custom_and_local_parser_formatter_traits_have_no_standard_aliases() {
+        let c = creusot_contracts(
+            "mod hidden { use custom::Display; use custom::FromStr; pub struct S; impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} } } pub use hidden::S;",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as custom::Display>::fmt"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as custom::FromStr>::from_str"]);
+        let c = creusot_contracts(
+            "pub struct S; pub trait Display {} pub trait FromStr {} impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} }",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as demo::Display>::fmt"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as demo::FromStr>::from_str"]);
     }
 
     #[test]
