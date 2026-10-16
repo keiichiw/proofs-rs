@@ -50,12 +50,21 @@ export function renderRecordedRun(
   const command = (environment.length ? ["env", ...environment] : [])
     .concat(run.command.map(quote))
     .join(" ");
+  const audit =
+    proofs.aeneas?.backend === "lean" &&
+    typeof proofs.aeneas.audit_source === "string"
+      ? [
+          "",
+          `printf '%s' ${quote(proofs.aeneas.audit_source)} | lake env lean --stdin`,
+        ]
+      : [];
   const script = [
     `git clone -- ${quote(run.source.repository)} ${quote(dir)}`,
     `git -C ${quote(dir)} checkout --detach ${quote(run.source.commit)}`,
     `cd ${quote(cwd)}`,
     "",
     command,
+    ...audit,
   ].join("\n");
   const logs = includeLogs
     ? sarif.runs

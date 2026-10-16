@@ -66,6 +66,12 @@ pub fn load(project: &Project, selected: Option<&str>) -> Result<(PathBuf, Recor
         proof["crate"] == project.name && proof["version"] == project.version,
         "Recorded run targets a different crate/version"
     );
+    if tool.is_aeneas() {
+        ensure!(
+            proof["aeneas"] == crate::aeneas::configuration(&tool)?,
+            "Aeneas proof mappings changed; run verification again"
+        );
+    }
     let record = Record { sarif, contracts };
     Ok((dir, record))
 }
@@ -91,7 +97,7 @@ fn metadata(manifest: &Path) -> Result<Value> {
             .arg(manifest),
     )?)?)
 }
-pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
+pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     ensure!(
         args.features.is_empty()
             && !args.all_features
@@ -101,14 +107,26 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
     );
     let project = Project::load(args)?;
     let config = project.config()?;
-    ensure!(
-        command.len() >= 2
-            && command[0] == "cargo"
-            && command[1].eq_ignore_ascii_case(&config.tool.name),
-        "Use cargo proofs run -- cargo {} ...",
-        config.tool.name
-    );
-    validate_command(&command, config.tool.is_creusot())?;
+    if config.tool.is_aeneas() {
+        crate::aeneas::validate_command(&command)?;
+        ensure!(
+            crate::config::same_path(
+                &std::env::current_dir()?,
+                &crate::aeneas::directory(&project, &config.tool)?
+            ),
+            "Run lake build from [tool].lean_dir"
+        );
+        command = crate::aeneas::build_command(&config.tool);
+    } else {
+        ensure!(
+            command.len() >= 2
+                && command[0] == "cargo"
+                && command[1].eq_ignore_ascii_case(&config.tool.name),
+            "Use cargo proofs run -- cargo {} ...",
+            config.tool.name
+        );
+        validate_command(&command, config.tool.is_creusot())?;
+    }
     let m = metadata(&project.manifest)?;
     let workspace = PathBuf::from(
         m["workspace_root"]
@@ -127,18 +145,25 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
         .strip_prefix(&root)
         .context("Run from within the source root")?;
     let relative_manifest = project.manifest.strip_prefix(&root)?.to_owned();
-    let version = output(Command::new("cargo").args([
-        config.tool.name.as_str(),
-        if config.tool.is_creusot() {
-            "version"
-        } else {
-            "--version"
-        },
-    ]))?;
-    ensure!(
-        version.split_whitespace().any(|s| s == config.tool.version),
-        "Installed tool differs from proofs.toml: {version}"
-    );
+    if config.tool.is_aeneas() {
+        crate::aeneas::pinned_version(
+            &crate::aeneas::directory(&project, &config.tool)?,
+            &config.tool.version,
+        )?;
+    } else {
+        let version = output(Command::new("cargo").args([
+            config.tool.name.as_str(),
+            if config.tool.is_creusot() {
+                "version"
+            } else {
+                "--version"
+            },
+        ]))?;
+        ensure!(
+            version.split_whitespace().any(|s| s == config.tool.version),
+            "Installed tool differs from proofs.toml: {version}"
+        );
+    }
     let source_ref = crate::git::published_source(
         &root,
         config
@@ -167,7 +192,9 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
     );
     let mut selected = args.clone();
     selected.manifest_path = Some(source.join(&relative_manifest));
-    apply_cargo_flags(&mut selected, &command)?;
+    if !config.tool.is_aeneas() {
+        apply_cargo_flags(&mut selected, &command)?;
+    }
     let prefix = format!("{}/", project.name);
     for feature in &mut selected.features {
         if let Some(local) = feature.strip_prefix(&prefix) {
@@ -276,12 +303,17 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
         &source,
     )?;
     let mut captured = Project::load(&selected)?;
-    captured.cfg.insert(config.tool.name.clone());
+    if !config.tool.is_aeneas() {
+        captured.cfg.insert(config.tool.name.clone());
+    }
     ensure!(
         captured.name == project.name,
         "Command selects a different package"
     );
     let discovered = scan::discover_for_tool(&captured, &config.tool)?;
+    if config.tool.is_aeneas() {
+        crate::aeneas::require_clean_build(&source.join(relative_cwd))?;
+    }
     ensure!(!discovered.is_empty(), "No publishable contracts found");
     let contracts: Vec<Contract> = discovered
         .iter()
@@ -300,7 +332,11 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
                     .replace('\\', "/"),
                 first_line: c.first_line,
                 last_line: c.last_line,
-                harness: format!("{}::{}", captured.lib_name, c.harness),
+                harness: if config.tool.is_aeneas() {
+                    c.harness.clone()
+                } else {
+                    format!("{}::{}", captured.lib_name, c.harness)
+                },
             })
         })
         .collect::<Result<_>>()?;
@@ -333,12 +369,24 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
     let stderr = err
         .join()
         .map_err(|_| anyhow::anyhow!("stderr capture failed"))??;
-    let finished = chrono::Utc::now();
-    let stdout =
+    let mut stdout =
         String::from_utf8_lossy(&stdout).replace(&source.to_string_lossy().to_string(), ".");
-    let stderr =
+    let mut stderr =
         String::from_utf8_lossy(&stderr).replace(&source.to_string_lossy().to_string(), ".");
-    let parsed = if config.tool.is_creusot() {
+    let parsed = if config.tool.is_aeneas() {
+        if status.success() {
+            crate::aeneas::audit(&source.join(relative_cwd), &config.tool).map(|(out, err)| {
+                stdout.push_str("\n$ lake env lean --stdin (proofs.rs theorem/axiom audit)\n");
+                stdout.push_str(&out);
+                stderr.push_str(&err);
+                (contracts.iter().map(|c| json!({"ruleId":"aeneas.lean.theorem","kind":"pass","level":"none","message":{"text":format!("Lean checked theorem {}; axioms limited to propext, Classical.choice, Quot.sound",c.harness)},"properties":{"harness":c.harness}})).collect(), contracts.clone())
+            })
+        } else {
+            Err(anyhow::anyhow!(
+                "Lake build failed; no Aeneas theorem was certified"
+            ))
+        }
+    } else if config.tool.is_creusot() {
         creusot_results(&source, &before, &contracts)
     } else {
         kani_results(&stdout, &contracts)
@@ -347,6 +395,7 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
         Ok((r, c)) => (r, c, None),
         Err(e) => (vec![], vec![], Some(format!("{e:#}"))),
     };
+    let finished = chrono::Utc::now();
     let unchanged = checkout.unchanged();
     let successful =
         status.success() && diagnostic.is_none() && unchanged.is_ok() && !verified.is_empty();
@@ -362,7 +411,11 @@ pub fn run(args: &ProjectArgs, command: Vec<String>) -> Result<()> {
     artifacts.push(json!({"contents":{"text":stdout}}));
     invocation["stderr"] = json!({"index":artifacts.len()});
     artifacts.push(json!({"contents":{"text":stderr}}));
-    let sarif = json!({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":config.tool.name,"version":config.tool.version}},"invocations":[invocation],"results":results,"artifacts":artifacts,"versionControlProvenance":[{"repositoryUri":source_ref["repository"],"revisionId":source_ref["commit"]}],"automationDetails":{"guid":rid},"properties":{"proofs":{"schemaVersion":2,"dependencies":dependencies,"crate":project.name,"version":project.version,"contracts":verified,"target":config.tool.target,"platform":format!("{} {}",std::env::consts::OS,std::env::consts::ARCH),"rustc":output(Command::new("rustc").arg("-vV").current_dir(source.join(relative_cwd))).unwrap_or_default(),"recorderVersion":env!("CARGO_PKG_VERSION")}}}]});
+    let mut sarif = json!({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":config.tool.name,"version":config.tool.version}},"invocations":[invocation],"results":results,"artifacts":artifacts,"versionControlProvenance":[{"repositoryUri":source_ref["repository"],"revisionId":source_ref["commit"]}],"automationDetails":{"guid":rid},"properties":{"proofs":{"schemaVersion":2,"dependencies":dependencies,"crate":project.name,"version":project.version,"contracts":verified,"target":config.tool.target,"platform":format!("{} {}",std::env::consts::OS,std::env::consts::ARCH),"rustc":output(Command::new("rustc").arg("-vV").current_dir(source.join(relative_cwd))).unwrap_or_default(),"recorderVersion":env!("CARGO_PKG_VERSION")}}}]});
+    if config.tool.is_aeneas() {
+        sarif["runs"][0]["properties"]["proofs"]["aeneas"] =
+            crate::aeneas::configuration(&config.tool)?;
+    }
     let bytes = serde_json::to_vec_pretty(&sarif)?;
     fs::write(dir.join("run.sarif.json"), &bytes)?;
     ensure!(

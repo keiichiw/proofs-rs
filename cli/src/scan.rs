@@ -152,6 +152,7 @@ fn predicate(meta: &Meta, p: &Project) -> Result<bool> {
                     name.as_str(),
                     "kani"
                         | "creusot"
+                        | "aeneas"
                         | "test"
                         | "unix"
                         | "windows"
@@ -317,11 +318,25 @@ fn declarations(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
 }
 
 pub fn discover_for_tool(project: &Project, tool: &Tool) -> Result<Vec<Contract>> {
+    if tool.is_aeneas() {
+        return crate::aeneas::discover(project, tool);
+    }
     if !tool.is_creusot() {
         return discover(project);
     }
-    let target = tool.target.context("Creusot requires [tool].target")?;
-    let mut s = scanner(project, true);
+    public_contracts(
+        project,
+        true,
+        tool.target.context("Creusot requires [tool].target")?,
+    )
+}
+
+pub(crate) fn public_contracts(
+    project: &Project,
+    creusot: bool,
+    target: CreusotTarget,
+) -> Result<Vec<Contract>> {
+    let mut s = scanner(project, creusot);
     s.file(&project.root_source, &[], true)?;
     let mut result = vec![];
     let mut seen = BTreeSet::new();
@@ -355,7 +370,10 @@ pub fn discover_for_tool(project: &Project, tool: &Tool) -> Result<Vec<Contract>
             harness: path,
         });
     }
-    ensure!(!result.is_empty(), "No eligible public Creusot APIs found for [tool].target in the selected library/configuration");
+    ensure!(
+        !result.is_empty(),
+        "No eligible public APIs found in the selected library/configuration"
+    );
     result.sort_by(|a, b| a.api_paths.cmp(&b.api_paths));
     Ok(result)
 }
@@ -1297,7 +1315,8 @@ mod tests {
             &Tool {
                 name: "creusot".into(),
                 version: "test".into(),
-                target: Some(CreusotTarget::Annotated)
+                target: Some(CreusotTarget::Annotated),
+                ..Tool::default()
             }
         )
         .unwrap_err()
@@ -1399,6 +1418,7 @@ mod tests {
                 name: "creusot".into(),
                 version: "test".into(),
                 target: Some(target),
+                ..Tool::default()
             },
         )
         .unwrap()
@@ -1589,6 +1609,7 @@ use creusot_std::{requires as pre, trusted as trust};
             name: "creusot".into(),
             version: "test".into(),
             target: Some(CreusotTarget::All),
+            ..Tool::default()
         };
         let c = discover_for_tool(&p, &tool).unwrap();
         assert_eq!(c.len(), 1);

@@ -1,3 +1,4 @@
+mod aeneas;
 mod api;
 mod config;
 mod git;
@@ -55,7 +56,7 @@ enum Commands {
         #[arg(long)]
         title: Option<String>,
         /// Verification tool used for the existing verification.
-        #[arg(long, default_value = "kani", value_parser = ["kani", "creusot"])]
+        #[arg(long, default_value = "kani", value_parser = ["kani", "creusot", "aeneas"])]
         tool: String,
         /// Creusot API selection (required for Creusot). Not the compilation --target.
         #[arg(long, value_enum, required_if_eq("tool", "creusot"))]
