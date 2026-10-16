@@ -81,3 +81,19 @@ crash leftovers. Valid registered runs are preserved even before report publicat
 Historical schema-v1 objects must be migrated once to schema v2 with empty
 snapshots and new hash/size indexes before deployment. New v1 uploads are rejected.
 See [the migration procedure](dependency-migration.md).
+
+## Aeneas Lean records
+
+Aeneas uses the same schema-v2 profile with driver name `aeneas` and the full
+pinned Aeneas Git revision as its version. `proofs.aeneas` records `backend: "lean"`,
+`lean_dir`, the explicit API/module/theorem/precondition mappings, `audit_command`,
+and generated `audit_source`. The invocation is the module build; its embedded
+logs also include the subsequent Lean theorem/axiom audit. The recorded finish
+time includes both steps. Reproduction runs the invocation and supplies
+`audit_source` to `lake env lean --stdin`.
+
+Each contract's harness is the Lean theorem name and its evidence file is the
+committed Lean module. A pass means Lean accepted that theorem with only
+`propext`, `Classical.choice`, and `Quot.sound` as transitive axioms. The author
+supplies API correspondence and input assumptions; the recorder does not rerun
+Charon/Aeneas extraction or establish correspondence with the Rust source.

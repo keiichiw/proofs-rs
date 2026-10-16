@@ -117,6 +117,77 @@ target = "annotated" # required: "annotated" or "all"
 
 `[tool].target` selects APIs; CLI `--target` selects the Rust compilation target. They are separate settings. Kani does not accept `[tool].target`: its targets remain explicit `proof_for_contract` harnesses.
 
+## Aeneas (Lean)
+
+Requires cargo-proofs 0.4.0 or later.
+
+Aeneas translates Rust through Charon into a functional model. This adapter checks
+**committed Lean proofs of that model**. It does not run Charon/Aeneas extraction
+or infer that a theorem describes a Rust API. The author must review and declare
+the API/theorem correspondence, input assumptions, and the generated model's
+relationship to the recorded Rust commit. Explain those links in the report.
+A successful translation or `lake build` alone does not produce claims.
+
+1. Generate the model using [Aeneas and Charon](https://github.com/AeneasVerif/aeneas#usage),
+   write the Lean proofs, and use a Lake project with ordinary module paths
+   (`Proofs/F.lean` for module `Proofs.F`). Custom Lake source directories are
+   currently unsupported.
+2. Pin the official Aeneas Git dependency with `subDir = "backends/lean"` in your
+   Lake project. Commit `lakefile.toml` or `lakefile.lean`, `lake-manifest.json`,
+   `lean-toolchain`, generated model sources, proof sources, Rust source,
+   `Cargo.lock`, and `proofs.toml` together. Do not commit `.lake/`, `.olean`, or
+   `.ilean` files. Local path Aeneas dependencies are unsupported.
+3. Initialize with the full Aeneas Git commit in the Lake lock file:
+   `cargo proofs init --tool aeneas --tool-version <40-character-revision>`.
+   This revision must also be registered/selectable in the service's tool catalogue.
+4. Add explicit mappings to `proofs.toml`:
+
+```toml
+[tool]
+name = "aeneas"
+version = "0123456789abcdef0123456789abcdef01234567" # replace with the real revision
+lean_dir = "proofs" # relative to Cargo.toml; defaults to "."
+
+[[tool.proofs]]
+api = "increment" # public Rust path relative to the library
+module = "Proofs.Increment"
+theorem = "demo.increment_spec"
+precondition = "x < u32::MAX" # match the actual theorem's assumptions
+```
+
+One theorem maps to one API; inherent methods and qualified trait implementation
+paths use the same public API resolution as the other adapters. Private or
+ambiguous APIs, duplicate mappings, and empty preconditions are rejected. Use
+`precondition = "true"` only when the theorem needs no additional input assumptions.
+The module and theorem names currently accept dotted ASCII identifiers.
+
+After committing and pushing, run from the Lean project directory:
+
+```sh
+cd proofs
+cargo proofs run --manifest-path ../Cargo.toml -- lake build
+cargo proofs publish --manifest-path ../Cargo.toml --dry-run
+cargo proofs publish --manifest-path ../Cargo.toml
+```
+
+The recorder builds every mapped module explicitly in a detached checkout, then
+runs `lake env lean --stdin` with a generated audit that requires each mapped
+name to be a theorem. It follows transitive axiom dependencies and accepts only
+`propext`, `Classical.choice`, and `Quot.sound`. Proofs relying on `sorryAx`,
+custom axioms (including axiomatized external models), or native-decision axioms
+are rejected. Compilation errors, missing theorems, and failed audits cannot be
+published. The evidence link points to the committed Lean module; the SARIF
+contains the exact audit, mappings, and build/audit logs. Reproduction includes
+both the module build and the audit. Changing mappings requires another run.
+
+The guarantee is that Lean accepted the named theorem under the allowed axioms.
+Model freshness, extraction correctness, API correspondence, the meaning of the
+stated precondition, and the selected theorem's strength remain review obligations.
+Lean, Lake, the pinned Aeneas library, and their build tools remain trusted inputs.
+The recorder captures the default Cargo configuration for dependency review;
+feature/target-specific extraction is not currently supported by this adapter.
+Coq, F*, and HOL4 are not currently supported.
+
 ## Recording and reproduction
 
 `run` checks the installed tool version against `proofs.toml`. Commit and push the verification inputs, including Cargo.lock, before recording. `[git].remote` selects the remote (default `origin`). A clean working tree and a commit reachable on that remote are required. Source URLs use GitHub and the full commit SHA.
@@ -145,7 +216,7 @@ Publication state is stored in the OS local data directory under `cargo-proofs/`
 - Missing contracts remove claims only after a yes/no prompt. Noninteractive approval requires `--yes`. `--force` does not approve deletions or bypass recorded-run checks. Removed claims retain their history/permanent links on the service. Locally known removed claim IDs are reused if their contracts are later restored; recovering removed IDs on a different machine is not automatic.
 - Before a write, the CLI saves the exact request and idempotency key atomically. If publication is interrupted, `publish --resume` retries that saved request rather than generating another report. It prints the saved payload and uses its original recorded evidence. Definite rejected requests are cleared so they can be corrected; ambiguous/network failures retain the journal.
 
-`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 100 claims (50 Kani APIs or 100 Creusot APIs) and 128 KiB; automatic splitting is deliberately unsupported.
+`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 100 claims (50 Kani APIs or 100 Creusot/Aeneas APIs) and 128 KiB; automatic splitting is deliberately unsupported.
 
 ## Development
 
@@ -158,4 +229,4 @@ cargo build --locked
 python3 tests/e2e.py target/debug/cargo-proofs
 ```
 
-CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot, or push user source repositories.
+CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot/Lean (the separate Lean audit job runs Lean), or push user source repositories.
