@@ -2,6 +2,8 @@
 
 Publish your verification reports with `cargo proofs`.
 
+For Aeneas and Lean, follow [Publish Aeneas Lean proofs](aeneas.md).
+
 ## Getting started with Kani
 
 ### 1. Install
@@ -106,22 +108,7 @@ publication, including with `--force`.
 
 ## Aeneas with Lean
 
-The CLI also supports committed Aeneas Lean proofs. Use
-`cargo proofs init --tool aeneas --tool-version <full-Aeneas-Git-revision>`,
-then declare each public Rust API, Lean module, theorem, and precondition in
-`[[tool.proofs]]`. Pin the official Aeneas Lean dependency in `lake-manifest.json`
-and commit the model/proof sources with the Rust source and lock files.
-
-From the configured `lean_dir`, record with `cargo proofs run -- lake build`
-(and `--manifest-path` when the Rust manifest is in a parent directory), then
-publish normally. The recorder explicitly builds the mapped modules and checks
-that their names are theorems whose transitive axioms are limited to `propext`,
-`Classical.choice`, and `Quot.sound`. `sorry` and custom axioms are rejected.
-The evidence links to the Lean proof module, and reproduction includes the audit.
-
-This checks the named Lean theorem. The author must explain why it corresponds
-to the public Rust API and why the committed functional model matches the Rust
-commit. Extraction is not rerun by the recorder. Describe the theorem's actual
-guarantee and input assumptions; a translation or successful build alone is
-insufficient. See the [CLI's Aeneas instructions](https://github.com/proofs-rs/proofs-rs/tree/main/cli#aeneas-lean)
-for configuration and current limitations.
+Use cargo-proofs 0.4.0 or later to publish committed Aeneas Lean proofs with
+explicit Rust API/theorem mappings. See [Publish Aeneas Lean proofs](aeneas.md)
+for the registered revision, Lake configuration, proof mappings, recording and
+publication commands, and the guarantees and limitations of the adapter.

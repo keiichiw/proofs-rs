@@ -555,7 +555,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const t = await get("/tools/" + enc(id));
       return result(
         t.name,
-        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p><h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
+        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${t.id === "aeneas" ? '<p><a href="/book/aeneas.html">Publish Aeneas Lean proofs — setup and limitations</a></p>' : ""}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
       );
     }
     if (p === "tool-version" && id) {
