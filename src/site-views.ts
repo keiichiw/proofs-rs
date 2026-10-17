@@ -1,3 +1,4 @@
+import { renderMarkdown } from "./markdown";
 import { renderAPICatalog } from "../web/api-catalog";
 
 type Crumb = { label: string; href: string };
@@ -112,14 +113,14 @@ export function createViews(
   }
   function reproduceSection(runIds: string[], environment?: string) {
     return runIds?.length || environment
-      ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body"></div>${environment ? `<details class="report-environment"><summary>Environment</summary><p class="plain-text">${esc(environment)}</p></details>` : ""}</details>`
+      ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body"></div>${environment ? `<details class="report-environment"><summary>Environment</summary><div class="markdown-body">${renderMarkdown(environment, 2)}</div></details>` : ""}</details>`
       : "";
   }
   function reportBody(c: any) {
-    return `${c.explanation ? `<div class="report-explanation plain-text">${esc(c.explanation)}</div>` : ""}
+    return `${c.explanation ? `<div class="report-explanation markdown-body">${renderMarkdown(c.explanation, 1)}</div>` : ""}
     ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment)}</section>` : ""}
-    ${c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2><p class="plain-text">${esc(c.trusted_assumptions)}</p></section>` : ""}
-    ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${c.limitations ? `<p class="plain-text">${esc(c.limitations)}</p>` : ""}${toolLimitations(c)}</section>` : ""}
+    ${c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2><div class="markdown-body">${renderMarkdown(c.trusted_assumptions, 2)}</div></section>` : ""}
+    ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${c.limitations ? `<div class="markdown-body">${renderMarkdown(c.limitations, 2)}</div>` : ""}${toolLimitations(c)}</section>` : ""}
     ${reportDependencies(c)}
     `;
   }
@@ -185,7 +186,7 @@ export function createViews(
     const content = (value: string) =>
       links
         ? `<p><a href="${esc(value)}" target="_blank" rel="noopener noreferrer">${esc(value)}</a></p>`
-        : `<p class="plain-text">${esc(value)}</p>`;
+        : `<div class="markdown-body">${renderMarkdown(value, 2)}</div>`;
     return `${individual ? content(individual) : ""}${shared ? `<details class="claim-report-context"><summary>From the report</summary>${content(shared)}</details>` : ""}`;
   }
   function claimContent(c: any, stars = false) {
@@ -193,7 +194,7 @@ export function createViews(
     <p><a href="/api/${enc(c.api_item_id)}"><code>${esc(c.display_path)}</code></a>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
     <pre class="signature">${esc(c.signature)}</pre><p>Tool: ${toolLink(c)}</p>
     <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || "None stated")}</p></section>
-    ${c.explanation ? `<div class="report-explanation plain-text">${esc(c.explanation)}</div>` : ""}
+    ${c.explanation ? `<div class="report-explanation markdown-body">${renderMarkdown(c.explanation, 1)}</div>` : ""}
     ${c.evidence_url ? `<section class="report-section"><h2>Evidence</h2><p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p></section>` : ""}
     ${c.shared_trusted_assumptions || c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2>${claimScope(c.shared_trusted_assumptions, c.trusted_assumptions)}</section>` : ""}
     ${c.shared_limitations || c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${claimScope(c.shared_limitations, c.limitations)}${toolLimitations(c)}</section>` : ""}`;

@@ -47,6 +47,45 @@ version = "0.66.0" # Version used for verification
 
 </details>
 
+### Markdown in reports
+
+The report fields `explanation`, `trusted_assumptions`, `limitations`, and
+`environment` support Markdown. Claim explanations, trusted assumptions, and
+limitations support the same formatting, including inherited report context.
+Titles, preconditions, tool limitations, and comments remain plain text.
+
+Use headings, emphasis, lists, links, blockquotes, inline or fenced code, tables,
+and strikethrough. Single line breaks are preserved. Raw HTML is displayed as
+text, images are disabled, and unsafe link schemes are rejected. Code blocks
+have no syntax highlighting.
+
+Headings are relative to their container: `#` becomes a subsection (`h3`) within
+preset sections such as **What is trusted** and **Technical limitations**.
+In the introductory explanation it becomes `h2`, below the page title.
+Deeper headings stop at `h6`. This formatting also applies to existing revisions.
+
+Use TOML multiline literal strings to preserve Markdown and backslashes:
+
+````toml
+[report]
+title = "Contract verification of my crate"
+explanation = '''
+# Verified behavior
+
+The implementation preserves **ordering**.
+
+```rust
+assert!(result.is_sorted());
+```
+'''
+trusted_assumptions = '''
+# Allocator
+
+- Allocation succeeds.
+- Inputs satisfy the documented contract.
+'''
+````
+
 ### 3. Sign in
 
 ```sh
