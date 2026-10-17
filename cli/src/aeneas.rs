@@ -213,11 +213,11 @@ pub fn audit_source(tool: &Tool) -> String {
         source.push_str(&format!(
             r#"
 run_cmd do
-  let name := `{theorem}
-  match (← getEnv).find? name with
+  let theorem_name := `{theorem}
+  match (← getEnv).find? theorem_name with
   | some (.thmInfo _) => pure ()
   | _ => throwError "Expected a theorem: {theorem}"
-  let axioms ← Lean.collectAxioms name
+  let axioms ← Lean.collectAxioms theorem_name
   for ax in axioms do
     unless [``propext, ``Classical.choice, ``Quot.sound].contains ax do
       throwError "Unapproved axiom in {theorem}: {{ax}}"
@@ -389,6 +389,72 @@ mod tests {
             if success {
                 assert!(String::from_utf8_lossy(&result.stdout).lines().any(|line| line == "proofs.rs:checked:demo.f_spec"));
             }
+        }
+    }
+    #[test]
+    #[ignore = "requires pinned Lean, Lake and network; exercised by Lean audit CI"]
+    fn real_aeneas_checks_theorems_and_transitive_axioms() {
+        let d = tempfile::tempdir().unwrap();
+        let mut t = tool();
+        t.version = "be86ab0f1989d04944292b345b24c435be3ad10a".into();
+        t.proofs[0].module = "Proofs".into();
+        fs::write(
+            d.path().join("lean-toolchain"),
+            "leanprover/lean4:v4.35.0\n",
+        )
+        .unwrap();
+        fs::write(d.path().join("lakefile.toml"), format!(
+            "name = \"audit-fixture\"\n[[lean_lib]]\nname = \"Proofs\"\n[[require]]\nname = \"aeneas\"\ngit = {{ url = \"https://github.com/AeneasVerif/aeneas\", subDir = \"backends/lean\" }}\nrev = \"{}\"\n", t.version)).unwrap();
+        fs::write(
+            d.path().join("Proofs.lean"),
+            "import Aeneas\ntheorem demo.f_spec : True := by trivial\n",
+        )
+        .unwrap();
+        // Optional local cache reuse avoids fetching/rebuilding the large dependency
+        // graph. CI exercises the fresh, official pinned dependency path below.
+        if let Ok(cache) = std::env::var("PROOFS_TEST_AENEAS_CACHE") {
+            fs::copy(
+                Path::new(&cache).join("lake-manifest.json"),
+                d.path().join("lake-manifest.json"),
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                fs::create_dir(d.path().join(".lake")).unwrap();
+                std::os::unix::fs::symlink(
+                    Path::new(&cache).join(".lake/packages"),
+                    d.path().join(".lake/packages"),
+                )
+                .unwrap();
+            }
+        } else {
+            for args in [vec!["update"], vec!["exe", "cache", "get"]] {
+                let out = Command::new("lake")
+                    .args(args)
+                    .current_dir(d.path())
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}\n{}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
+        pinned_version(d.path(), &t.version).unwrap();
+        for (body, success) in [
+            ("theorem demo.f_spec : True := by trivial", true),
+            ("theorem demo.f_spec : True := by sorry", false),
+            ("axiom bad : False\ntheorem helper : False := bad\ntheorem demo.f_spec : False := helper", false),
+            ("def demo.f_spec : Nat := 0", false),
+            ("theorem other : True := by trivial", false),
+        ] {
+            fs::write(d.path().join("Proofs.lean"), format!("import Aeneas\n{body}\n")).unwrap();
+            let build = Command::new("lake").args(["build", "+Proofs"]).current_dir(d.path()).output().unwrap();
+            assert!(build.status.success(), "{}\n{}", String::from_utf8_lossy(&build.stdout), String::from_utf8_lossy(&build.stderr));
+            let result = audit(d.path(), &t);
+            assert_eq!(result.is_ok(), success, "{body}: {result:?}");
         }
     }
 }

@@ -28,7 +28,7 @@ jobs:
   verify:
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     outputs:
       commit: ${{ steps.release.outputs.commit }}
     steps:
@@ -63,8 +63,8 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
           sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.35.0
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      - name: Check generated audit with real Lean
-        run: cargo test --manifest-path cli/Cargo.toml --locked aeneas::tests::real_lean_checks_theorems_and_transitive_axioms -- --ignored
+      - name: Check generated audit with real Lean and Aeneas
+        run: cargo test --manifest-path cli/Cargo.toml --locked aeneas::tests::real_ -- --ignored
       - run: cargo clippy --manifest-path cli/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo build --manifest-path cli/Cargo.toml --locked
       - run: python3 cli/tests/e2e.py cli/target/debug/cargo-proofs

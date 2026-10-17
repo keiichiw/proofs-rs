@@ -55,7 +55,7 @@ jobs:
       - run: npm run build
   lean-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -64,6 +64,6 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
           sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.35.0
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      - name: Check generated audit with real Lean
+      - name: Check generated audit with real Lean and Aeneas
         working-directory: cli
-        run: cargo test --locked aeneas::tests::real_lean_checks_theorems_and_transitive_axioms -- --ignored
+        run: cargo test --locked aeneas::tests::real_ -- --ignored

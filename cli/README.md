@@ -230,3 +230,17 @@ python3 tests/e2e.py target/debug/cargo-proofs
 ```
 
 CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot/Lean (the separate Lean audit job runs Lean), or push user source repositories.
+
+### Source repositories with submodules
+
+Recording automatically restores all submodules recursively at the Gitlink commits
+in the recorded source revision, before Cargo metadata and API discovery. This
+applies to every supported verifier; submodules are optional. Relative submodule
+URLs resolve against the selected source remote. No remote branches are followed.
+An inaccessible repository or missing commit stops recording. Git transport
+restrictions are retained; the recorder does not enable the file protocol.
+
+Submodule snapshots use an isolated temporary clone so initialization cannot alter
+the original checkout's Git configuration. Recording checks pinned HEADs and tracked
+files before and after verification, and removes the snapshot on success or failure.
+Reproduction instructions initialize submodules after checking out the source commit.

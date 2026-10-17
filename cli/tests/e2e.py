@@ -340,18 +340,40 @@ else:
         (work / 'lake-manifest.json').write_text(json.dumps({'packages': [{
             'name': 'aeneas', 'type': 'git', 'url': 'https://github.com/AeneasVerif/aeneas',
             'rev': 'a' * 40, 'subDir': 'backends/lean'}]}))
+        # The manifest stays outside the submodule, as in the adler2 harness.
+        upstream = root / 'upstream'
+        upstream.mkdir()
+        subprocess.run([real_git, 'init', '-q', str(upstream)], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'config', 'user.name', 'Test'], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'config', 'user.email', 'test@example.test'], check=True)
+        (upstream / 'lib.rs').write_text('pub fn f(x: u32) {}\n')
+        subprocess.run([real_git, '-C', str(upstream), 'add', '.'], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'commit', '-qm', 'source'], check=True)
+        git('-c', 'protocol.file.allow=always', 'submodule', 'add', str(upstream), 'upstream')
+        git('add', '.gitmodules', 'upstream')
+        manifest.write_text(manifest.read_text() + '\n[lib]\npath="upstream/lib.rs"\n')
+        env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='protocol.file.allow', GIT_CONFIG_VALUE_0='always')
         git('add', 'Proofs.lean', 'lean-toolchain', 'lakefile.toml', 'lake-manifest.json')
         commit_push()
         assert 'Use cargo proofs run -- lake build' in cli('run', '--', 'cargo', 'aeneas', ok=False)
+        original_git_config = (work / '.git/config').read_bytes()
+        original_worktrees = git('worktree', 'list', '--porcelain')
+        def assert_snapshot_cleaned():
+            assert (work / '.git/config').read_bytes() == original_git_config
+            assert git('worktree', 'list', '--porcelain') == original_worktrees
+            assert not [p for p in (root / 'real-tmp').iterdir() if p.name != 'xcrun_db']
         env['TEST_LAKE_FAIL'] = '1'
         assert 'Lake build failed' in cli('run', '--', 'lake', 'build', ok=False)
+        assert_snapshot_cleaned()
         assert 'did not produce publishable' in cli('publish', ok=False)
         del env['TEST_LAKE_FAIL']
         env['TEST_LEAN_FAIL'] = '1'
         assert 'sorryAx' in cli('run', '--', 'lake', 'build', ok=False)
+        assert_snapshot_cleaned()
         assert 'did not produce publishable' in cli('publish', ok=False)
         del env['TEST_LEAN_FAIL']
         cli('run', '--', 'lake', 'build')
+        assert_snapshot_cleaned()
         cli('publish', '--dry-run')
         cli('publish')
         assert reports[3]['tool_version_id'] == 'aeneas-version'

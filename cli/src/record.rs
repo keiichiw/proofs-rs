@@ -180,6 +180,11 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     let checkout = crate::git::Worktree::create(
         &root,
         source_ref["commit"].as_str().context("Missing commit")?,
+        config
+            .git
+            .as_ref()
+            .and_then(|g| g.remote.as_deref())
+            .unwrap_or("origin"),
     )?;
     let source = checkout.path.canonicalize()?;
     ensure!(
