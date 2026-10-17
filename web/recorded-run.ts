@@ -61,6 +61,7 @@ export function renderRecordedRun(
   const script = [
     `git clone -- ${quote(run.source.repository)} ${quote(dir)}`,
     `git -C ${quote(dir)} checkout --detach ${quote(run.source.commit)}`,
+    `git -C ${quote(dir)} submodule update --init --recursive --checkout`,
     `cd ${quote(cwd)}`,
     "",
     command,

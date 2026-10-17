@@ -45,7 +45,12 @@ test("Aeneas reproduction includes the exact Lean theorem audit as quoted stdin"
     }),
   );
   const script = dom.window.document.querySelector("pre")!.textContent!;
-  assert.ok(script.includes("lake build +Proofs"));
+  const checkout = script.indexOf("checkout --detach");
+  const submodules = script.indexOf("submodule update --init --recursive --checkout");
+  const cd = script.indexOf("cd report-");
+  const build = script.indexOf("lake build +Proofs");
+  const audit = script.indexOf("printf '%s'");
+  assert.ok(checkout >= 0 && checkout < submodules && submodules < cd && cd < build && build < audit);
   assert.ok(script.includes("printf '%s' 'import Lean\n"));
   assert.ok(script.includes("'\\''quotes'\\''"));
   assert.ok(script.endsWith("| lake env lean --stdin"));

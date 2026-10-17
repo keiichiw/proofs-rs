@@ -154,6 +154,8 @@ fn predicate(meta: &Meta, p: &Project) -> Result<bool> {
                         | "creusot"
                         | "aeneas"
                         | "test"
+                        | "doc"
+                        | "docsrs"
                         | "unix"
                         | "windows"
                         | "debug_assertions"
@@ -1356,6 +1358,24 @@ mod tests {
         assert_eq!(c[0].precondition, "(x > 0) && (x < 10)");
         assert_eq!(c[0].first_line, 8);
         assert_eq!(c[0].last_line, 9);
+    }
+    #[test]
+    fn documentation_cfg_is_inactive_unless_selected() {
+        let (_d, mut p) = project("#![cfg_attr(docsrs, feature(doc_cfg))]\n#[cfg_attr(docsrs, doc(cfg(feature = \"std\")))]\npub fn normal() {}\n#[cfg(docsrs)] pub fn docs_only() {}\n#[cfg(doc)] pub fn rustdoc_only() {}\n");
+        let paths = |p: &Project| {
+            public_contracts(p, false, CreusotTarget::All)
+                .unwrap()
+                .into_iter()
+                .flat_map(|c| c.api_paths)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paths(&p), ["normal"]);
+        p.cfg.insert("docsrs".into());
+        assert_eq!(paths(&p), ["docs_only", "normal"]);
+        p.cfg.insert("doc".into());
+        assert_eq!(paths(&p), ["docs_only", "normal", "rustdoc_only"]);
+        let (_d, p) = project("#[cfg(unknown_documentation_mode)] pub fn unknown() {}");
+        assert!(public_contracts(&p, false, CreusotTarget::All).is_err());
     }
     #[test]
     fn rejects_multiple_harnesses() {
