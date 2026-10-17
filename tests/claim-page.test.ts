@@ -53,7 +53,7 @@ test("claim layout preserves scoped content, escaping, and revision context", ()
   assert.equal(d.querySelector('a[href="https://example.com/report"]'), null);
   assert(!d.body.textContent.includes("Report context text"));
   assert(!d.body.textContent.includes("Environment text"));
-  assert.equal(d.querySelectorAll("h2").length, 4);
+  assert.equal(d.querySelectorAll("h2").length, 5);
   assert.equal(d.querySelector("dl"), null);
   const trust = [...d.querySelectorAll("section")].find(
     (s: any) => s.querySelector("h2")?.textContent === "What is trusted",

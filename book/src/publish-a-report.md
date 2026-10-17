@@ -60,8 +60,9 @@ text, images are disabled, and unsafe link schemes are rejected. Code blocks
 have no syntax highlighting.
 
 Headings are relative to their container: `#` becomes a subsection (`h3`) within
-preset sections such as **What is trusted** and **Technical limitations**.
-In the introductory explanation it becomes `h2`, below the page title.
+preset sections such as **Overview**, **What is trusted**, and **Technical limitations**.
+Report and claim explanations appear inside **Overview**, keeping author-written
+headings subordinate to the site's preset sections.
 Deeper headings stop at `h6`. This formatting also applies to existing revisions.
 
 Use TOML multiline literal strings to preserve Markdown and backslashes:

@@ -87,21 +87,21 @@ test("report and claim prose use contextual headings while code stays literal", 
     .document;
   assert.equal(report.querySelector("h1")?.textContent, "# Literal");
   assert.equal(
-    report.querySelector(".report-explanation h2")?.textContent,
+    report.querySelector(".report-explanation h3")?.textContent,
     "Intro",
   );
   assert.deepEqual(
     [...report.querySelectorAll(".markdown-body h3")].map((x) => x.textContent),
-    ["Environment", "Trust", "Limits"],
+    ["Intro", "Environment", "Trust", "Limits"],
   );
   const claim = new JSDOM(views.claimContent(c)).window.document;
   assert.equal(
-    claim.querySelector(".report-explanation h2")?.textContent,
+    claim.querySelector(".report-explanation h3")?.textContent,
     "Intro",
   );
   assert.deepEqual(
     [...claim.querySelectorAll(".markdown-body h3")].map((x) => x.textContent),
-    ["Trust", "Shared trust", "Limits", "Shared limits"],
+    ["Intro", "Trust", "Shared trust", "Limits", "Shared limits"],
   );
   assert.equal(
     claim.querySelector(".plain-text.code")?.textContent,
@@ -117,4 +117,44 @@ test("report and claim prose use contextual headings while code stays literal", 
     ),
     null,
   );
+});
+
+test("Overview separates author headings from preset sections and is omitted when empty", () => {
+  const views = createViews({ user: null }, {}, () => "");
+  for (const render of [views.reportBody, views.claimContent]) {
+    const d = new JSDOM(
+      render({
+        explanation: "# Parsing\n\n## Details\n\n# Evidence\n\nAuthor evidence",
+        evidence_url: "https://example.com/evidence",
+      }),
+    ).window.document;
+    const overview = d.querySelector("section.report-explanation")!;
+    assert.equal(
+      overview.querySelector(":scope > h2")?.textContent,
+      "Overview",
+    );
+    assert.deepEqual(
+      [...overview.querySelectorAll(".markdown-body h3")].map(
+        (x) => x.textContent,
+      ),
+      ["Parsing", "Evidence"],
+    );
+    assert.equal(overview.querySelector("h4")?.textContent, "Details");
+    assert.equal(
+      overview.querySelector(".markdown-body h1, .markdown-body h2"),
+      null,
+    );
+    assert.equal(
+      overview.nextElementSibling?.querySelector("h2")?.textContent,
+      "Evidence",
+    );
+    for (const explanation of [undefined, ""]) {
+      assert.equal(
+        new JSDOM(render({ explanation })).window.document.querySelector(
+          ".report-explanation",
+        ),
+        null,
+      );
+    }
+  }
 });
