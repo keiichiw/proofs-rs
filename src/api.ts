@@ -1,3 +1,6 @@
+import { decodeEvidence } from "./core";
+import { claimFormalEvidence } from "./runs";
+import { claimTitle } from "../web/claim-title";
 import { operation } from "./openapi";
 import * as S from "./schemas";
 import { Hono } from "hono";
@@ -532,7 +535,10 @@ async function reportDetail(c: Ctx, revision?: number) {
       ...x,
       withdrawn: !!x.withdrawn,
     })),
-    claims: claims.results.map((x) => ({ ...x, my_star: !!x.my_star })),
+    claims: claims.results.map((raw) => {
+      const x = decodeEvidence(raw);
+      return { ...x, my_star: !!x.my_star };
+    }),
   });
 }
 api.get(
@@ -555,12 +561,19 @@ api.get(
 );
 api.get(
   "/claims/:id",
-  ...operation("Read a claim", S.claim.extend({ my_star: S.z.boolean() }), {
-    tags: ["Claims"],
-    auth: "optional",
-    query: S.z.object({ report_revision: S.string.optional() }),
-    errors: [404],
-  }),
+  ...operation(
+    "Read a claim",
+    S.claim.extend({
+      my_star: S.z.boolean(),
+      formal_evidence: S.formalDetail.nullable().optional(),
+    }),
+    {
+      tags: ["Claims"],
+      auth: "optional",
+      query: S.z.object({ report_revision: S.string.optional() }),
+      errors: [404],
+    },
+  ),
   async (c) => {
     const n = c.req.query("report_revision");
     const item = await one(
@@ -573,6 +586,7 @@ api.get(
     if (!item) throw new Fault(404, "claim_not_found");
     return c.json({
       ...item,
+      formal_evidence: await claimFormalEvidence(c, item),
       my_star: !!(await one(
         c.env.DB,
         "SELECT 1 FROM claim_stars WHERE claim_id=? AND user_id=?",
@@ -599,11 +613,15 @@ async function validate(c: Ctx, b: any, existing?: any) {
     text(b.tool_version_id, "Tool version", 200, true),
   );
   if (!tv) throw new Fault(400, "tool_version_unavailable");
-  if (!Array.isArray(b.claims) || b.claims.length < 1 || b.claims.length > 100)
+  if (
+    !Array.isArray(b.claims) ||
+    b.claims.length < 1 ||
+    b.claims.length > S.MAX_REPORT_CLAIMS
+  )
     throw new Fault(
       400,
       "invalid_claims",
-      "A report must contain 1–100 claims.",
+      `A report must contain 1–${S.MAX_REPORT_CLAIMS} claims.`,
     );
   const v: any = {
     release_id: rel.id,
@@ -649,9 +667,12 @@ async function validate(c: Ctx, b: any, existing?: any) {
         if (old.api_item_id !== a.id)
           throw new Fault(400, "immutable_claim_target");
       }
-      const title =
-        text(x.title, "Claim title", 1000) ||
-        `Verification of ${a.display_path} (with ${tv.name} ${tv.version})`;
+      const title = claimTitle(
+        text(x.title, "Claim title", 1000),
+        a.display_path,
+        tv.name,
+        tv.version,
+      );
       const evidence_url = optionalURL(x.evidence_url);
       if (!evidence_url && !v.evidence_url)
         throw new Fault(400, "evidence_required");
@@ -659,7 +680,14 @@ async function validate(c: Ctx, b: any, existing?: any) {
         id,
         api_item_id: a.id,
         title,
-        precondition: text(x.precondition, "Preconditions", 10000, true),
+        precondition: text(
+          x.precondition,
+          "Preconditions",
+          10000,
+          !x.evidence_ref,
+        ),
+        evidence_ref:
+          x.evidence_ref == null ? null : S.evidenceRef.parse(x.evidence_ref),
         explanation: text(x.explanation, "Explanation"),
         trusted_assumptions: text(x.trusted_assumptions, "Trusted assumptions"),
         evidence_url,
@@ -795,6 +823,17 @@ function revisionStatements(
         x.limitations,
       ),
     );
+    if (x.evidence_ref)
+      ss.push(
+        stmt(
+          db,
+          `INSERT INTO claim_evidence(claim_id,report_revision,run_id,harness) VALUES(?,?,?,?)`,
+          id,
+          n,
+          x.evidence_ref.run_id,
+          x.evidence_ref.harness,
+        ),
+      );
   });
   v.run_ids.forEach((run: string, position: number) =>
     ss.push(

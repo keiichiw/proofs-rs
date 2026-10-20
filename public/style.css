@@ -754,3 +754,83 @@ textarea {
   display: flex;
   gap: 8px;
 }
+
+.markdown-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol {
+  margin: 8px 0;
+}
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 20px 0 8px;
+}
+.markdown-body blockquote {
+  margin: 12px 0;
+  padding-left: 16px;
+  border-left: 3px solid currentColor;
+}
+.markdown-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  padding: 12px;
+}
+.markdown-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 12px;
+  border: 1px solid currentColor;
+}
+
+/* Lean inspection uses inline expressions, separate from source code blocks. */
+.lean-readable {
+  margin: 16px 0;
+}
+.lean-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+}
+.lean-role {
+  flex: 0 0 4.5em;
+  color: #666;
+  font-size: 0.9em;
+}
+.lean-expression {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.lean-binding {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lean-conclusion {
+  border-top: 1px solid #ccc;
+  margin-top: 8px;
+  padding-top: 12px;
+}
+.lean-expression a {
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}

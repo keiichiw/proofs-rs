@@ -1,10 +1,15 @@
+mod aeneas;
 mod api;
 mod config;
+mod draft;
 mod git;
+mod preview;
 mod publish;
 mod record;
 mod scan;
 mod state;
+
+const MAX_REPORT_CLAIMS: usize = 200;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
@@ -55,7 +60,7 @@ enum Commands {
         #[arg(long)]
         title: Option<String>,
         /// Verification tool used for the existing verification.
-        #[arg(long, default_value = "kani", value_parser = ["kani", "creusot"])]
+        #[arg(long, default_value = "kani", value_parser = ["kani", "creusot", "aeneas"])]
         tool: String,
         /// Creusot API selection (required for Creusot). Not the compilation --target.
         #[arg(long, value_enum, required_if_eq("tool", "creusot"))]
@@ -77,6 +82,23 @@ enum Commands {
         project: ProjectArgs,
         #[arg(last=true, required=true, num_args=2..)]
         command: Vec<String>,
+    },
+    /// Preview a recorded report locally (requires Node.js 24+; never uploads).
+    Preview {
+        #[command(flatten)]
+        project: ProjectArgs,
+        /// Select a recorded run (defaults to the latest run at startup).
+        #[arg(long)]
+        run: Option<String>,
+        /// Preview a public report revision (defaults to your saved publication target).
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        report: Option<u64>,
+        /// Local port; zero selects an available port.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the URL without opening a browser.
+        #[arg(long)]
+        no_browser: bool,
     },
     /// Publish recorded SARIF results with embedded execution logs.
     Publish {
@@ -120,6 +142,22 @@ fn run() -> Result<()> {
         Commands::Login { no_browser } => api::login(&server, no_browser),
         Commands::Logout => api::logout(&server),
         Commands::Run { project, command } => record::run(&project, command),
+        Commands::Preview {
+            project,
+            run,
+            report,
+            port,
+            no_browser,
+        } => preview::run(
+            &server,
+            &project,
+            preview::Options {
+                run,
+                report,
+                port,
+                no_browser,
+            },
+        ),
         Commands::Publish {
             project,
             dry_run,

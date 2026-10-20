@@ -1,6 +1,9 @@
+#[cfg(test)]
+use crate::draft::merge;
+use crate::draft::{claims_by_key, key, snapshot, CLAIM_FIELDS, REPORT_FIELDS};
 use crate::{
     api::Api,
-    config::{Config, Project},
+    config::Project,
     record,
     state::{self, Pending, State},
     ProjectArgs,
@@ -9,7 +12,7 @@ use anyhow::{bail, ensure, Context, Result};
 use fs2::FileExt;
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs,
     io::{self, IsTerminal, Write},
     path::Path,
@@ -23,124 +26,10 @@ pub struct Options {
     pub yes: bool,
     pub resume: bool,
 }
-const REPORT_FIELDS: &[&str] = &[
-    "crate",
-    "version",
-    "title",
-    "explanation",
-    "trusted_assumptions",
-    "tool_version_id",
-    "environment",
-    "evidence_url",
-    "limitations",
-];
-const CLAIM_FIELDS: &[&str] = &[
-    "id",
-    "api_item_id",
-    "title",
-    "precondition",
-    "explanation",
-    "trusted_assumptions",
-    "evidence_url",
-    "limitations",
-];
-fn text(value: &Value, key: &str) -> Value {
-    Value::String(value[key].as_str().unwrap_or_default().into())
-}
-fn snapshot(report: &Value) -> Result<Value> {
-    let mut value = json!({});
-    for key in REPORT_FIELDS {
-        value[*key] = text(report, key);
-    }
-    value["dependencies"] = Value::Array(report["dependencies"].as_array().into_iter().flatten().map(|dependency| json!({"crate":dependency["crate"],"report":dependency["report"],"revision":dependency["revision"]})).collect());
-    value["run_ids"] = report.get("run_ids").cloned().unwrap_or_else(|| json!([]));
-    value["claims"] = Value::Array(
-        report["claims"]
-            .as_array()
-            .context("Report is missing claims")?
-            .iter()
-            .map(|c| {
-                let mut claim = json!({});
-                for key in CLAIM_FIELDS {
-                    claim[*key] = text(c, key);
-                }
-                claim
-            })
-            .collect(),
-    );
-    Ok(value)
-}
-fn key(claim: &Value) -> Result<String> {
-    Ok(claim["api_item_id"]
-        .as_str()
-        .context("Missing API ID")?
-        .into())
-}
-fn claims_by_key(report: &Value) -> Result<BTreeMap<String, Value>> {
-    let mut claims = BTreeMap::new();
-    for claim in report["claims"].as_array().context("Missing claims")? {
-        ensure!(
-            claims.insert(key(claim)?, claim.clone()).is_none(),
-            "Existing report has multiple claims for the same API; this CLI cannot update it"
-        );
-    }
-    Ok(claims)
-}
-fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) -> Result<Value> {
-    let mut body = if let Some(existing) = existing {
-        snapshot(existing)?
-    } else {
-        json!({})
-    };
-    for field in ["crate", "version", "tool_version_id", "evidence_url"] {
-        body[field] = generated[field].take();
-    }
-    body["run_ids"] = generated["run_ids"].take();
-    body["title"] = json!(config.report.title.trim());
-    for (field, value) in [
-        ("explanation", &config.report.explanation),
-        ("trusted_assumptions", &config.report.trusted_assumptions),
-        ("limitations", &config.report.limitations),
-        ("environment", &config.report.environment),
-    ] {
-        if let Some(value) = value {
-            body[field] = json!(value);
-        } else if body.get(field).is_none() {
-            body[field] = json!("");
-        }
-    }
-    if let Some(dependencies) = &config.dependencies {
-        body["dependencies"] = json!(dependencies.iter().map(|(name, review)| json!({"crate":name,"report":review.report,"revision":review.revision})).collect::<Vec<_>>());
-    } else if body.get("dependencies").is_none() {
-        body["dependencies"] = json!([]);
-    }
-    let old = existing.map(claims_by_key).transpose()?.unwrap_or_default();
-    let mut claims = vec![];
-    for claim in generated["claims"]
-        .as_array()
-        .context("Missing generated claims")?
-    {
-        let mut merged = if let Some(previous) = old.get(&key(claim)?) {
-            let mut m = json!({});
-            for f in CLAIM_FIELDS {
-                m[*f] = text(previous, f);
-            }
-            m
-        } else {
-            json!({})
-        };
-        for f in ["api_item_id", "precondition", "evidence_url"] {
-            merged[f] = claim[f].clone();
-        }
-        claims.push(merged);
-    }
-    body["claims"] = Value::Array(claims);
-    Ok(body)
-}
 fn same_content(a: &Value, b: &Value) -> bool {
     fn canonical(mut value: Value) -> Value {
         if let Some(claims) = value["claims"].as_array_mut() {
-            claims.sort_by_key(|c| c["api_item_id"].to_string());
+            claims.sort_by_key(|c| key(c).unwrap_or_default());
         }
         if let Some(dependencies) = value["dependencies"].as_array_mut() {
             for dependency in dependencies.iter_mut() {
@@ -191,9 +80,9 @@ fn diff(before: &Value, after: &Value) {
         match before.get(k) {
             None => eprintln!("  + claim {}", k),
             Some(old) => {
-                for field in CLAIM_FIELDS {
-                    if old[*field] != c[*field] {
-                        eprintln!("  claim {} {field}: {} -> {}", k, old[*field], c[*field]);
+                for field in CLAIM_FIELDS.iter().copied().chain(["evidence_ref"]) {
+                    if old[field] != c[field] {
+                        eprintln!("  claim {} {field}: {} -> {}", k, old[field], c[field]);
                     }
                 }
             }
@@ -306,8 +195,9 @@ fn complete(api: &Api, state: &mut State, path: &Path) -> Result<()> {
         .as_array()
         .context("Missing published claims")?
     {
-        let api = key(claim)?;
-        state.known_claims.insert(api, claim.clone());
+        // Reindex legacy API-only keys, and discard stale names for reused IDs.
+        state.known_claims.retain(|_, old| old["id"] != claim["id"]);
+        state.known_claims.insert(key(claim)?, claim.clone());
     }
     state.report_id = Some(id);
     state.revision = Some(revision);
@@ -327,16 +217,7 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
     let user = me["user"]["id"]
         .as_str()
         .context("Not authenticated; run login again")?;
-    let manifest = project.manifest.to_string_lossy();
-    let path = record::state_dir(&project)?
-        .join("publication")
-        .join(format!(
-            "{}.json",
-            state::digest(&format!(
-                "{server}\n{user}\n{manifest}\n{}\n{}",
-                project.name, project.version
-            ))
-        ));
+    let path = state::publication_path(server, user, &project)?;
     fs::create_dir_all(path.parent().unwrap())?;
     let lock = fs::OpenOptions::new()
         .create(true)
@@ -368,7 +249,10 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
         .as_str()
         .context("Missing run ID")?;
     let source = &entry["versionControlProvenance"][0];
-    ensure!(contracts.len() <= 100, "Too many claims");
+    ensure!(
+        contracts.len() <= crate::MAX_REPORT_CLAIMS,
+        "Too many claims"
+    );
     let tool = api.tool_version(&config.tool.name, &config.tool.version)?;
     if options.dry_run {
         println!(
@@ -387,10 +271,6 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
     for contract in contracts {
         let (api_id, api_path) =
             api.resolve(&project.name, &project.version, &contract.api_paths)?;
-        ensure!(
-            seen.insert(api_id.clone()),
-            "Multiple contracts resolve to the same public API {api_path}"
-        );
         let evidence = format!(
             "{}/blob/{}/{}#L{}-L{}",
             source["repositoryUri"]
@@ -407,7 +287,15 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
             "{} → {}\n  precondition: {}\n  evidence: {}",
             contract.harness, api_path, contract.precondition, evidence
         );
-        claims.push(json!({"api_item_id":api_id,"precondition":contract.precondition,"evidence_url":evidence}));
+        let mut claim = json!({"api_item_id":api_id,"precondition":contract.precondition,"evidence_url":evidence});
+        if contract.formal.is_some() {
+            claim["evidence_ref"] = json!({"run_id":run_id,"harness":contract.harness});
+        }
+        ensure!(
+            seen.insert(key(&claim)?),
+            "Multiple contracts resolve to the same public API and theorem {api_path}"
+        );
+        claims.push(claim);
     }
     let selected = options.report.or(saved.report_id);
     let remote = selected
@@ -443,21 +331,7 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
     }
     let generated = json!({"crate":project.name,"version":project.version,"tool_version_id":tool,"evidence_url":format!("{}/tree/{}", source["repositoryUri"].as_str().unwrap(), source["revisionId"].as_str().unwrap()),"run_ids":[run_id],"claims":claims});
     // Unspecified editorial fields are preserved. Force changes only fields owned by this CLI/config.
-    let mut baseline = remote.clone();
-    if saved.report_id == selected {
-        if let Some(baseline) = &mut baseline {
-            let current = claims_by_key(baseline)?;
-            for claim in saved.known_claims.values() {
-                if !current.contains_key(&key(claim)?) {
-                    baseline["claims"]
-                        .as_array_mut()
-                        .context("Missing claims")?
-                        .push(claim.clone());
-                }
-            }
-        }
-    }
-    let mut body = merge(&config, generated, baseline.as_ref())?;
+    let mut body = crate::draft::compose(&config, generated, &remote, &saved, selected)?;
     validate_dependencies(&api, &body, &entry["properties"]["proofs"])?;
     if let Some(report) = &remote {
         body["expected_revision"] = report["revision_no"].clone();
@@ -544,6 +418,8 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use std::collections::BTreeMap;
     fn config() -> Config {
         toml::from_str("[report]\ntitle='Local'\n[tool]\nname='kani'\nversion='0.66.0'\n").unwrap()
     }
@@ -640,7 +516,10 @@ mod tests {
             assert_eq!(request.url(), "/api/v1/reports/42/revisions/1");
             request
                 .respond(tiny_http::Response::from_string(
-                    r#"{"title":"Published","claims":[]}"#,
+                    json!({"title":"Published","claims":[
+                        {"id":"first","api_item_id":"api","evidence_ref":{"run_id":"new","harness":"A"}},
+                        {"id":"second","api_item_id":"api","evidence_ref":{"run_id":"new","harness":"B"}}
+                    ]}).to_string(),
                 ))
                 .unwrap();
         });
@@ -648,6 +527,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let path = d.path().join("state.json");
         let mut state = State {
+            report_id: Some(42),
+            known_claims: [("api".into(), json!({"id":"first","api_item_id":"api","evidence_ref":{"run_id":"old","harness":"OldName"}}))].into(),
             pending: Some(Pending {
                 path: "/api/v1/reports".into(),
                 body: json!({"title":"Published","dependencies":[{"crate":"serde","report":123,"revision":2}]}),
@@ -663,6 +544,11 @@ mod tests {
         assert_eq!(saved.report_id, Some(42));
         assert_eq!(saved.revision, Some(1));
         assert!(saved.pending.is_none());
+        assert_eq!(saved.known_claims.len(), 2);
+        assert!(!saved.known_claims.contains_key("api"));
+        let mut reversed = saved.snapshot.clone().unwrap();
+        reversed["claims"].as_array_mut().unwrap().reverse();
+        assert!(same_content(saved.snapshot.as_ref().unwrap(), &reversed));
         job.join().unwrap();
     }
     #[test]

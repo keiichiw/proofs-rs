@@ -48,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/v1/me':
             return self.reply(200, {'user': {'id': 'author'}})
         if self.path == '/api/v1/tools':
-            return self.reply(200, {'items': [{'id': 'kani', 'name': 'Kani', 'active': 1}, {'id': 'creusot', 'name': 'Creusot', 'active': 1}], 'versions': [{'id': 'kani-version', 'tool_id': 'kani', 'version': '0.66.0', 'selectable': 1}, {'id': 'creusot-version', 'tool_id': 'creusot', 'version': '0.9.0', 'selectable': 1}]})
+            return self.reply(200, {'items': [{'id': 'kani', 'name': 'Kani', 'active': 1}, {'id': 'creusot', 'name': 'Creusot', 'active': 1}, {'id': 'aeneas', 'name': 'Aeneas', 'active': 1}], 'versions': [{'id': 'kani-version', 'tool_id': 'kani', 'version': '0.66.0', 'selectable': 1}, {'id': 'creusot-version', 'tool_id': 'creusot', 'version': '0.9.0', 'selectable': 1}, {'id': 'aeneas-version', 'tool_id': 'aeneas', 'version': 'a' * 40, 'selectable': 1}]})
         if self.path.startswith('/api/v1/resolve-api?'):
             from urllib.parse import parse_qs, urlparse
             path = parse_qs(urlparse(self.path).query)['path'][0].removeprefix('fixture::')
@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'status': 'ready'})
         if self.path == '/api/v1/reports/validate':
             assert body['title']
-            assert 1 <= len(body['claims']) <= 100
+            assert 1 <= len(body['claims']) <= 200
             if race:
                 race = False
                 web_edit()
@@ -197,6 +197,26 @@ for name in ['f','g']:
 print('Proved (2 files)')
 """)
     creusot.chmod(0o755)
+    lake = wrapper / 'lake'
+    lake.write_text("""#!/usr/bin/env python3
+import sys,os,json
+if sys.argv[1:2] == ['build']:
+    assert '+Proofs' in sys.argv
+    if os.getenv('TEST_LAKE_FAIL'): sys.exit(1)
+    print('Built Proofs')
+else:
+    assert sys.argv[1:] == ['env', 'lean', '--stdin']
+    source = sys.stdin.read()
+    assert 'import Proofs' in source
+    assert 'Lean.collectAxioms' in source and 'some (.thmInfo _)' in source
+    if os.getenv('TEST_LEAN_FAIL'):
+        print('Unapproved axiom in fixture.f_spec: sorryAx');sys.exit(1)
+    print('proofs.rs:formal:' + json.dumps({'version':1,'theorem':'fixture.f_spec',
+        'module':'Proofs','statement':'True','binders':[],'conclusion':'True',
+        'program':None,'program_head':None,'axioms':[],'first_line':2,'last_line':2,
+        'definitions':[],'definitions_truncated':False,'translation_rerun':False}))
+""")
+    lake.chmod(0o755)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     origin = f'http://127.0.0.1:{server.server_port}'
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -311,9 +331,67 @@ print('Proved (2 files)')
         assert 'Deletion requires confirmation' in cli('publish', ok=False)
         cli('publish', '--yes')
         assert reports[2]['claims'][0]['id'] == claim['id']
+        # Aeneas uses committed Lean evidence and explicit API/theorem mappings.
+        manifest.write_text(manifest.read_text().replace('1.0.1', '1.0.2'))
+        config.unlink()
+        cli('init', '--tool', 'aeneas', '--tool-version', 'a' * 40)
+        config.write_text(config.read_text() + "\n[[tool.proofs]]\napi='f'\nmodule='Proofs'\ntheorem='fixture.f_spec'\nprecondition='x > 0'\n")
+        (work / 'src/lib.rs').write_text('pub fn f(x: u32) {}\n')
+        (work / 'Proofs.lean').write_text('namespace fixture\ntheorem f_spec : True := by trivial\nend fixture\n')
+        (work / 'lean-toolchain').write_text('leanprover/lean4:v4.35.0\n')
+        (work / 'lakefile.toml').write_text('name="fixture"\n[[lean_lib]]\nname="Proofs"\n')
+        (work / 'lake-manifest.json').write_text(json.dumps({'packages': [{
+            'name': 'aeneas', 'type': 'git', 'url': 'https://github.com/AeneasVerif/aeneas',
+            'rev': 'a' * 40, 'subDir': 'backends/lean'}]}))
+        # The manifest stays outside the submodule, as in the adler2 harness.
+        upstream = root / 'upstream'
+        upstream.mkdir()
+        subprocess.run([real_git, 'init', '-q', str(upstream)], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'config', 'user.name', 'Test'], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'config', 'user.email', 'test@example.test'], check=True)
+        (upstream / 'lib.rs').write_text('pub fn f(x: u32) {}\n')
+        subprocess.run([real_git, '-C', str(upstream), 'add', '.'], check=True)
+        subprocess.run([real_git, '-C', str(upstream), 'commit', '-qm', 'source'], check=True)
+        git('-c', 'protocol.file.allow=always', 'submodule', 'add', str(upstream), 'upstream')
+        git('add', '.gitmodules', 'upstream')
+        manifest.write_text(manifest.read_text() + '\n[lib]\npath="upstream/lib.rs"\n')
+        env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='protocol.file.allow', GIT_CONFIG_VALUE_0='always')
+        git('add', 'Proofs.lean', 'lean-toolchain', 'lakefile.toml', 'lake-manifest.json')
+        commit_push()
+        assert 'Use cargo proofs run -- lake build' in cli('run', '--', 'cargo', 'aeneas', ok=False)
+        original_git_config = (work / '.git/config').read_bytes()
+        original_worktrees = git('worktree', 'list', '--porcelain')
+        def assert_snapshot_cleaned():
+            assert (work / '.git/config').read_bytes() == original_git_config
+            assert git('worktree', 'list', '--porcelain') == original_worktrees
+            assert not [p for p in (root / 'real-tmp').iterdir() if p.name != 'xcrun_db']
+        env['TEST_LAKE_FAIL'] = '1'
+        assert 'Lake build failed' in cli('run', '--', 'lake', 'build', ok=False)
+        assert_snapshot_cleaned()
+        assert 'did not produce publishable' in cli('publish', ok=False)
+        del env['TEST_LAKE_FAIL']
+        env['TEST_LEAN_FAIL'] = '1'
+        assert 'sorryAx' in cli('run', '--', 'lake', 'build', ok=False)
+        assert_snapshot_cleaned()
+        assert 'did not produce publishable' in cli('publish', ok=False)
+        del env['TEST_LEAN_FAIL']
+        cli('run', '--', 'lake', 'build')
+        assert_snapshot_cleaned()
+        cli('publish', '--dry-run')
+        cli('publish')
+        assert reports[3]['tool_version_id'] == 'aeneas-version'
+        assert len(reports[3]['claims']) == 1
+        claim = reports[3]['claims'][0]
+        assert claim['precondition'] == 'x > 0'
+        assert claim['evidence_ref']['harness'] == 'fixture.f_spec'
+        assert '/Proofs.lean#L2-L2' in claim['evidence_url']
+        config.write_text(config.read_text().replace("x > 0", "x > 1"))
+        assert 'Aeneas proof mappings changed' in cli('publish', ok=False)
+        config.write_text(config.read_text().replace("x > 1", "x > 0"))
+        assert 'No changes' in cli('publish')
         cli('logout')
         assert 'Not logged in' in cli('publish', ok=False)
-        print('End-to-end: login, SARIF-only recording, published source, dry-run, create, no-op, conflict, force, removal, restore, retry, Creusot targets/claims/evidence, logout passed')
+        print('End-to-end: login, SARIF-only recording, published source, dry-run, create, no-op, conflict, force, removal, restore, retry, Creusot targets/claims/evidence, Aeneas Lean recording/failures/mappings, logout passed')
     finally:
         server.shutdown()
         thread.join()

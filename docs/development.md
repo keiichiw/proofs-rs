@@ -9,7 +9,7 @@ See [backend design](backend-design.md) for the data model and
 
 Requires Node 24 and mdBook 0.4.45 (`cargo install mdbook --version 0.4.45 --locked`). `npm ci`, `npm run build`, `npm run db:local`, then `npm run dev`. Copy `.dev.vars.example` to `.dev.vars` and configure a development GitHub OAuth app to enable sign-in. Callback: `http://localhost:8787/auth/github/callback`. No local auth bypass is exposed by the Worker. `npm test` uses an in-memory SQLite adapter and fixture rustdoc JSON, never a live docs.rs request or email send.
 
-`npm run typecheck`, `npm test`, and `npm run build` are required checks. The first migration creates immutable revisions, transaction guards, comment history, independent report/claim stars, comment votes, outbox events and delivery states. A keyset cursor is used for lists. The tool catalogue starts empty. Tools and versions are stored in D1 and can be added or updated through the audited admin API without a deployment.
+`npm run typecheck`, `npm test`, and `npm run build` are required checks. The first migration creates immutable revisions, transaction guards, comment history, independent report/claim stars, comment votes, outbox events and delivery states. A keyset cursor is used for lists. Migration 0009 registers Aeneas and an initial pinned Lean revision; other catalogue entries remain operator-managed. Tools and versions are stored in D1 and can be added or updated through the audited admin API without a deployment.
 
 ## HTML pages
 
@@ -108,3 +108,37 @@ preserves reviews on update; an explicitly empty `[dependencies]` removes them.
 Zero reviews does not mean the crate has zero dependencies.
 
 For existing installations, see [the migration procedure](dependency-migration.md).
+
+## Local CLI preview development
+
+`preview/server.ts` runs in Node.js 24+ and uses the same page shell, report/claim
+views, Markdown sanitizer, and recorded-run renderer as the Worker. Rust owns
+local configuration, recorded runs, read-only service requests, and publication
+state lookup. Versioned JSON Lines over child stdin/stdout carry snapshots;
+credentials never cross this boundary. Node stdout is reserved for this protocol.
+
+After changing shared views, public assets, or preview code, run
+`npm run build:preview`. Commit `cli/preview/server.cjs` and
+`cli/preview/THIRD_PARTY_NOTICES.txt`; `npm run check:preview` checks deterministic
+regeneration in CI and the CLI release workflow. Cargo packages these files and
+requires no npm build during installation. From the repository root:
+
+```sh
+npm run build:preview
+cargo build --manifest-path cli/Cargo.toml --locked
+python3 cli/tests/preview.py cli/target/debug/cargo-proofs
+npm run check:preview
+```
+
+The E2E test uses a local read-only mock service and a temporary project outside
+the source checkout. It checks new and revised reports, data reload, missing API
+metadata, state preservation, HTTP boundaries, and child-process cleanup.
+
+Use a separate Cargo target directory for builds from the packaged archive (CI
+uses `cli/target/package-check`) so they cannot replace the development binary.
+After rebuilding the bundle and CLI, stop and restart any running preview to pick
+up UI changes. Browser reload alone refreshes configuration and report data.
+
+The preview maps API names in the report to local claim pages, while the ordinary
+site keeps its API catalogue links. Metadata links use the configured service
+origin. Shared-view changes must preserve both sets of link behavior.

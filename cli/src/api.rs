@@ -172,7 +172,7 @@ impl Api {
                 v["tool_id"] == tool["id"] && v["version"] == version && enabled(&v["selectable"])
             })
             .collect();
-        ensure!(matches.len() == 1, "Kani version {version} is not registered/selectable on this server; request it before publishing");
+        ensure!(matches.len() == 1, "{name} version {version} is not registered/selectable on this server; request it before publishing");
         Ok(matches[0]["id"]
             .as_str()
             .context("Invalid tool version ID")?
@@ -206,6 +206,28 @@ impl Api {
         }
         ensure!(found.len() == 1, "Expected one public API match for {:?}, found {}. Check release, features, and reexports.", paths, found.len());
         Ok(found.into_iter().next().unwrap())
+    }
+}
+/// Narrow read-only capability: preview code cannot upload, prepare, or publish.
+pub struct ReadOnlyApi(Api);
+impl ReadOnlyApi {
+    pub fn new(server: &str, authenticated: bool) -> Result<Self> {
+        let mut api = Api::new(server, authenticated)?;
+        api.client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .redirect(Policy::none())
+            .user_agent(concat!("cargo-proofs/", env!("CARGO_PKG_VERSION")))
+            .build()?;
+        Ok(Self(api))
+    }
+    pub fn get(&self, path: &str) -> Result<Value> {
+        self.0.get(path)
+    }
+    pub fn resolve(&self, name: &str, version: &str, paths: &[String]) -> Result<(String, String)> {
+        self.0.resolve(name, version, paths)
+    }
+    pub fn tool_version(&self, name: &str, version: &str) -> Result<String> {
+        self.0.tool_version(name, version)
     }
 }
 fn enabled(v: &Value) -> bool {

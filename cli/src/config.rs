@@ -31,13 +31,21 @@ pub struct Report {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
     pub name: String,
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<CreusotTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lean_dir: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proofs: Vec<crate::aeneas::Proof>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proof_modules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_manifest: Option<PathBuf>,
 }
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, clap::ValueEnum, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -46,18 +54,32 @@ pub enum CreusotTarget {
     All,
 }
 impl Tool {
+    pub fn is_aeneas(&self) -> bool {
+        self.name.eq_ignore_ascii_case("aeneas")
+    }
     pub fn is_creusot(&self) -> bool {
         self.name.eq_ignore_ascii_case("creusot")
     }
     fn validate(&self) -> Result<()> {
         ensure!(
-            self.is_creusot() || self.name.eq_ignore_ascii_case("kani"),
-            "Supported tools: kani, creusot"
+            self.is_aeneas() || self.is_creusot() || self.name.eq_ignore_ascii_case("kani"),
+            "Supported tools: kani, creusot, aeneas"
         );
         ensure!(
             !self.version.trim().is_empty(),
             "[tool].version is required"
         );
+        ensure!(
+            self.is_aeneas()
+                || (self.lean_dir.is_none()
+                    && self.proofs.is_empty()
+                    && self.proof_modules.is_empty()
+                    && self.translation_manifest.is_none()),
+            "lean_dir and proofs apply only to Aeneas"
+        );
+        if self.is_aeneas() {
+            crate::aeneas::validate(self)?;
+        }
         if self.is_creusot() {
             ensure!(
                 self.target.is_some(),
@@ -66,7 +88,7 @@ impl Tool {
         } else {
             ensure!(
                 self.target.is_none(),
-                "[tool].target applies only to Creusot; Kani uses proof_for_contract harnesses"
+                "[tool].target applies only to Creusot"
             );
         }
         Ok(())
@@ -249,10 +271,18 @@ pub fn init(
     target: Option<CreusotTarget>,
 ) -> Result<()> {
     let project = Project::load(args)?;
-    let label = if tool == "creusot" { "Creusot" } else { "Kani" };
+    let label = match tool.as_str() {
+        "creusot" => "Creusot",
+        "aeneas" => "Aeneas",
+        _ => "Kani",
+    };
     let version = match version {
         Some(v) => v,
         None => {
+            ensure!(
+                tool != "aeneas",
+                "Aeneas requires --tool-version with the full pinned Aeneas Git revision"
+            );
             let out = Command::new("cargo")
                 .args([
                     tool.as_str(),
@@ -288,6 +318,7 @@ pub fn init(
             name: tool,
             version,
             target,
+            ..Tool::default()
         },
         git: None,
         dependencies: None,

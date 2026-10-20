@@ -28,7 +28,7 @@ jobs:
   verify:
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     outputs:
       commit: ${{ steps.release.outputs.commit }}
     steps:
@@ -53,14 +53,30 @@ jobs:
           assert package.get('publish') == ['crates-io'], 'Expected crates.io-only publication'
           PY
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check:preview
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: cargo fmt --manifest-path cli/Cargo.toml --check
       - run: cargo test --manifest-path cli/Cargo.toml --locked
+      - name: Install pinned Lean for theorem audit checks
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.35.0
+          # Elan installs toolchains lazily; finish before tests launch Lean in parallel.
+          "$HOME/.elan/bin/lean" +leanprover/lean4:v4.35.0 --version
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Check generated audit with real Lean and Aeneas
+        run: cargo test --manifest-path cli/Cargo.toml --locked aeneas::tests::real_ -- --ignored
       - run: cargo clippy --manifest-path cli/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo build --manifest-path cli/Cargo.toml --locked
       - run: python3 cli/tests/e2e.py cli/target/debug/cargo-proofs
+      - run: python3 cli/tests/preview.py cli/target/debug/cargo-proofs
       - run: cargo publish --manifest-path cli/Cargo.toml --dry-run --locked --registry crates-io
       - name: Create persistent release archive
         working-directory: cli

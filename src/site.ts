@@ -1,3 +1,4 @@
+import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
 import { Fault, rows, latest } from "./core";
 import { legal } from "../web/legal";
@@ -108,7 +109,7 @@ function layout(c: Ctx, title: string, body: string, me: any = { user: null }) {
     c.req.path + new URL(c.req.url).search,
     c.env.APP_ORIGIN,
   ).href;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · proofs.rs</title><meta name="description" content="Rust API verification reports, claims and evidence."><link rel="canonical" href="${escape(canonical)}"><script src="/theme.js"></script><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme-a.css"><link rel="stylesheet" href="/theme-header.css"><link rel="icon" href="/favicon.svg"><script src="/site.js" defer></script></head><body><header class="proofs-site-header"><a class="brand" href="/">proofs.rs</a><nav aria-label="Main navigation"><a href="/crates">Crates</a><a href="/reports">Reports</a><a href="/tools">Tools</a><a href="/book/publish-a-report.html">Publish</a><a href="/book/">About</a><a href="https://proofs-rs.hashnode.dev">Blog</a></nav><div id="account-nav">${account}</div></header><main id="app">${body}</main><footer>© 2026 proofs.rs · <a href="/book/">About</a> · <a href="https://github.com/proofs-rs/proofs-rs">GitHub</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/contact">Contact</a></footer></body></html>`;
+  return pageLayout(title, body, account, canonical);
 }
 export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
   c.header("Cache-Control", "private, no-store");
@@ -410,10 +411,9 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         item.version,
         item.dependencies,
       );
-      let content = reportBody(item);
+      const recorded: string[] = [];
       if (item.run_ids.length) {
         // Parse one potentially large SARIF record at a time to bound Worker memory.
-        const recorded: string[] = [];
         for (const [index, run] of (item.run_ids as string[]).entries()) {
           try {
             recorded.push(
@@ -431,11 +431,8 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
             );
           }
         }
-        content = content.replace(
-          '<div class="reproduce-body"></div>',
-          `<div class="reproduce-body">${recorded.join("")}</div>`,
-        );
       }
+      const content = reportBody(item, recorded.join(""));
       const commentForm = (editing: any, replying: any) =>
         `${editing ? "" : `<h3>${replying ? "Reply to #" + replying.sequence_no : "Add a comment"}</h3>`}<form method="post" action="/_actions/${editing ? "edit-comment" : "comment"}" id="${editing ? "comment-editor-form" : "comment-form"}"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_back" value="/report/${item.id}?v=${item.revision_no}#discussion"><input type="hidden" name="id" value="${esc(editing?.id || item.id)}"><input type="hidden" name="edit_version" value="${editing?.edit_version || 0}"><input type="hidden" name="reply_to_id" value="${esc(replying?.id || "")}"><input type="hidden" name="_key" value="${crypto.randomUUID()}">${editing ? "" : `<label>Report revision <select name="revision_no">${history.map((h) => `<option value="${h.revision_no}"${h.revision_no === (replying?.revision_no || item.revision_no) ? " selected" : ""}>v${h.revision_no}</option>`).join("")}</select></label>`}<textarea name="body" required maxlength="5000" aria-label="Comment">${esc(editing?.body || "")}</textarea><button>${editing ? "Save" : "Post comment"}</button>${editing || replying ? ` <a href="/report/${item.id}?v=${item.revision_no}#discussion">Cancel</a>` : ""}</form>`;
       const byParent = new Map<string | null, any[]>();
@@ -555,7 +552,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const t = await get("/tools/" + enc(id));
       return result(
         t.name,
-        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p><h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
+        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${t.id === "aeneas" ? '<p><a href="/book/aeneas.html">Publish Aeneas Lean proofs — setup and limitations</a></p>' : ""}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
       );
     }
     if (p === "tool-version" && id) {

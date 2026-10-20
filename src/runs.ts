@@ -1,3 +1,9 @@
+import {
+  resolveContract,
+  checkAnchor,
+  formalSourceLinks,
+  validLeanSegments,
+} from "../web/formal-evidence";
 import { operation } from "./openapi";
 import * as S from "./schemas";
 import { Hono } from "hono";
@@ -150,9 +156,15 @@ export function readRecord(sarif: any) {
   if (
     !Array.isArray(b.contracts) ||
     !b.contracts.length ||
-    b.contracts.length > 100
+    b.contracts.length > S.MAX_REPORT_CLAIMS
   )
     throw new Fault(400, "invalid_run_contracts");
+  const formalRun = b.contracts.some((c: any) => c.formal !== undefined);
+  if (
+    formalRun &&
+    new Set(b.contracts.map((c: any) => c.harness)).size !== b.contracts.length
+  )
+    throw new Fault(400, "duplicate_formal_harness");
   for (const contract of b.contracts) {
     if (
       !contract ||
@@ -170,6 +182,57 @@ export function readRecord(sarif: any) {
       throw new Fault(400, "invalid_run_contract");
   }
   for (const contract of b.contracts) {
+    if (contract.formal !== undefined) {
+      const f = contract.formal;
+      if (
+        s.tool.driver.name.toLowerCase() !== "aeneas" ||
+        f.theorem !== contract.harness ||
+        f.source.file !== contract.file ||
+        f.source.first_line !== contract.first_line ||
+        f.source.last_line !== contract.last_line ||
+        !relative(f.source.file) ||
+        f.definitions.some(
+          (d: any) =>
+            d.source &&
+            (!relative(d.source.file) ||
+              d.source.last_line < d.source.first_line),
+        ) ||
+        f.axioms.some(
+          (a: string) =>
+            !["propext", "Classical.choice", "Quot.sound"].includes(a),
+        ) ||
+        (f.mapping === "manifest" &&
+          (!f.manifest ||
+            !relative(f.manifest.path) ||
+            !f.program ||
+            !f.program_head ||
+            f.manifest.entry.lean_name !== f.program_head ||
+            !contract.api_paths.includes(f.manifest.entry.rust_name) ||
+            f.manifest.entry.loop != null ||
+            f.manifest.entry.parent_lean_name != null ||
+            !relative(f.manifest.entry.lean_file) ||
+            f.manifest.entry.source.end_line <
+              f.manifest.entry.source.begin_line)) ||
+        (f.mapping === "manual" && f.manifest !== null) ||
+        (f.conclusion_segments !== undefined &&
+          !validLeanSegments(f.conclusion, f.conclusion_segments)) ||
+        f.binders.some(
+          (b: any) =>
+            b.type_segments !== undefined &&
+            !validLeanSegments(b.type, b.type_segments),
+        )
+      )
+        throw new Fault(400, "invalid_formal_evidence");
+      if (
+        !s.results.some(
+          (r: any) =>
+            r.properties?.harness === contract.harness &&
+            r.ruleId === "aeneas.lean.theorem" &&
+            r.kind === "pass",
+        )
+      )
+        throw new Fault(400, "unverified_formal_evidence");
+    }
     const matches = s.results.filter(
       (r: any) => r.properties?.harness === contract.harness,
     );
@@ -387,6 +450,7 @@ export async function validateReportRuns(c: Ctx, b: any, v: any) {
       "Run cargo proofs run before publishing.",
     );
   const contracts: any[] = [];
+  const records = new Map<string, any>();
   let source: string | undefined;
   for (const rid of b.run_ids) {
     const r = await one(
@@ -402,20 +466,59 @@ export async function validateReportRuns(c: Ctx, b: any, v: any) {
       r.tool_version_id !== v.tool_version_id
     )
       throw new Fault(400, "run_report_mismatch");
-    const m = readRecord(await (await readStored(c, r)).json());
+    const sarif = await (await readStored(c, r)).json();
+    const m = readRecord(sarif);
+    records.set(rid, sarif);
     if (source && source !== JSON.stringify(m.source))
       throw new Fault(400, "inconsistent_run_sources");
     source = JSON.stringify(m.source);
     contracts.push(...m.contracts);
   }
-  for (const claim of v.claims)
-    if (
+  for (const claim of v.claims) {
+    if (claim.evidence_ref != null) {
+      const sarif = records.get(claim.evidence_ref.run_id);
+      if (
+        !sarif ||
+        !resolveContract(sarif, claim.evidence_ref.run_id, claim)?.formal
+      )
+        throw new Fault(400, "invalid_evidence_ref");
+    } else if (
+      !claim.precondition.trim() ||
       !contracts.some(
         (x) =>
+          !x.formal &&
           x.api_paths.includes(claim.display_path) &&
           x.precondition === claim.precondition,
       )
-    )
+    ) {
       throw new Fault(400, "claim_not_in_recorded_run");
+    }
+  }
   v.run_ids = b.run_ids;
+}
+
+/** Only detail requests load the referenced SARIF; lists retain the small revision reference. */
+export async function claimFormalEvidence(c: Ctx, claim: any) {
+  if (!claim.evidence_ref) return null;
+  const ref = claim.evidence_ref;
+  const run = await one(
+    c.env.DB,
+    "SELECT v.* FROM verification_runs v JOIN report_runs r ON r.run_id=v.id WHERE r.report_id=? AND r.revision_no=? AND v.id=?",
+    claim.report_id,
+    claim.report_revision,
+    ref.run_id,
+  );
+  if (!run) throw new Fault(400, "invalid_evidence_ref");
+  const sarif = await (await readStored(c, run)).json();
+  const record = readRecord(sarif);
+  const contract = resolveContract(sarif, ref.run_id, claim);
+  if (!contract?.formal) throw new Fault(400, "invalid_evidence_ref");
+  return {
+    ...formalSourceLinks(
+      contract.formal,
+      record.source.repository,
+      record.source.commit,
+    ),
+    check_url: `/runs/${ref.run_id}?report=${claim.report_id}&v=${claim.report_revision}#${checkAnchor(ref.harness)}`,
+  };
 }

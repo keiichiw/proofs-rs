@@ -19,6 +19,8 @@ cargo proofs --help
 
 The CLI is developed in `cli/` alongside the service. To install a checkout, run `cargo install --path cli --locked` from the repository root. Only the CLI package is distributed on crates.io; access to the service repository is not required to install a published version.
 
+`preview` additionally requires Node.js 24 or newer. Other commands do not require Node.js.
+
 ## Quick start
 
 Run inside the crate to verify:
@@ -28,6 +30,7 @@ cargo proofs init --tool-version 0.66.0 --title 'Contract verification of my cra
 cargo proofs login
 # Commit and push all verification inputs, including Cargo.lock, before run.
 cargo proofs run -- cargo kani
+cargo proofs preview # Requires Node.js 24+; stop with Ctrl+C after reviewing.
 cargo proofs publish --dry-run
 cargo proofs publish
 ```
@@ -59,6 +62,92 @@ cargo proofs publish --server https://proofs-rs-staging.proofs-rs.workers.dev --
 
 You may set `PROOFS_SERVER` instead. The default is `https://proofs.rs`. Tokens are stored in a per-server file in the OS user config directory (`cargo-proofs`), with mode 0600 on Unix. Set `PROOFS_CONFIG_DIR` to override that credentials directory. Tokens are never saved in the repository. `logout` revokes the token before removing it. HTTP is allowed only for loopback development servers; redirects are not followed.
 
+## Local report preview
+
+Install Node.js 24 or newer, then preview a successful recorded run before publishing:
+
+```sh
+cargo proofs preview
+cargo proofs preview --run <RUN_UUID> --report 123
+cargo proofs preview --port 8080 --no-browser
+```
+
+The command opens a local web server on `127.0.0.1` using an available port by
+default. It displays the report, individual claims, reproduction instructions,
+execution logs, and a SARIF download using the UI bundled with this CLI release.
+No repository checkout or npm installation is needed to use an installed CLI
+that includes `preview`. Stop it with Ctrl+C.
+
+In **Verified APIs**, click an API name or **Claim #…** to open its local claim
+page. Report/claim navigation, recorded-run pages, and SARIF downloads stay on
+localhost. An unresolved API name is marked unverified; its **Claim #…** link is
+still available locally. Tool details, dependency evidence, and the API catalogue
+link within a claim point to the selected remote service.
+
+| Option | Behavior |
+| --- | --- |
+| `--manifest-path PATH`, `-p NAME` | Select the same Cargo package as other CLI commands |
+| `--run UUID` | Use a specific local recording; otherwise pin the latest at startup |
+| `--report ID` | Preview changes to this public report instead of the saved target |
+| `--port PORT` | Listen on this port; `0` (the default) selects an available port |
+| `--no-browser` | Print the URL without opening the browser |
+| `--server ORIGIN` | Read metadata and existing reports from this service; also accepts `PROOFS_SERVER` |
+
+For example, from a repository containing separate crate workspaces:
+
+```sh
+cargo proofs preview --manifest-path path/to/crate/Cargo.toml --no-browser
+```
+
+Edit `proofs.toml` and reload the browser to see changes. The selected run stays
+fixed until restart, even if a newer run is recorded. A malformed configuration
+shows an error page; fix it and reload to recover. Project selection options such
+as `--manifest-path` and `-p` work as with `publish`.
+
+Preview only makes GET requests to `--server`; it never uploads runs, prepares a
+catalogue, validates remotely, publishes, or updates credentials/publication state.
+New reports do not require login. With valid saved credentials, it selects the
+same saved report as `publish`. Use `--report ID` to preview a public existing
+report explicitly without login. If identity lookup fails, automatic selection is
+unavailable and the preview clearly identifies itself as a new report.
+
+Existing Web text is preserved where local settings are omitted; explicitly empty
+settings clear it. Unavailable or ambiguous API mappings use recorded paths and
+show an unverified warning; they cannot preserve existing claim text by guessing
+its API. Missing tool details and dependency reviews are also identified. The
+direct dependency catalogue is unavailable locally; pinned reviewed evidence is
+still shown. No fake publication ID or timestamp is assigned to a new report.
+
+Preview is for reviewing content, not approval to publish. Conflicts, removed
+claims, withdrawn reports, and interrupted publications are shown as warnings.
+`publish` remains responsible for permissions and final validation. Browser-based
+editing, publishing, comments, and stars are not available in the preview.
+
+### Preview and dry-run
+
+`preview` opens the reader-facing UI and uses GET requests only. It does not run
+the verifier or require Node.js for any other CLI command. `publish --dry-run`
+prints prospective publication data, requires login, and may create an API
+catalogue import on the service. Neither publishes a report; only `publish`
+performs the final server-side validation and publication.
+
+### Troubleshooting
+
+- **Unknown `preview` command:** check `cargo proofs --help`. To use this feature
+  from a source checkout, build with `cargo build --manifest-path cli/Cargo.toml
+  --locked`, then invoke `cli/target/debug/cargo-proofs preview --manifest-path
+  /absolute/path/to/your/Cargo.toml`. Use an absolute binary path when running
+  outside the proofs-rs checkout.
+- **No recorded run:** record a successful verification run for the selected
+  package first. `preview` does not start verification automatically.
+- **Tool configuration or crate/version changed:** select a matching recorded run
+  or record again. Editing only report prose needs no new run.
+- **Port in use:** stop the earlier server or omit `--port` to choose a free port.
+- **UI changes are missing after rebuilding the CLI:** stop and restart preview;
+  a running server retains the UI bundle it started with. Reloading only refreshes
+  report data. If you rebuild from source, regenerate the bundle first as described
+  in [Development](#development).
+
 ## Dependency reviews
 
 Attach a specific report revision for a dependency in `proofs.toml`:
@@ -81,7 +170,7 @@ Omitting `[dependencies]` preserves the existing report's reviews when revising.
 - Ordinary `#[kani::proof]` harnesses are ignored with a notice. Their target/scope cannot be safely inferred from arbitrary code.
 - Multiple contract harnesses for one API, ambiguous targets/reexports, and `include!` source trees stop publication. Glob imports are not used to guess targets. Macro-generated functions/harnesses are not expanded or discovered; this is a source parser, not a Rust compiler frontend.
 - Conditional compilation is evaluated with `kani`, the selected Cargo features, and `rustc --print cfg` for the host or `--target`. Pass `--features foo,bar`, `--all-features`, `--no-default-features`, and `--target` to match verification. Build-script/custom cfgs are not inferred; encountered unsupported cfgs stop discovery. Integration-test targets are not scanned. Target-dependent dependency feature unification and RUSTFLAGS are not used to infer library features.
-- For standard `Default`, `Clone`, and `Hasher` implementations, discovery also records the short trait spelling used by rustdoc catalogues. Arbitrary external trait basenames are not guessed.
+- For standard `Default`, `Clone`, `Hasher`, `Display`, and `FromStr` implementations, discovery also records the short trait spelling used by rustdoc catalogues. Arbitrary external trait basenames are not guessed.
 - The service's imported public API catalogue is authoritative. Missing APIs or multiple public API matches stop publication; no silent skipping.
 - The local fork's implementation may differ from the published crate with the same name/version. The CLI does not prove equivalence; evidence identifies the exact source commit.
 
@@ -117,6 +206,79 @@ target = "annotated" # required: "annotated" or "all"
 
 `[tool].target` selects APIs; CLI `--target` selects the Rust compilation target. They are separate settings. Kani does not accept `[tool].target`: its targets remain explicit `proof_for_contract` harnesses.
 
+## Aeneas (Lean)
+
+Requires cargo-proofs 0.4.0 or later.
+
+Aeneas translates Rust through Charon into a functional model. This adapter checks
+**committed Lean proofs of that model**. It does not run Charon/Aeneas extraction
+or infer that a theorem describes a Rust API. The author must review and declare
+the API/theorem correspondence, input assumptions, and the generated model's
+relationship to the recorded Rust commit. Explain those links in the report.
+A successful translation or `lake build` alone does not produce claims.
+
+1. Generate the model using [Aeneas and Charon](https://github.com/AeneasVerif/aeneas#usage),
+   write the Lean proofs, and use a Lake project with ordinary module paths
+   (`Proofs/F.lean` for module `Proofs.F`). Custom Lake source directories are
+   currently unsupported.
+2. Pin the official Aeneas Git dependency with `subDir = "backends/lean"` in your
+   Lake project. Commit `lakefile.toml` or `lakefile.lean`, `lake-manifest.json`,
+   `lean-toolchain`, generated model sources, proof sources, Rust source,
+   `Cargo.lock`, and `proofs.toml` together. Do not commit `.lake/`, `.olean`, or
+   `.ilean` files. Local path Aeneas dependencies are unsupported.
+3. Initialize with the full Aeneas Git commit in the Lake lock file:
+   `cargo proofs init --tool aeneas --tool-version <40-character-revision>`.
+   This revision must also be registered/selectable in the service's tool catalogue.
+4. Add explicit mappings to `proofs.toml`:
+
+```toml
+[tool]
+name = "aeneas"
+version = "0123456789abcdef0123456789abcdef01234567" # replace with the real revision
+lean_dir = "proofs" # relative to Cargo.toml; defaults to "."
+
+[[tool.proofs]]
+api = "increment" # public Rust path relative to the library
+module = "Proofs.Increment"
+theorem = "demo.increment_spec"
+precondition = "x < u32::MAX" # match the actual theorem's assumptions
+```
+
+One theorem maps to one API; inherent methods and qualified trait implementation
+paths use the same public API resolution as the other adapters. Multiple theorems
+may map to the same API and produce separate claims. Private or ambiguous APIs
+and repeated mappings of the same theorem are rejected. Preconditions are optional
+author prose; empty prose retains an existing claim's text. Use
+`precondition = "true"` only when the theorem needs no additional input assumptions.
+The module and theorem names currently accept dotted ASCII identifiers.
+
+After committing and pushing, run from the Lean project directory:
+
+```sh
+cd proofs
+cargo proofs run --manifest-path ../Cargo.toml -- lake build
+cargo proofs publish --manifest-path ../Cargo.toml --dry-run
+cargo proofs publish --manifest-path ../Cargo.toml
+```
+
+The recorder builds every mapped module explicitly in a detached checkout, then
+runs `lake env lean --stdin` with a generated audit that requires each mapped
+name to be a theorem. It follows transitive axiom dependencies and accepts only
+`propext`, `Classical.choice`, and `Quot.sound`. Proofs relying on `sorryAx`,
+custom axioms (including axiomatized external models), or native-decision axioms
+are rejected. Compilation errors, missing theorems, and failed audits cannot be
+published. The evidence link points to the committed Lean module; the SARIF
+contains the exact audit, mappings, and build/audit logs. Reproduction includes
+both the module build and the audit. Changing mappings requires another run.
+
+The guarantee is that Lean accepted the named theorem under the allowed axioms.
+Model freshness, extraction correctness, API correspondence, the meaning of the
+stated precondition, and the selected theorem's strength remain review obligations.
+Lean, Lake, the pinned Aeneas library, and their build tools remain trusted inputs.
+The recorder captures the default Cargo configuration for dependency review;
+feature/target-specific extraction is not currently supported by this adapter.
+Coq, F*, and HOL4 are not currently supported.
+
 ## Recording and reproduction
 
 `run` checks the installed tool version against `proofs.toml`. Commit and push the verification inputs, including Cargo.lock, before recording. `[git].remote` selects the remote (default `origin`). A clean working tree and a commit reachable on that remote are required. Source URLs use GitHub and the full commit SHA.
@@ -139,13 +301,14 @@ Publication state is stored in the OS local data directory under `cargo-proofs/`
 
 - Repeat `publish` revises the same report and preserves existing claim IDs. An unchanged report produces no revision.
 - A changed crate version starts a new report (the service makes report crate/version immutable).
-- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches claims by API and refuses duplicate matches.
+- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches formal claims by API and theorem name, independently of the run ID. Other claims are matched by API. Duplicate matches are rejected.
+- Each formal claim keeps its own ID and prose when specifications are added, removed, or reordered. A theorem rename or migration from a legacy claim can reuse the ID when the API has exactly one old and one new claim; with multiple claims, an unmatched theorem creates a new claim. A removed theorem's ID can be restored from local publication state.
 - Titles/explanations and other individual editorial fields from the server are preserved. The report title is controlled by TOML; shared optional fields are preserved when absent, or cleared when explicitly `""`. Contracts and evidence are controlled by the selected SARIF record.
 - If the server revision changed since the last publication, show the differences and stop. `publish --dry-run` previews the prospective update. `publish --force` applies the local/config-owned fields over the latest server state, preserving unspecified editorial fields. It still sends `expected_revision` so a concurrent edit after fetching is rejected.
 - Missing contracts remove claims only after a yes/no prompt. Noninteractive approval requires `--yes`. `--force` does not approve deletions or bypass recorded-run checks. Removed claims retain their history/permanent links on the service. Locally known removed claim IDs are reused if their contracts are later restored; recovering removed IDs on a different machine is not automatic.
 - Before a write, the CLI saves the exact request and idempotency key atomically. If publication is interrupted, `publish --resume` retries that saved request rather than generating another report. It prints the saved payload and uses its original recorded evidence. Definite rejected requests are cleared so they can be corrected; ambiguous/network failures retain the journal.
 
-`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 100 claims (50 Kani APIs or 100 Creusot APIs) and 128 KiB; automatic splitting is deliberately unsupported.
+`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 200 claims (Kani discovery supports up to 100 APIs) and 128 KiB; each Aeneas theorem counts as one claim. Automatic splitting is deliberately unsupported.
 
 ## Development
 
@@ -156,6 +319,45 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo build --locked
 python3 tests/e2e.py target/debug/cargo-proofs
+python3 tests/preview.py target/debug/cargo-proofs
 ```
 
-CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot, or push user source repositories.
+When changing preview code, shared views, or public assets, run `npm ci` and
+`npm run build:preview` from the repository root **before** building the CLI.
+Commit the generated `cli/preview/server.cjs` and license notices together with
+the sources. `npm run check:preview` detects a stale bundle. Preview E2E tests
+require Node.js 24+.
+
+CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot/Lean (the separate Lean audit job runs Lean), or push user source repositories.
+
+### Source repositories with submodules
+
+Recording automatically restores all submodules recursively at the Gitlink commits
+in the recorded source revision, before Cargo metadata and API discovery. This
+applies to every supported verifier; submodules are optional. Relative submodule
+URLs resolve against the selected source remote. No remote branches are followed.
+An inaccessible repository or missing commit stops recording. Git transport
+restrictions are retained; the recorder does not enable the file protocol.
+
+Submodule snapshots use an isolated temporary clone so initialization cannot alter
+the original checkout's Git configuration. Recording checks pinned HEADs and tracked
+files before and after verification, and removes the snapshot on success or failure.
+Reproduction instructions initialize submodules after checking out the source commit.
+
+### Automatic Aeneas formal statements
+
+Aeneas runs can resolve specifications using committed `-emit-json` output.
+Set `proof_modules = ["Proofs"]` and
+`translation_manifest = "Generated/translation.json"` under `[tool]` (paths
+relative to `lean_dir`), then use the usual `cargo proofs run -- lake build`
+and `cargo proofs publish`. Every specification that resolves to one public API
+produces its own claim, including multiple specifications for the same API.
+Existing `[[tool.proofs]]` entries remain supported and override the mapping of
+their named theorem without excluding other specifications for that API. New recordings capture the
+full Lean proposition, typed binders, target expression, source and axiom audit;
+Claim revisions refer to the recorded run and theorem, so editing prose cannot
+change the displayed theorem. `precondition` prose may be omitted for these
+records. Translation itself is not rerun by the recorder.
+
+See [the Aeneas guide](https://proofs.rs/book/aeneas.html) for setup, scope,
+provenance, limits, and the tested Lean 4.35.0 / Aeneas be86ab0f adapter.

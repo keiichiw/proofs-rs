@@ -44,7 +44,7 @@ test("report body removes redundant labels and groups claims by API with revisio
   const d: any = dom.window.document;
   assert.equal(d.querySelector('a[href^="/crate/"]'), null);
   assert.equal(
-    d.querySelector(".report-explanation").textContent,
+    d.querySelector(".report-explanation .markdown-body").textContent,
     "Body <script>unsafe</script>",
   );
   assert.equal(d.querySelector("script"), null);

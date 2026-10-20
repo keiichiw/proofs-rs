@@ -76,6 +76,10 @@ fn external_trait_paths(path: &str) -> Vec<String> {
             | "std::clone::Clone"
             | "core::hash::Hasher"
             | "std::hash::Hasher"
+            | "core::fmt::Display"
+            | "std::fmt::Display"
+            | "core::str::FromStr"
+            | "std::str::FromStr"
     ) {
         paths.push(path.rsplit("::").next().unwrap().to_owned());
     }
@@ -148,7 +152,10 @@ fn predicate(meta: &Meta, p: &Project) -> Result<bool> {
                     name.as_str(),
                     "kani"
                         | "creusot"
+                        | "aeneas"
                         | "test"
+                        | "doc"
+                        | "docsrs"
                         | "unix"
                         | "windows"
                         | "debug_assertions"
@@ -313,11 +320,25 @@ fn declarations(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
 }
 
 pub fn discover_for_tool(project: &Project, tool: &Tool) -> Result<Vec<Contract>> {
+    if tool.is_aeneas() {
+        return crate::aeneas::discover(project, tool);
+    }
     if !tool.is_creusot() {
         return discover(project);
     }
-    let target = tool.target.context("Creusot requires [tool].target")?;
-    let mut s = scanner(project, true);
+    public_contracts(
+        project,
+        true,
+        tool.target.context("Creusot requires [tool].target")?,
+    )
+}
+
+pub(crate) fn public_contracts(
+    project: &Project,
+    creusot: bool,
+    target: CreusotTarget,
+) -> Result<Vec<Contract>> {
+    let mut s = scanner(project, creusot);
     s.file(&project.root_source, &[], true)?;
     let mut result = vec![];
     let mut seen = BTreeSet::new();
@@ -351,7 +372,10 @@ pub fn discover_for_tool(project: &Project, tool: &Tool) -> Result<Vec<Contract>
             harness: path,
         });
     }
-    ensure!(!result.is_empty(), "No eligible public Creusot APIs found for [tool].target in the selected library/configuration");
+    ensure!(
+        !result.is_empty(),
+        "No eligible public APIs found in the selected library/configuration"
+    );
     result.sort_by(|a, b| a.api_paths.cmp(&b.api_paths));
     Ok(result)
 }
@@ -650,7 +674,9 @@ impl Scanner<'_> {
                 let traits = if local_trait {
                     self.creusot_public_paths(&tr)?
                 } else {
-                    external_trait_paths(&tr)
+                    // Use the same resolved external path as the harness. resolve()
+                    // can retain a private module prefix for imported extern paths.
+                    external_trait_paths(&self.render_path(&bare_trait, module, generics)?)
                 };
                 Ok(types
                     .iter()
@@ -1291,7 +1317,8 @@ mod tests {
             &Tool {
                 name: "creusot".into(),
                 version: "test".into(),
-                target: Some(CreusotTarget::Annotated)
+                target: Some(CreusotTarget::Annotated),
+                ..Tool::default()
             }
         )
         .unwrap_err()
@@ -1331,6 +1358,24 @@ mod tests {
         assert_eq!(c[0].precondition, "(x > 0) && (x < 10)");
         assert_eq!(c[0].first_line, 8);
         assert_eq!(c[0].last_line, 9);
+    }
+    #[test]
+    fn documentation_cfg_is_inactive_unless_selected() {
+        let (_d, mut p) = project("#![cfg_attr(docsrs, feature(doc_cfg))]\n#[cfg_attr(docsrs, doc(cfg(feature = \"std\")))]\npub fn normal() {}\n#[cfg(docsrs)] pub fn docs_only() {}\n#[cfg(doc)] pub fn rustdoc_only() {}\n");
+        let paths = |p: &Project| {
+            public_contracts(p, false, CreusotTarget::All)
+                .unwrap()
+                .into_iter()
+                .flat_map(|c| c.api_paths)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paths(&p), ["normal"]);
+        p.cfg.insert("docsrs".into());
+        assert_eq!(paths(&p), ["docs_only", "normal"]);
+        p.cfg.insert("doc".into());
+        assert_eq!(paths(&p), ["docs_only", "normal", "rustdoc_only"]);
+        let (_d, p) = project("#[cfg(unknown_documentation_mode)] pub fn unknown() {}");
+        assert!(public_contracts(&p, false, CreusotTarget::All).is_err());
     }
     #[test]
     fn rejects_multiple_harnesses() {
@@ -1393,6 +1438,7 @@ mod tests {
                 name: "creusot".into(),
                 version: "test".into(),
                 target: Some(target),
+                ..Tool::default()
             },
         )
         .unwrap()
@@ -1463,6 +1509,94 @@ pub fn cfg(x: u32) {}
     }
 
     #[test]
+    fn nested_external_trait_paths_do_not_include_private_module() {
+        let c = creusot_contracts(
+            r#"
+mod date {
+    use std::fmt::Display;
+    use std::str::FromStr;
+    pub struct HttpDate;
+    impl Display for HttpDate { #[ensures(true)] fn fmt(&self) {} }
+    impl FromStr for HttpDate { #[ensures(true)] fn from_str() {} }
+}
+pub use date::HttpDate;
+"#,
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            c[0].api_paths,
+            [
+                "<demo::HttpDate as Display>::fmt",
+                "<demo::HttpDate as std::fmt::Display>::fmt"
+            ]
+        );
+        assert_eq!(
+            c[1].api_paths,
+            [
+                "<demo::HttpDate as FromStr>::from_str",
+                "<demo::HttpDate as std::str::FromStr>::from_str"
+            ]
+        );
+        assert_eq!(
+            c[0].harness,
+            "<demo::date::HttpDate as std::fmt::Display>::fmt"
+        );
+    }
+
+    #[test]
+    fn nested_external_traits_keep_qualification_and_local_trait_identity() {
+        let c = creusot_contracts(
+            "mod hidden { use custom::Default; pub struct S; pub trait T {} impl Default for S { #[ensures(true)] fn default() {} } impl T for S { #[ensures(true)] fn m() {} } } pub use hidden::{S, T};",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as custom::Default>::default"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as demo::T>::m"]);
+    }
+
+    #[test]
+    fn core_parser_formatter_traits_have_catalog_aliases() {
+        let c = creusot_contracts(
+            "use core::fmt::Display; use core::str::FromStr; pub struct S; impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} }",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            c[0].api_paths,
+            [
+                "<demo::S as Display>::fmt",
+                "<demo::S as core::fmt::Display>::fmt"
+            ]
+        );
+        assert_eq!(
+            c[1].api_paths,
+            [
+                "<demo::S as FromStr>::from_str",
+                "<demo::S as core::str::FromStr>::from_str"
+            ]
+        );
+    }
+
+    #[test]
+    fn custom_and_local_parser_formatter_traits_have_no_standard_aliases() {
+        let c = creusot_contracts(
+            "mod hidden { use custom::Display; use custom::FromStr; pub struct S; impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} } } pub use hidden::S;",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as custom::Display>::fmt"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as custom::FromStr>::from_str"]);
+        let c = creusot_contracts(
+            "pub struct S; pub trait Display {} pub trait FromStr {} impl Display for S { #[ensures(true)] fn fmt(&self) {} } impl FromStr for S { #[ensures(true)] fn from_str() {} }",
+            CreusotTarget::Annotated,
+        );
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].api_paths, ["<demo::S as demo::Display>::fmt"]);
+        assert_eq!(c[1].api_paths, ["<demo::S as demo::FromStr>::from_str"]);
+    }
+
+    #[test]
     fn standard_trait_catalog_aliases_are_explicit_and_limited() {
         let c = creusot_contracts("use core::default::Default; pub struct S; impl Default for S { #[ensures(true)] fn default() -> Self { S } }", CreusotTarget::Annotated);
         assert_eq!(
@@ -1495,6 +1629,7 @@ use creusot_std::{requires as pre, trusted as trust};
             name: "creusot".into(),
             version: "test".into(),
             target: Some(CreusotTarget::All),
+            ..Tool::default()
         };
         let c = discover_for_tool(&p, &tool).unwrap();
         assert_eq!(c.len(), 1);

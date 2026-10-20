@@ -3,6 +3,60 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { renderRecordedRun } from "../web/recorded-run";
 
+test("Aeneas reproduction includes the exact Lean theorem audit as quoted stdin", () => {
+  const source =
+    "import Lean\n-- literal 'quotes', $(touch /tmp/no), and `backticks`\n";
+  const sarif = {
+    runs: [
+      {
+        invocations: [
+          {
+            executableLocation: { uri: "lake" },
+            arguments: ["build", "+Proofs"],
+            workingDirectory: { uri: "proofs/" },
+            executionSuccessful: true,
+            exitCode: 0,
+            startTimeUtc: "2026-10-16T00:00:00Z",
+            endTimeUtc: "2026-10-16T00:00:01Z",
+          },
+        ],
+        versionControlProvenance: [
+          {
+            repositoryUri: "https://github.com/test/source",
+            revisionId: "a".repeat(40),
+          },
+        ],
+        properties: {
+          proofs: {
+            contracts: [],
+            aeneas: { backend: "lean", audit_source: source },
+          },
+        },
+        results: [],
+      },
+    ],
+  };
+  const dom = new JSDOM(
+    renderRecordedRun(sarif, "run", 0, {
+      id: 42,
+      revision_no: 1,
+      run_ids: ["run"],
+      claims: [],
+    }),
+  );
+  const script = dom.window.document.querySelector("pre")!.textContent!;
+  const checkout = script.indexOf("checkout --detach");
+  const submodules = script.indexOf("submodule update --init --recursive --checkout");
+  const cd = script.indexOf("cd report-");
+  const build = script.indexOf("lake build +Proofs");
+  const audit = script.indexOf("printf '%s'");
+  assert.ok(checkout >= 0 && checkout < submodules && submodules < cd && cd < build && build < audit);
+  assert.ok(script.includes("printf '%s' 'import Lean\n"));
+  assert.ok(script.includes("'\\''quotes'\\''"));
+  assert.ok(script.endsWith("| lake env lean --stdin"));
+  dom.window.close();
+});
+
 test("recorded runs render complete HTML, link claims and safely escape output", async () => {
   const dom = new JSDOM('<main id="app"></main>', {
     url: "https://proofs.rs",
