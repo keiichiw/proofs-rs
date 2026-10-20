@@ -80,7 +80,11 @@ test("SEO routes bypass HTML, authentication and static asset routing", async ()
   const env = {
     ENVIRONMENT: "production",
     APP_ORIGIN: "https://proofs.rs",
-    ASSETS: { fetch: async () => { throw new Error("Unexpected asset request"); } },
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("Unexpected asset request");
+      },
+    },
   } as unknown as Env;
   for (const [path, contentType] of [
     ["/robots.txt", "text/plain; charset=utf-8"],
@@ -92,7 +96,11 @@ test("SEO routes bypass HTML, authentication and static asset routing", async ()
     assert.equal(response.headers.get("set-cookie"), null);
     assert.equal(response.headers.get("X-Robots-Tag"), null);
     assert.ok((await response.text()).includes("https://proofs.rs"));
-    const head = await app.request("https://proofs.rs" + path, { method: "HEAD" }, env);
+    const head = await app.request(
+      "https://proofs.rs" + path,
+      { method: "HEAD" },
+      env,
+    );
     assert.equal(head.status, 200);
     assert.equal(await head.text(), "");
   }
