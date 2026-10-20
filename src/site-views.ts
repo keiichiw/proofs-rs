@@ -1,6 +1,11 @@
 import { renderMarkdown } from "./markdown";
 import { renderAPICatalog } from "../web/api-catalog";
 
+export interface ViewOptions {
+  external?: (path: string) => string;
+  claim?: (id: string, revision: unknown) => string;
+  preview?: boolean;
+}
 type Crumb = { label: string; href: string };
 export function createViews(
   me: any,
@@ -10,8 +15,18 @@ export function createViews(
     fields: Record<string, unknown>,
     label: string,
   ) => string,
+  options: ViewOptions = {},
 ) {
   const enc = encodeURIComponent;
+  const external = options.external ?? ((path: string) => path);
+  const claimHref =
+    options.claim ??
+    ((id: string, revision: unknown) =>
+      `/claim/${enc(id)}?report_revision=${enc(String(revision))}`);
+  const apiHref = (id: string) =>
+    options.preview && id.startsWith("preview-api-")
+      ? null
+      : external(`/api/${enc(id)}`);
   const esc = (v: any) =>
     String(v ?? "").replace(
       /[&<>"']/g,
@@ -75,7 +90,7 @@ export function createViews(
       : "";
   }
   function starButton(kind: string, c: any) {
-    if (!config.show_star_karma) return "";
+    if (options.preview || !config.show_star_karma) return "";
     const button = me.user
       ? action(
           "star",
@@ -101,24 +116,28 @@ export function createViews(
   function toolLink(c: any) {
     const label = `${esc(c.tool)} ${esc(c.tool_version)}`;
     return c.tool_version_id
-      ? `<a href="/tool-version/${enc(c.tool_version_id)}">${label}</a>`
+      ? `<a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${label}</a>`
       : label;
   }
   function toolLimitations(c: any) {
     if (!c.tool_limitations) return "";
-    return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="/tool-version/${enc(c.tool_version_id)}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
+    return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
   }
   function reportContent(c: any, stars = false) {
     return `${stars ? titleWithStars("report", c) : `<h1>${esc(c.title)}</h1>`}<p class="report-tool">${toolLink(c)}</p>`;
   }
-  function reproduceSection(runIds: string[], environment?: string) {
+  function reproduceSection(
+    runIds: string[],
+    environment?: string,
+    recorded = "",
+  ) {
     return runIds?.length || environment
-      ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body"></div>${environment ? `<details class="report-environment"><summary>Environment</summary><div class="markdown-body">${renderMarkdown(environment, 2)}</div></details>` : ""}</details>`
+      ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body">${recorded}</div>${environment ? `<details class="report-environment"><summary>Environment</summary><div class="markdown-body">${renderMarkdown(environment, 2)}</div></details>` : ""}</details>`
       : "";
   }
-  function reportBody(c: any) {
+  function reportBody(c: any, recorded = "") {
     return `${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
-    ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment)}</section>` : ""}
+    ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment, recorded)}</section>` : ""}
     ${c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2><div class="markdown-body">${renderMarkdown(c.trusted_assumptions, 2)}</div></section>` : ""}
     ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${c.limitations ? `<div class="markdown-body">${renderMarkdown(c.limitations, 2)}</div>` : ""}${toolLimitations(c)}</section>` : ""}
     ${reportDependencies(c)}
@@ -129,7 +148,7 @@ export function createViews(
     const reviews = c.dependencies ?? [];
     const reportLink = (r: any) =>
       r.report != null && r.revision != null
-        ? `<a href="/report/${enc(String(r.report))}?v=${enc(String(r.revision))}">Report #${esc(r.report)} · v${esc(r.revision)}</a>${r.reviewed ? " · reviewed" : ""}${r.withdrawn ? " · <strong>Withdrawn</strong>" : ""}`
+        ? `<a href="${esc(external(`/report/${enc(String(r.report))}?v=${enc(String(r.revision))}`))}">Report #${esc(r.report)} · v${esc(r.revision)}</a>${r.reviewed ? " · reviewed" : ""}${r.withdrawn ? " · <strong>Withdrawn</strong>" : ""}`
         : '<span class="muted">—</span>';
     const catalog =
       dependencies == null
@@ -171,12 +190,18 @@ export function createViews(
         hideEmpty: true,
         hideCounts: true,
         expandFamilies: true,
+        apiHref: (id) => {
+          if (!options.preview || id.startsWith("preview-api-"))
+            return apiHref(id);
+          const claim = groups.get(id)![0];
+          return claimHref(claim.id, claim.report_revision);
+        },
         details: (api) =>
           `<div class="report-api-claims"><span class="claim-links">${groups
             .get(api.id)!
             .map(
               (claim) =>
-                `<a href="/claim/${enc(claim.id)}?report_revision=${enc(String(claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
+                `<a href="${esc(claimHref(claim.id, claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
             )
             .join(", ")}</span></div>`,
       },
@@ -191,7 +216,7 @@ export function createViews(
   }
   function claimContent(c: any, stars = false) {
     return `${stars ? titleWithStars("claim", c) : `<h1>Claim #${esc(c.claim_number)} — ${esc(c.title)}</h1>`}
-    <p><a href="/api/${enc(c.api_item_id)}"><code>${esc(c.display_path)}</code></a>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
+    <p>${apiHref(c.api_item_id) ? `<a href="${esc(apiHref(c.api_item_id))}"><code>${esc(c.display_path)}</code></a>` : `<code>${esc(c.display_path)}</code> · API unverified`}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
     <pre class="signature">${esc(c.signature)}</pre><p>Tool: ${toolLink(c)}</p>
     <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || "None stated")}</p></section>
     ${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}

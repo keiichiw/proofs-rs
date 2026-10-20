@@ -53,6 +53,12 @@ jobs:
           assert package.get('publish') == ['crates-io'], 'Expected crates.io-only publication'
           PY
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check:preview
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -68,6 +74,7 @@ jobs:
       - run: cargo clippy --manifest-path cli/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo build --manifest-path cli/Cargo.toml --locked
       - run: python3 cli/tests/e2e.py cli/target/debug/cargo-proofs
+      - run: python3 cli/tests/preview.py cli/target/debug/cargo-proofs
       - run: cargo publish --manifest-path cli/Cargo.toml --dry-run --locked --registry crates-io
       - name: Create persistent release archive
         working-directory: cli

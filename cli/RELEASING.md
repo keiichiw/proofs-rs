@@ -44,8 +44,9 @@ with the next published version.
 ## Subsequent releases
 
 1. Update `cli/Cargo.toml` and the package version in `cli/Cargo.lock` together in a PR. Keep the README current; crate contents are public even if the Git repository is private.
-2. Merge after CI succeeds.
-3. Tag that main commit and push the tag:
+2. If preview code, shared views, or public assets changed, use Node.js 24+ and run `npm ci`, `npm run build:preview`, and `npm run check:preview` from the repository root. Include the generated bundle and third-party notices in the PR; Cargo does not regenerate them. The release workflow checks bundle freshness and runs preview E2E tests.
+3. Merge after CI succeeds.
+4. Tag that main commit and push the tag:
 
    ```sh
    git tag -a cargo-proofs-v0.1.1 -m 'cargo-proofs 0.1.1'

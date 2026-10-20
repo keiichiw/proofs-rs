@@ -65,6 +65,24 @@ pub struct Pending {
     pub body: Value,
     pub key: String,
 }
+/// Locate publication state without creating directories or acquiring a write lock.
+pub fn publication_path(
+    server: &str,
+    user: &str,
+    project: &crate::config::Project,
+) -> Result<PathBuf> {
+    let manifest = project.manifest.to_string_lossy();
+    Ok(crate::record::state_dir(project)?
+        .join("publication")
+        .join(format!(
+            "{}.json",
+            digest(&format!(
+                "{server}\n{user}\n{manifest}\n{}\n{}",
+                project.name, project.version
+            ))
+        )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -21,6 +21,9 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -33,8 +36,11 @@ jobs:
         run: |
           cargo publish --dry-run --locked --registry crates-io
           cargo package --locked
+          cargo build --manifest-path target/package/cargo-proofs-*/Cargo.toml --target-dir target/package-check --locked
+          python3 target/package/cargo-proofs-*/tests/preview.py target/package-check/debug/cargo-proofs
           python3 -c 'from pathlib import Path; assert any(p.stat().st_size for p in Path("target/package").glob("*.crate")), "Missing release archive"'
       - run: python3 tests/e2e.py target/debug/cargo-proofs
+      - run: python3 tests/preview.py target/debug/cargo-proofs
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo run -- proofs --help
   service:
@@ -50,6 +56,7 @@ jobs:
         with:
           mdbook-version: "0.4.45"
       - run: npm ci
+      - run: npm run check:preview
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

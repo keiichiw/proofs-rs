@@ -1,7 +1,9 @@
 mod aeneas;
 mod api;
 mod config;
+mod draft;
 mod git;
+mod preview;
 mod publish;
 mod record;
 mod scan;
@@ -79,6 +81,23 @@ enum Commands {
         #[arg(last=true, required=true, num_args=2..)]
         command: Vec<String>,
     },
+    /// Preview a recorded report locally (requires Node.js 24+; never uploads).
+    Preview {
+        #[command(flatten)]
+        project: ProjectArgs,
+        /// Select a recorded run (defaults to the latest run at startup).
+        #[arg(long)]
+        run: Option<String>,
+        /// Preview a public report revision (defaults to your saved publication target).
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        report: Option<u64>,
+        /// Local port; zero selects an available port.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the URL without opening a browser.
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// Publish recorded SARIF results with embedded execution logs.
     Publish {
         #[command(flatten)]
@@ -121,6 +140,22 @@ fn run() -> Result<()> {
         Commands::Login { no_browser } => api::login(&server, no_browser),
         Commands::Logout => api::logout(&server),
         Commands::Run { project, command } => record::run(&project, command),
+        Commands::Preview {
+            project,
+            run,
+            report,
+            port,
+            no_browser,
+        } => preview::run(
+            &server,
+            &project,
+            preview::Options {
+                run,
+                report,
+                port,
+                no_browser,
+            },
+        ),
         Commands::Publish {
             project,
             dry_run,

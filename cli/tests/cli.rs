@@ -5,9 +5,10 @@ fn cargo_subcommand_and_direct_help() {
         vec!["--help"],
         vec!["proofs", "--help"],
         vec!["proofs", "publish", "--help"],
+        vec!["proofs", "preview", "--help"],
     ] {
         let out = Command::new(env!("CARGO_BIN_EXE_cargo-proofs"))
-            .args(args)
+            .args(&args)
             .output()
             .unwrap();
         assert!(
@@ -15,7 +16,14 @@ fn cargo_subcommand_and_direct_help() {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert!(String::from_utf8_lossy(&out.stdout).contains("publish"));
+        let help = String::from_utf8_lossy(&out.stdout);
+        if args.contains(&"preview") {
+            for option in ["preview", "--run", "--report", "--port", "--no-browser"] {
+                assert!(help.contains(option), "Missing preview option {option}");
+            }
+        } else {
+            assert!(help.contains("publish"));
+        }
         assert!(String::from_utf8_lossy(&out.stdout).contains("Usage: cargo proofs"));
     }
 }

@@ -95,7 +95,7 @@ cargo proofs login
 
 Authorize the CLI in your browser with your GitHub account.
 
-### 4. Preview and publish
+### 4. Record, preview, and publish
 
 Commit and push your source and Cargo.lock before recording verification.
 
@@ -104,6 +104,19 @@ cargo proofs run -- cargo kani
 ```
 
 Only SARIF results with embedded logs are uploaded. Source stays on GitHub. No additional push is needed between run and publish.
+
+With Node.js 24 or newer installed, review the report in your browser:
+
+```sh
+cargo proofs preview
+```
+
+Click an API name or **Claim #…** to inspect its local claim page. Edit
+`proofs.toml` and reload the browser to review changes, then stop preview with
+Ctrl+C. See [Preview a report](preview-a-report.md) for package/run selection,
+existing reports, and missing metadata.
+
+When ready, inspect the publication data and publish:
 
 ```sh
 cargo proofs publish --dry-run
