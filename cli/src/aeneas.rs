@@ -989,6 +989,11 @@ mod tests {
     #[ignore = "requires Lean on PATH; exercised by the Lean audit CI job"]
     fn real_lean_checks_theorems_and_transitive_axioms() {
         let d = tempfile::tempdir().unwrap();
+        fs::write(
+            d.path().join("lean-toolchain"),
+            "leanprover/lean4:v4.35.0\n",
+        )
+        .unwrap();
         let mut t = tool();
         t.proofs[0].module = "Proofs".into();
         for (body, success) in [
@@ -1001,7 +1006,7 @@ mod tests {
             fs::write(d.path().join("Proofs.lean"), body).unwrap();
             let build = Command::new("lean").args(["-o", "Proofs.olean", "Proofs.lean"])
                 .current_dir(d.path()).output().expect("Install Lean on PATH");
-            assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stdout));
+            assert!(build.status.success(), "{body}\nstatus: {}\nstdout:\n{}\nstderr:\n{}", build.status, String::from_utf8_lossy(&build.stdout), String::from_utf8_lossy(&build.stderr));
             let mut audit = Command::new("lean").arg("--stdin").env("LEAN_PATH", d.path())
                 .current_dir(d.path()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
             audit.stdin.take().unwrap().write_all(audit_source(&t).as_bytes()).unwrap();
