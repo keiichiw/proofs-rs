@@ -29,7 +29,7 @@ pub struct Options {
 fn same_content(a: &Value, b: &Value) -> bool {
     fn canonical(mut value: Value) -> Value {
         if let Some(claims) = value["claims"].as_array_mut() {
-            claims.sort_by_key(|c| c["api_item_id"].to_string());
+            claims.sort_by_key(|c| key(c).unwrap_or_default());
         }
         if let Some(dependencies) = value["dependencies"].as_array_mut() {
             for dependency in dependencies.iter_mut() {
@@ -80,9 +80,9 @@ fn diff(before: &Value, after: &Value) {
         match before.get(k) {
             None => eprintln!("  + claim {}", k),
             Some(old) => {
-                for field in CLAIM_FIELDS {
-                    if old[*field] != c[*field] {
-                        eprintln!("  claim {} {field}: {} -> {}", k, old[*field], c[*field]);
+                for field in CLAIM_FIELDS.iter().copied().chain(["evidence_ref"]) {
+                    if old[field] != c[field] {
+                        eprintln!("  claim {} {field}: {} -> {}", k, old[field], c[field]);
                     }
                 }
             }
@@ -195,8 +195,9 @@ fn complete(api: &Api, state: &mut State, path: &Path) -> Result<()> {
         .as_array()
         .context("Missing published claims")?
     {
-        let api = key(claim)?;
-        state.known_claims.insert(api, claim.clone());
+        // Reindex legacy API-only keys, and discard stale names for reused IDs.
+        state.known_claims.retain(|_, old| old["id"] != claim["id"]);
+        state.known_claims.insert(key(claim)?, claim.clone());
     }
     state.report_id = Some(id);
     state.revision = Some(revision);
@@ -248,7 +249,10 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
         .as_str()
         .context("Missing run ID")?;
     let source = &entry["versionControlProvenance"][0];
-    ensure!(contracts.len() <= 100, "Too many claims");
+    ensure!(
+        contracts.len() <= crate::MAX_REPORT_CLAIMS,
+        "Too many claims"
+    );
     let tool = api.tool_version(&config.tool.name, &config.tool.version)?;
     if options.dry_run {
         println!(
@@ -267,10 +271,6 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
     for contract in contracts {
         let (api_id, api_path) =
             api.resolve(&project.name, &project.version, &contract.api_paths)?;
-        ensure!(
-            seen.insert(api_id.clone()),
-            "Multiple contracts resolve to the same public API {api_path}"
-        );
         let evidence = format!(
             "{}/blob/{}/{}#L{}-L{}",
             source["repositoryUri"]
@@ -287,7 +287,15 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
             "{} → {}\n  precondition: {}\n  evidence: {}",
             contract.harness, api_path, contract.precondition, evidence
         );
-        claims.push(json!({"api_item_id":api_id,"precondition":contract.precondition,"evidence_url":evidence}));
+        let mut claim = json!({"api_item_id":api_id,"precondition":contract.precondition,"evidence_url":evidence});
+        if contract.formal.is_some() {
+            claim["evidence_ref"] = json!({"run_id":run_id,"harness":contract.harness});
+        }
+        ensure!(
+            seen.insert(key(&claim)?),
+            "Multiple contracts resolve to the same public API and theorem {api_path}"
+        );
+        claims.push(claim);
     }
     let selected = options.report.or(saved.report_id);
     let remote = selected
@@ -508,7 +516,10 @@ mod tests {
             assert_eq!(request.url(), "/api/v1/reports/42/revisions/1");
             request
                 .respond(tiny_http::Response::from_string(
-                    r#"{"title":"Published","claims":[]}"#,
+                    json!({"title":"Published","claims":[
+                        {"id":"first","api_item_id":"api","evidence_ref":{"run_id":"new","harness":"A"}},
+                        {"id":"second","api_item_id":"api","evidence_ref":{"run_id":"new","harness":"B"}}
+                    ]}).to_string(),
                 ))
                 .unwrap();
         });
@@ -516,6 +527,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let path = d.path().join("state.json");
         let mut state = State {
+            report_id: Some(42),
+            known_claims: [("api".into(), json!({"id":"first","api_item_id":"api","evidence_ref":{"run_id":"old","harness":"OldName"}}))].into(),
             pending: Some(Pending {
                 path: "/api/v1/reports".into(),
                 body: json!({"title":"Published","dependencies":[{"crate":"serde","report":123,"revision":2}]}),
@@ -531,6 +544,11 @@ mod tests {
         assert_eq!(saved.report_id, Some(42));
         assert_eq!(saved.revision, Some(1));
         assert!(saved.pending.is_none());
+        assert_eq!(saved.known_claims.len(), 2);
+        assert!(!saved.known_claims.contains_key("api"));
+        let mut reversed = saved.snapshot.clone().unwrap();
+        reversed["claims"].as_array_mut().unwrap().reverse();
+        assert!(same_content(saved.snapshot.as_ref().unwrap(), &reversed));
         job.join().unwrap();
     }
     #[test]

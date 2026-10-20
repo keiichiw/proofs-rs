@@ -1,3 +1,4 @@
+import { resolveContract, checkAnchor } from "./formal-evidence";
 const esc = (s: unknown) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -56,7 +57,7 @@ export function renderRecordedRun(
     typeof proofs.aeneas.audit_source === "string"
       ? [
           "",
-          `printf '%s' ${quote(proofs.aeneas.audit_source)} | lake env lean --stdin`,
+          `printf '%s' ${quote(proofs.aeneas_extraction_source ?? proofs.aeneas.audit_source)} | lake env lean --stdin`,
         ]
       : [];
   const script = [
@@ -89,9 +90,7 @@ export function renderRecordedRun(
       const contract = run.contracts.find((x: any) => x.harness === harness);
       const claims = contract
         ? report.claims.filter(
-            (c: any) =>
-              contract.api_paths.includes(c.display_path) &&
-              contract.precondition === c.precondition,
+            (c: any) => resolveContract(sarif, id, c)?.harness === harness,
           )
         : [];
       const place =
@@ -112,7 +111,7 @@ export function renderRecordedRun(
           } as any
         )[r.kind] ||
         r.kind;
-      return `<tr><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="${esc(links.claim ? links.claim(c.id) : `/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}`)}">Claim #${esc(c.claim_number)}</a>`).join(" · ") || "—"}</td></tr>`;
+      return `<tr id="${esc(checkAnchor(harness))}"><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="${esc(links.claim ? links.claim(c.id) : `/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}`)}">Claim #${esc(c.claim_number)}</a>`).join(" · ") || "—"}</td></tr>`;
     })
     .join("");
   const item = (label: string, value: any) =>

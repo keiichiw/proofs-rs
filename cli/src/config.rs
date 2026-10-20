@@ -42,6 +42,10 @@ pub struct Tool {
     pub lean_dir: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proofs: Vec<crate::aeneas::Proof>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proof_modules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation_manifest: Option<PathBuf>,
 }
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, clap::ValueEnum, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -66,7 +70,11 @@ impl Tool {
             "[tool].version is required"
         );
         ensure!(
-            self.is_aeneas() || (self.lean_dir.is_none() && self.proofs.is_empty()),
+            self.is_aeneas()
+                || (self.lean_dir.is_none()
+                    && self.proofs.is_empty()
+                    && self.proof_modules.is_empty()
+                    && self.translation_manifest.is_none()),
             "lean_dir and proofs apply only to Aeneas"
         );
         if self.is_aeneas() {

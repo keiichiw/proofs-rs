@@ -1,3 +1,4 @@
+import { validLeanSegments } from "../web/formal-evidence";
 import { renderMarkdown } from "./markdown";
 import { renderAPICatalog } from "../web/api-catalog";
 
@@ -214,11 +215,44 @@ export function createViews(
         : `<div class="markdown-body">${renderMarkdown(value, 2)}</div>`;
     return `${individual ? content(individual) : ""}${shared ? `<details class="claim-report-context"><summary>From the report</summary>${content(shared)}</details>` : ""}`;
   }
+  function formalStatement(f: any) {
+    const definitions = new Map<string, any>(
+      f.definitions.map((d: any) => [d.name, d]),
+    );
+    const expression = (text: string, parts?: any[]) => {
+      if (!validLeanSegments(text, parts)) return esc(text);
+      return parts!
+        .map((p) => {
+          const definition = p.ref ? definitions.get(p.ref) : null;
+          return definition?.source_url
+            ? `<a href="${esc(definition.source_url)}" title="${esc(p.ref)}">${esc(p.text)}</a>`
+            : esc(p.text);
+        })
+        .join("");
+    };
+    const roles: Record<string, string> = {
+      variable: "for all",
+      hypothesis: "assume",
+      instance: "instance",
+    };
+    return `<section class="report-section formal-statement"><h2>Formal statement</h2><p><code>${esc(f.theorem)}</code></p>
+      <div class="lean-readable">
+        ${f.binders.map((b: any) => `<div class="lean-row"><span class="lean-role">${roles[b.kind]}</span><span class="lean-expression"><span class="lean-binding">${esc(b.name)} :</span> ${expression(b.type, b.type_segments)}</span></div>`).join("")}
+        <div class="lean-row lean-conclusion"><span class="lean-role">then</span><span class="lean-expression">${expression(f.conclusion, f.conclusion_segments)}</span></div>
+      </div>
+      ${[f.conclusion, ...f.binders.map((b: any) => b.type)].some((s: string) => s.includes("↑")) ? '<p class="meta">In Lean notation, ↑ denotes an implicit type conversion (coercion).</p>' : ""}
+      ${f.program ? `<h3>Target program</h3><pre><code>${esc(f.program)}</code></pre>` : ""}
+      <details><summary>Complete Lean proposition</summary><button type="button" data-copy-formal>Copy proposition</button><span role="status" data-copy-status></span><pre tabindex="0"><code>${esc(f.statement)}</code></pre></details>
+      <p><a href="${esc(f.source_url)}">Theorem source at recorded commit</a> · <a href="${esc(f.check_url)}">Recorded check</a></p>
+      <details><summary>Referenced definitions (up to 100 direct references)</summary><ul>${f.definitions.map((d: any) => `<li>${d.source_url ? `<a href="${esc(d.source_url)}"><code>${esc(d.name)}</code></a>` : `<code>${esc(d.name)}</code> · ${esc(d.module)}`}</li>`).join("")}</ul>${f.definitions_truncated ? "<p>Reference limit reached; consult the full theorem source.</p>" : ""}</details>
+      <p class="meta">Mapping: ${esc(f.mapping)}. Translation was not rerun by this recording.</p></section>`;
+  }
   function claimContent(c: any, stars = false) {
     return `${stars ? titleWithStars("claim", c) : `<h1>Claim #${esc(c.claim_number)} — ${esc(c.title)}</h1>`}
     <p>${apiHref(c.api_item_id) ? `<a href="${esc(apiHref(c.api_item_id))}"><code>${esc(c.display_path)}</code></a>` : `<code>${esc(c.display_path)}</code> · API unverified`}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
     <pre class="signature">${esc(c.signature)}</pre><p>Tool: ${toolLink(c)}</p>
-    <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || "None stated")}</p></section>
+    <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || (c.evidence_ref ? "See the formal statement, including input types and instances, for conditions." : "None stated"))}</p></section>
+    ${c.formal_evidence ? formalStatement(c.formal_evidence) : ""}
     ${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
     ${c.evidence_url ? `<section class="report-section"><h2>Evidence</h2><p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p></section>` : ""}
     ${c.shared_trusted_assumptions || c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2>${claimScope(c.shared_trusted_assumptions, c.trusted_assumptions)}</section>` : ""}

@@ -1,3 +1,4 @@
+export const MAX_REPORT_CLAIMS = 200;
 import { z } from "zod";
 
 // Shared wire schemas. Database-dependent rules stay in the route handlers.
@@ -165,6 +166,95 @@ export const report = z
     dependency_count: integer,
   })
   .meta({ id: "Report" });
+export const evidenceRef = z.strictObject({
+  run_id: string.regex(/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/),
+  harness: string.min(1).max(1000),
+});
+const leanSegments = z
+  .array(
+    z.strictObject({
+      text: string.max(1000000),
+      ref: string.min(1).max(1000).optional(),
+    }),
+  )
+  .max(10000);
+export const formalEvidence = z.strictObject({
+  version: z.literal(1),
+  theorem: string.min(1).max(1000),
+  module: string.min(1).max(1000),
+  statement: string.min(1).max(1000000),
+  binders: z
+    .array(
+      z.strictObject({
+        name: string,
+        type: string,
+        type_segments: leanSegments.optional(),
+        kind: z.enum(["variable", "hypothesis", "instance"]),
+        binder: string,
+      }),
+    )
+    .max(1000),
+  conclusion: string.min(1).max(1000000),
+  conclusion_segments: leanSegments.optional(),
+  program: string.nullable(),
+  program_head: string.nullable(),
+  axioms: z.array(string).max(100),
+  mapping: z.enum(["manual", "manifest"]),
+  manifest: z
+    .strictObject({
+      path: string.min(1).max(1000),
+      sha256: string.regex(/^[a-f0-9]{64}$/),
+      aeneas_version: string,
+      charon_version: string,
+      entry: z.looseObject({
+        lean_name: string.min(1),
+        lean_file: string.min(1),
+        rust_name: string.min(1),
+        def_id: integer.nonnegative(),
+        is_local: z.literal(true),
+        source: z.looseObject({
+          file: string,
+          begin_line: integer.positive(),
+          end_line: integer.positive(),
+        }),
+      }),
+    })
+    .nullable(),
+  source: z.strictObject({
+    file: string,
+    first_line: integer.positive(),
+    last_line: integer.positive(),
+  }),
+  definitions: z
+    .array(
+      z.strictObject({
+        name: string,
+        module: string,
+        source: z
+          .strictObject({
+            file: string,
+            first_line: integer.positive(),
+            last_line: integer.positive(),
+          })
+          .nullable()
+          .optional(),
+      }),
+    )
+    .max(100),
+  definitions_truncated: z.boolean(),
+  translation_rerun: z.literal(false),
+});
+export const formalDetail = formalEvidence.extend({
+  source_url: string,
+  check_url: string,
+  definitions: z
+    .array(
+      formalEvidence.shape.definitions.element.extend({
+        source_url: nullableString,
+      }),
+    )
+    .max(100),
+});
 export const claim = z
   .object({
     id: string,
@@ -182,6 +272,7 @@ export const claim = z
     position: integer,
     title: string,
     precondition: string,
+    evidence_ref: evidenceRef.nullable().optional(),
     explanation: string,
     trusted_assumptions: string.describe("Displayed as What is trusted."),
     evidence_url: string,
@@ -278,7 +369,8 @@ export const star = z.object({
 const claimFields = {
   api_item_id: required(200),
   title: optional(1000),
-  precondition: required(10000),
+  precondition: field(10000).default(""),
+  evidence_ref: evidenceRef.nullable().optional(),
   explanation: optional(),
   trusted_assumptions: optional(),
   evidence_url: optional(1000),
@@ -298,12 +390,13 @@ export const reportInput = z
     claims: z
       .array(z.object({ id: required(100).optional(), ...claimFields }))
       .min(1)
-      .max(100),
+      .max(MAX_REPORT_CLAIMS),
     run_ids: z.array(string).min(1).max(10),
     dependencies: z.array(dependencyInput).max(100).optional(),
   })
   .meta({ id: "ReportInput" });
 export const validatedClaim = z.object({
+  evidence_ref: evidenceRef.nullable().optional(),
   id: nullableString,
   api_item_id: string,
   title: string,
@@ -446,10 +539,11 @@ export const sarif = z
                     harness: string,
                     api_paths: z.array(string).min(1),
                     precondition: string,
+                    formal: formalEvidence.optional(),
                   }),
                 )
                 .min(1)
-                .max(100),
+                .max(MAX_REPORT_CLAIMS),
             }),
           }),
         }),

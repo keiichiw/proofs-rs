@@ -245,8 +245,10 @@ precondition = "x < u32::MAX" # match the actual theorem's assumptions
 ```
 
 One theorem maps to one API; inherent methods and qualified trait implementation
-paths use the same public API resolution as the other adapters. Private or
-ambiguous APIs, duplicate mappings, and empty preconditions are rejected. Use
+paths use the same public API resolution as the other adapters. Multiple theorems
+may map to the same API and produce separate claims. Private or ambiguous APIs
+and repeated mappings of the same theorem are rejected. Preconditions are optional
+author prose; empty prose retains an existing claim's text. Use
 `precondition = "true"` only when the theorem needs no additional input assumptions.
 The module and theorem names currently accept dotted ASCII identifiers.
 
@@ -299,13 +301,14 @@ Publication state is stored in the OS local data directory under `cargo-proofs/`
 
 - Repeat `publish` revises the same report and preserves existing claim IDs. An unchanged report produces no revision.
 - A changed crate version starts a new report (the service makes report crate/version immutable).
-- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches claims by API and refuses duplicate matches.
+- On another machine, or after losing local state, use `publish --report ID` to attach explicitly. The CLI matches formal claims by API and theorem name, independently of the run ID. Other claims are matched by API. Duplicate matches are rejected.
+- Each formal claim keeps its own ID and prose when specifications are added, removed, or reordered. A theorem rename or migration from a legacy claim can reuse the ID when the API has exactly one old and one new claim; with multiple claims, an unmatched theorem creates a new claim. A removed theorem's ID can be restored from local publication state.
 - Titles/explanations and other individual editorial fields from the server are preserved. The report title is controlled by TOML; shared optional fields are preserved when absent, or cleared when explicitly `""`. Contracts and evidence are controlled by the selected SARIF record.
 - If the server revision changed since the last publication, show the differences and stop. `publish --dry-run` previews the prospective update. `publish --force` applies the local/config-owned fields over the latest server state, preserving unspecified editorial fields. It still sends `expected_revision` so a concurrent edit after fetching is rejected.
 - Missing contracts remove claims only after a yes/no prompt. Noninteractive approval requires `--yes`. `--force` does not approve deletions or bypass recorded-run checks. Removed claims retain their history/permanent links on the service. Locally known removed claim IDs are reused if their contracts are later restored; recovering removed IDs on a different machine is not automatic.
 - Before a write, the CLI saves the exact request and idempotency key atomically. If publication is interrupted, `publish --resume` retries that saved request rather than generating another report. It prints the saved payload and uses its original recorded evidence. Definite rejected requests are cleared so they can be corrected; ambiguous/network failures retain the journal.
 
-`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 100 claims (50 Kani APIs or 100 Creusot/Aeneas APIs) and 128 KiB; automatic splitting is deliberately unsupported.
+`--dry-run` never publishes a report or updates its local baseline, but authenticates, reads the selected SARIF, and may ask the service to import the API catalogue. It does not upload artifacts or perform the final server-side run validation. Imports can take several minutes. The report limit is 200 claims (Kani discovery supports up to 100 APIs) and 128 KiB; each Aeneas theorem counts as one claim. Automatic splitting is deliberately unsupported.
 
 ## Development
 
@@ -340,3 +343,21 @@ Submodule snapshots use an isolated temporary clone so initialization cannot alt
 the original checkout's Git configuration. Recording checks pinned HEADs and tracked
 files before and after verification, and removes the snapshot on success or failure.
 Reproduction instructions initialize submodules after checking out the source commit.
+
+### Automatic Aeneas formal statements
+
+Aeneas runs can resolve specifications using committed `-emit-json` output.
+Set `proof_modules = ["Proofs"]` and
+`translation_manifest = "Generated/translation.json"` under `[tool]` (paths
+relative to `lean_dir`), then use the usual `cargo proofs run -- lake build`
+and `cargo proofs publish`. Every specification that resolves to one public API
+produces its own claim, including multiple specifications for the same API.
+Existing `[[tool.proofs]]` entries remain supported and override the mapping of
+their named theorem without excluding other specifications for that API. New recordings capture the
+full Lean proposition, typed binders, target expression, source and axiom audit;
+Claim revisions refer to the recorded run and theorem, so editing prose cannot
+change the displayed theorem. `precondition` prose may be omitted for these
+records. Translation itself is not rerun by the recorder.
+
+See [the Aeneas guide](https://proofs.rs/book/aeneas.html) for setup, scope,
+provenance, limits, and the tested Lean 4.35.0 / Aeneas be86ab0f adapter.

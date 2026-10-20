@@ -226,3 +226,52 @@ test("preview routes stay local, metadata links use configured origin, and no ac
   dom.window.close();
   missing.window.close();
 });
+
+test("preview resolves inline definition links at the same recorded revision as live views", async () => {
+  const { formalSourceLinks } = await import("../web/formal-evidence");
+  const snapshot = fixture();
+  const claim = snapshot.report.claims[0];
+  claim.evidence_ref = { run_id: "run", harness: "check_f" };
+  const contract = snapshot.sarif.runs[0].properties.proofs.contracts[0];
+  contract.formal = {
+    theorem: "check_f",
+    binders: [
+      {
+        kind: "variable",
+        name: "s",
+        type: "Demo.State",
+        type_segments: [{ text: "Demo.State", ref: "Demo.State" }],
+      },
+    ],
+    conclusion: "s = s",
+    statement: "∀ s : Demo.State, s = s",
+    mapping: "manual",
+    source: { file: "Proofs.lean", first_line: 2, last_line: 3 },
+    definitions: [
+      {
+        name: "Demo.State",
+        module: "Demo",
+        source: { file: "Demo.lean", first_line: 5, last_line: 8 },
+      },
+    ],
+  };
+  const result = renderPreview(snapshot, "/claim/preview-claim-0");
+  const preview = new JSDOM(result.html).window.document;
+  const live = new JSDOM(
+    createViews({ user: null }, {}, () => "").claimContent({
+      ...claim,
+      formal_evidence: formalSourceLinks(
+        contract.formal,
+        "https://github.com/demo/repo",
+        "abc",
+      ),
+    }),
+  ).window.document;
+  const href = (d: Document) =>
+    d.querySelector(".lean-expression a")?.getAttribute("href");
+  assert.equal(
+    href(preview),
+    "https://github.com/demo/repo/blob/abc/Demo.lean#L5-L8",
+  );
+  assert.equal(href(preview), href(live));
+});

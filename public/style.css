@@ -799,3 +799,38 @@ textarea {
   padding: 6px 12px;
   border: 1px solid currentColor;
 }
+
+/* Lean inspection uses inline expressions, separate from source code blocks. */
+.lean-readable {
+  margin: 16px 0;
+}
+.lean-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+}
+.lean-role {
+  flex: 0 0 4.5em;
+  color: #666;
+  font-size: 0.9em;
+}
+.lean-expression {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.lean-binding {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lean-conclusion {
+  border-top: 1px solid #ccc;
+  margin-top: 8px;
+  padding-top: 12px;
+}
+.lean-expression a {
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}

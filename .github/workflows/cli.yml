@@ -62,9 +62,14 @@ jobs:
       - run: npm run build
   lean-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
       - uses: dtolnay/rust-toolchain@stable
       - name: Install pinned Lean
         run: |
@@ -74,3 +79,7 @@ jobs:
       - name: Check generated audit with real Lean and Aeneas
         working-directory: cli
         run: cargo test --locked aeneas::tests::real_ -- --ignored
+      - name: Record, publish locally, and render real formal evidence
+        run: |
+          python3 cli/tests/aeneas_e2e.py cli/target/debug/cargo-proofs /tmp/aeneas-record
+          PROOFS_REAL_AENEAS_RECORD=/tmp/aeneas-record/record.json node --import tsx --test --test-name-pattern='real Aeneas run' tests/app.test.ts

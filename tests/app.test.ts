@@ -3766,3 +3766,473 @@ test("report dependency catalog shows unreviewed direct crates and only matching
   assert.equal(d.querySelectorAll(".report-dependencies .muted").length, 2);
   assert.equal(fetched.mock.callCount(), 1);
 });
+
+test("formal evidence is revision scoped, rejects invalid references, and reaches escaped Claim HTML", async () => {
+  const { env, db, request } = await fixture();
+  const objects = new Map<string, any>();
+  env.ARCHIVE = {
+    put: async (key: string, bytes: ArrayBuffer) =>
+      objects.set(key, JSON.parse(new TextDecoder().decode(bytes))),
+    get: async (key: string) =>
+      objects.has(key)
+        ? {
+            json: async () => structuredClone(objects.get(key)),
+            body: new Response(JSON.stringify(objects.get(key))).body,
+          }
+        : null,
+  } as any;
+  const tv = db
+    .prepare("SELECT id FROM tool_versions WHERE tool_id='aeneas'")
+    .get()!.id as string;
+  const version = db
+    .prepare("SELECT version FROM tool_versions WHERE id=?")
+    .get(tv)!.version;
+  const rid = "33333333-3333-4333-8333-333333333333";
+  const second = "44444444-4444-4444-8444-444444444444";
+  const sarif = recordedSarif(rid, ["lake", "build"]);
+  const r: any = sarif.runs[0];
+  r.tool.driver = { name: "aeneas", version };
+  const contract: any = r.properties.proofs.contracts[0];
+  contract.precondition = "";
+  contract.harness = "Proofs.safe";
+  contract.file = "Proofs.lean";
+  contract.formal = {
+    version: 1,
+    theorem: "Proofs.safe",
+    module: "Proofs",
+    statement: "∀ (x : Nat), x < 10 → x & <safe> = x",
+    binders: [{ name: "x", type: "Nat", kind: "variable", binder: "explicit" }],
+    conclusion: "x & <safe> = x",
+    program: "sample.safe x",
+    program_head: "sample.safe",
+    axioms: [],
+    mapping: "manual",
+    manifest: null,
+    source: { file: "Proofs.lean", first_line: 1, last_line: 2 },
+    definitions: [],
+    definitions_truncated: false,
+    translation_rerun: false,
+  };
+  r.results = [
+    {
+      ruleId: "aeneas.lean.theorem",
+      kind: "pass",
+      message: { text: "checked" },
+      properties: { harness: "Proofs.safe" },
+    },
+  ];
+  for (const mutate of [
+    (s: any) =>
+      s.runs[0].properties.proofs.contracts.push(structuredClone(contract)),
+    (s: any) => (s.runs[0].results[0].kind = "fail"),
+    (s: any) => (s.runs[0].results[0].kind = "informational"),
+    (s: any) =>
+      (s.runs[0].properties.proofs.contracts[0].formal.theorem = "Wrong"),
+    (s: any) =>
+      (s.runs[0].properties.proofs.contracts[0].formal.axioms = ["sorryAx"]),
+    (s: any) => (s.runs[0].properties.proofs.contracts[0].formal.version = 2),
+    (s: any) =>
+      (s.runs[0].properties.proofs.contracts[0].formal.conclusion_segments = [
+        { text: "wrong" },
+      ]),
+    (s: any) =>
+      (s.runs[0].properties.proofs.contracts[0].formal.binders[0].type_segments =
+        [{ text: "wrong" }]),
+  ]) {
+    const bad = structuredClone(sarif);
+    mutate(bad);
+    assert.throws(() => readRecord(bad));
+  }
+  assert.equal(
+    (await request(`/runs/${rid}/sarif`, "POST", sarif)).status,
+    201,
+  );
+  const alternate = structuredClone(sarif) as any;
+  alternate.runs[0].automationDetails.guid = second;
+  alternate.runs[0].properties.proofs.contracts[0].formal.statement =
+    "Different recorded proposition";
+  assert.equal(
+    (await request(`/runs/${second}/sarif`, "POST", alternate)).status,
+    201,
+  );
+  const input = {
+    ...reportInput,
+    tool_version_id: tv,
+    run_ids: [rid, second],
+    claims: [
+      {
+        ...reportInput.claims[0],
+        precondition: "",
+        evidence_ref: { run_id: rid, harness: "Proofs.safe" },
+      },
+    ],
+  };
+  for (const ref of [
+    { run_id: rid, harness: "missing" },
+    { run_id: reportInput.run_ids[0], harness: "Proofs.safe" },
+  ]) {
+    assert.equal(
+      (
+        await request("/reports/validate", "POST", {
+          ...input,
+          claims: [{ ...input.claims[0], evidence_ref: ref }],
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal(
+    (
+      await request("/reports/validate", "POST", {
+        ...input,
+        claims: [{ ...input.claims[0], api_item_id: "unsafe" }],
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request("/reports/validate", "POST", {
+        ...input,
+        claims: [{ ...input.claims[0], evidence_ref: null }],
+      })
+    ).status,
+    400,
+  );
+  const created = await request("/reports", "POST", input);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const report = (await request(`/reports/${created.body.id}`)).body;
+  const claim = report.claims[0];
+  // List queries decode only the small reference and never fetch per-claim SARIF.
+  const archive = env.ARCHIVE;
+  env.ARCHIVE = {
+    get: async () => {
+      throw new Error("List must not load SARIF");
+    },
+  } as any;
+  const listing = await request("/apis/safe/claims");
+  assert.deepEqual(
+    listing.body.items[0].evidence_ref,
+    input.claims[0].evidence_ref,
+  );
+  env.ARCHIVE = archive;
+  assert.deepEqual(claim.evidence_ref, input.claims[0].evidence_ref);
+  let detail = (await request(`/claims/${claim.id}`)).body;
+  assert.equal(detail.formal_evidence.statement, contract.formal.statement);
+  assert.match(
+    detail.formal_evidence.source_url,
+    /\/blob\/[a-f0-9]{40}\/Proofs.lean#L1-L2$/,
+  );
+  const html = await (
+    await app.request(`https://example.test/claim/${claim.id}`, {}, env)
+  ).text();
+  assert.match(html, /Formal statement/);
+  assert.match(html, /&amp; &lt;safe&gt;/);
+  assert.doesNotMatch(html, /None stated|<safe>/);
+  const update = {
+    ...input,
+    expected_revision: 1,
+    claims: [
+      {
+        ...input.claims[0],
+        id: claim.id,
+        precondition: "Edited explanation",
+        evidence_ref: { run_id: second, harness: "Proofs.safe" },
+      },
+    ],
+  };
+  const updated = await request(
+    `/reports/${report.id}/revisions`,
+    "POST",
+    update,
+  );
+  assert.equal(updated.status, 201, JSON.stringify(updated.body));
+  detail = (await request(`/claims/${claim.id}?report_revision=1`)).body;
+  assert.equal(detail.formal_evidence.statement, contract.formal.statement);
+  detail = (await request(`/claims/${claim.id}`)).body;
+  assert.equal(
+    detail.formal_evidence.statement,
+    "Different recorded proposition",
+  );
+});
+
+test(
+  "real Aeneas run → CLI publish → Claim HTML",
+  { skip: !process.env.PROOFS_REAL_AENEAS_RECORD },
+  async () => {
+    const { createServer } = await import("node:http");
+    const { execFile, spawn } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join, dirname } = await import("node:path");
+    const record = JSON.parse(
+      readFileSync(process.env.PROOFS_REAL_AENEAS_RECORD!, "utf8"),
+    );
+    const sarif = JSON.parse(readFileSync(record.sarif, "utf8"));
+    const contracts = sarif.runs[0].properties.proofs.contracts;
+    const { env, db, request } = await fixture();
+    db.exec(
+      "UPDATE crates SET name='formal_fixture' WHERE id=1; UPDATE releases SET version='0.1.0' WHERE id=1; DELETE FROM api_items;",
+    );
+    const apiPaths = [
+      ...new Set<string>(contracts.map((c: any) => c.api_paths[0])),
+    ];
+    assert.ok(
+      contracts.length > apiPaths.length,
+      "fixture has multiple theorems for one API",
+    );
+    for (const [i, path] of apiPaths.entries())
+      db.prepare(
+        "INSERT INTO api_items VALUES(?,1,?,?,'function',0,?,'https://docs.rs')",
+      ).run(
+        `api-${i}`,
+        path,
+        path,
+        `pub fn ${path.split("::").at(-1)}(x: u32) -> u32`,
+      );
+    const objects = new Map<string, any>();
+    env.ARCHIVE = {
+      put: async (key: string, bytes: ArrayBuffer) =>
+        objects.set(key, JSON.parse(new TextDecoder().decode(bytes))),
+      get: async (key: string) =>
+        objects.has(key)
+          ? {
+              json: async () => objects.get(key),
+              body: new Response(JSON.stringify(objects.get(key))).body,
+            }
+          : null,
+    } as any;
+    const token = "a".repeat(64);
+    db.prepare(
+      "INSERT INTO api_tokens VALUES('formal-token','alice',?,'publish',?,NULL,?,NULL)",
+    ).run(
+      await hash(token),
+      new Date().toISOString(),
+      new Date(Date.now() + 3600000).toISOString(),
+    );
+    const server = createServer(async (req, res) => {
+      try {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const bytes = Buffer.concat(chunks);
+        const response = await app.request(
+          env.APP_ORIGIN + req.url,
+          {
+            method: req.method,
+            headers: req.headers as any,
+            ...(bytes.length ? { body: bytes } : {}),
+          },
+          env,
+        );
+        res.writeHead(response.status, Object.fromEntries(response.headers));
+        res.end(Buffer.from(await response.arrayBuffer()));
+      } catch (error) {
+        res.writeHead(500);
+        res.end(String(error));
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address() as import("node:net").AddressInfo;
+    env.APP_ORIGIN = `http://127.0.0.1:${address.port}`;
+    const config = await mkdtemp(join(tmpdir(), "proofs-formal-credentials-"));
+    await writeFile(
+      join(config, (await hash(env.APP_ORIGIN)) + ".json"),
+      JSON.stringify({
+        access_token: token,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }),
+    );
+    const proofPath = join(record.project, "Proofs.lean");
+    const committedProof = readFileSync(proofPath, "utf8");
+    try {
+      await writeFile(
+        proofPath,
+        "This working-tree file is deliberately not valid Lean.\n",
+      );
+      const result = await promisify(execFile)(
+        record.binary,
+        ["proofs", "--server", env.APP_ORIGIN, "publish", "--yes"],
+        {
+          cwd: record.project,
+          env: { ...process.env, PROOFS_CONFIG_DIR: config },
+          timeout: 60000,
+        },
+      );
+      await writeFile(
+        join(dirname(record.sarif), "publish.log"),
+        result.stdout + result.stderr,
+      );
+      const claim = db
+        .prepare(
+          "SELECT c.id FROM claims c JOIN claim_revisions r ON r.claim_id=c.id ORDER BY r.position LIMIT 1",
+        )
+        .get()!;
+      const detail = (await request(`/claims/${claim.id}`)).body;
+      assert.ok(detail.formal_evidence.statement);
+      assert.equal(detail.precondition, "");
+      assert.ok(
+        contracts.some(
+          (c: any) => c.formal.statement === detail.formal_evidence.statement,
+        ),
+      );
+      const html = await (
+        await app.request(env.APP_ORIGIN + `/claim/${claim.id}`, {}, env)
+      ).text();
+      assert.match(html, /Formal statement/);
+      assert.doesNotMatch(html, /None stated/);
+      await writeFile(join(dirname(record.sarif), "claim.html"), html);
+      const published = db
+        .prepare(
+          "SELECT c.id,c.api_item_id,e.harness FROM claims c JOIN claim_evidence e ON e.claim_id=c.id WHERE e.report_revision=1",
+        )
+        .all();
+      assert.equal(published.length, contracts.length);
+      for (const contract of contracts) {
+        const row = published.find((c) => c.harness === contract.harness)!;
+        assert.ok(row);
+        const actual = (await request(`/claims/${row.id}`)).body;
+        assert.equal(
+          actual.formal_evidence.statement,
+          contract.formal.statement,
+        );
+        assert.equal(actual.evidence_ref.harness, contract.harness);
+        const page = await (
+          await app.request(env.APP_ORIGIN + `/claim/${row.id}`, {}, env)
+        ).text();
+        assert.match(page, /Formal statement/);
+        assert.ok(page.includes(contract.harness));
+      }
+      assert.equal(
+        new Set(published.map((c) => c.api_item_id)).size,
+        apiPaths.length,
+      );
+      // A no-op republish preserves the reference and Claim IDs despite working-tree edits.
+      const again = await promisify(execFile)(
+        record.binary,
+        ["proofs", "--server", env.APP_ORIGIN, "publish", "--yes"],
+        {
+          cwd: record.project,
+          env: { ...process.env, PROOFS_CONFIG_DIR: config },
+          timeout: 60000,
+        },
+      );
+      assert.match(again.stdout, /No changes/);
+      assert.equal(
+        db.prepare("SELECT COUNT(*) n FROM claims").get()!.n,
+        contracts.length,
+      );
+      // The packaged preview resolves each claim's theorem even when API IDs repeat.
+      const preview = spawn(
+        record.binary,
+        ["proofs", "--server", env.APP_ORIGIN, "preview", "--no-browser"],
+        {
+          cwd: record.project,
+          env: { ...process.env, PROOFS_CONFIG_DIR: config },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      const exited = new Promise<void>((resolve) =>
+        preview.once("exit", () => resolve()),
+      );
+      let diagnostic = "";
+      preview.stderr.on("data", (chunk) => {
+        diagnostic += chunk;
+      });
+      try {
+        const previewURL = await new Promise<string>((resolve, reject) => {
+          let output = "";
+          const timer = setTimeout(
+            () => reject(new Error(`Preview timed out: ${diagnostic}`)),
+            25000,
+          );
+          preview.once("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+          preview.once("exit", () => {
+            clearTimeout(timer);
+            reject(new Error(diagnostic));
+          });
+          preview.stdout.on("data", (chunk) => {
+            output += chunk;
+            const url = output.match(/http:\/\/127\.0\.0\.1:\d+\/report/);
+            if (url) {
+              clearTimeout(timer);
+              resolve(url[0]);
+            }
+          });
+        });
+        const previewOrigin = new URL(previewURL).origin;
+        for (const row of published) {
+          const response = await fetch(`${previewOrigin}/claim/${row.id}`);
+          assert.equal(response.status, 200);
+          const page = await response.text();
+          assert.match(page, /Formal statement/);
+          assert.ok(page.includes(String(row.harness)));
+        }
+      } finally {
+        preview.kill("SIGINT");
+        await exited;
+      }
+    } finally {
+      await writeFile(proofPath, committedProof);
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  },
+);
+
+test("report and recorded-run limits accept 200 claims and reject 201", async () => {
+  const { request, env } = await fixture();
+  const rid = reportInput.run_ids[0];
+  const sarif = recordedSarif(rid);
+  const run = sarif.runs[0];
+  const original = run.properties.proofs.contracts[0];
+  run.properties.proofs.contracts = Array.from({ length: 200 }, (_, i) => ({
+    ...original,
+    harness: `sample::check_${i}`,
+    precondition: `x = ${i}`,
+  }));
+  run.results = run.properties.proofs.contracts.map((c) => ({
+    kind: "pass",
+    message: { text: "checked" },
+    properties: { harness: c.harness },
+  }));
+  assert.doesNotThrow(() => readRecord(sarif));
+  const tooMany = structuredClone(sarif);
+  tooMany.runs[0].properties.proofs.contracts.push({
+    ...original,
+    harness: "extra",
+  });
+  assert.throws(() => readRecord(tooMany));
+  env.ARCHIVE = {
+    get: async () => ({
+      json: async () => sarif,
+      body: new Response(JSON.stringify(sarif)).body,
+    }),
+  } as any;
+  const input = {
+    ...reportInput,
+    claims: run.properties.proofs.contracts.map((c) => ({
+      ...reportInput.claims[0],
+      precondition: c.precondition,
+    })),
+  };
+  assert.equal((await request("/reports/validate", "POST", input)).status, 200);
+  assert.equal(
+    (
+      await request("/reports", "POST", {
+        ...input,
+        claims: [
+          ...input.claims,
+          { ...input.claims[0], precondition: "extra" },
+        ],
+      })
+    ).status,
+    400,
+  );
+  assert.equal((await request("/reports", "POST", input)).status, 201);
+});
