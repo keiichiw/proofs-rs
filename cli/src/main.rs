@@ -9,6 +9,8 @@ mod record;
 mod scan;
 mod state;
 
+const MAX_REPORT_CLAIMS: usize = 200;
+
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;

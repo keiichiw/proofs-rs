@@ -18,6 +18,8 @@ pub struct Contract {
     pub first_line: usize,
     pub last_line: usize,
     pub harness: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formal: Option<Value>,
 }
 pub struct Record {
     pub sarif: Value,
@@ -315,15 +317,23 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         captured.name == project.name,
         "Command selects a different package"
     );
-    let discovered = scan::discover_for_tool(&captured, &config.tool)?;
+    let discovered = if config.tool.is_aeneas() {
+        vec![]
+    } else {
+        scan::discover_for_tool(&captured, &config.tool)?
+    };
     if config.tool.is_aeneas() {
         crate::aeneas::require_clean_build(&source.join(relative_cwd))?;
     }
-    ensure!(!discovered.is_empty(), "No publishable contracts found");
+    ensure!(
+        config.tool.is_aeneas() || !discovered.is_empty(),
+        "No publishable contracts found"
+    );
     let contracts: Vec<Contract> = discovered
         .iter()
         .map(|c| {
             Ok(Contract {
+                formal: None,
                 api_paths: c
                     .api_paths
                     .iter()
@@ -378,13 +388,15 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         String::from_utf8_lossy(&stdout).replace(&source.to_string_lossy().to_string(), ".");
     let mut stderr =
         String::from_utf8_lossy(&stderr).replace(&source.to_string_lossy().to_string(), ".");
+    let mut extraction_source = None;
     let parsed = if config.tool.is_aeneas() {
         if status.success() {
-            crate::aeneas::audit(&source.join(relative_cwd), &config.tool).map(|(out, err)| {
-                stdout.push_str("\n$ lake env lean --stdin (proofs.rs theorem/axiom audit)\n");
+            crate::aeneas::extract(&captured, &config.tool, &source).map(|(contracts, out, err, source)| {
+                extraction_source = Some(source);
+                stdout.push_str("\n$ lake env lean --stdin (proofs.rs formal extraction and axiom audit)\n");
                 stdout.push_str(&out);
                 stderr.push_str(&err);
-                (contracts.iter().map(|c| json!({"ruleId":"aeneas.lean.theorem","kind":"pass","level":"none","message":{"text":format!("Lean checked theorem {}; axioms limited to propext, Classical.choice, Quot.sound",c.harness)},"properties":{"harness":c.harness}})).collect(), contracts.clone())
+                (contracts.iter().map(|c| json!({"ruleId":"aeneas.lean.theorem","kind":"pass","level":"none","message":{"text":format!("Lean checked theorem {}; axioms limited to propext, Classical.choice, Quot.sound",c.harness)},"properties":{"harness":c.harness}})).collect(), contracts)
             })
         } else {
             Err(anyhow::anyhow!(
@@ -420,6 +432,9 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     if config.tool.is_aeneas() {
         sarif["runs"][0]["properties"]["proofs"]["aeneas"] =
             crate::aeneas::configuration(&config.tool)?;
+    }
+    if let Some(source) = extraction_source {
+        sarif["runs"][0]["properties"]["proofs"]["aeneas_extraction_source"] = json!(source);
     }
     let bytes = serde_json::to_vec_pretty(&sarif)?;
     fs::write(dir.join("run.sarif.json"), &bytes)?;
@@ -811,7 +826,7 @@ pub fn kani_results(output: &str, contracts: &[Contract]) -> Result<(Vec<Value>,
     );
     Ok((results, verified))
 }
-fn qualify_api_path(crate_name: &str, path: &str) -> String {
+pub(crate) fn qualify_api_path(crate_name: &str, path: &str) -> String {
     // Qualified trait paths already contain the public crate-qualified type.
     if path.starts_with('<') {
         path.to_owned()
@@ -963,6 +978,7 @@ mod tests {
     use super::*;
     fn contract() -> Contract {
         Contract {
+            formal: None,
             api_paths: vec!["demo::f".into()],
             precondition: "true".into(),
             file: "src/lib.rs".into(),

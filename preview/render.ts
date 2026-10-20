@@ -1,3 +1,8 @@
+import {
+  resolveContract,
+  checkAnchor,
+  formalSourceLinks,
+} from "../web/formal-evidence";
 import { createViews } from "../src/site-views";
 import { pageLayout } from "../web/page-layout";
 import { claimTitle } from "../web/claim-title";
@@ -104,6 +109,20 @@ export function renderPreview(
   } else if (path.startsWith("/claim/")) {
     const claim = report.claims.find((c: any) => claimHref(c.id) === path);
     if (claim) {
+      if (claim.evidence_ref) {
+        const contract = resolveContract(snapshot.sarif, runId, claim);
+        if (contract?.formal) {
+          const source = snapshot.sarif.runs[0].versionControlProvenance[0];
+          claim.formal_evidence = {
+            ...formalSourceLinks(
+              contract.formal,
+              source.repositoryUri,
+              source.revisionId,
+            ),
+            check_url: `/runs/${encodeURIComponent(runId)}#${checkAnchor(contract.harness)}`,
+          };
+        }
+      }
       title = claim.title;
       body = `<p><a href="/report">← ${esc(report.title)}</a></p>${views.claimContent(claim)}`;
     } else {

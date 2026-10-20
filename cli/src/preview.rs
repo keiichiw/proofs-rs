@@ -73,7 +73,10 @@ impl Preview {
     fn snapshot(&self) -> Result<Value> {
         let config = self.project.config()?;
         let (_, recorded) = record::load(&self.project, Some(&self.run_id))?;
-        ensure!(recorded.contracts.len() <= 100, "Too many claims");
+        ensure!(
+            recorded.contracts.len() <= crate::MAX_REPORT_CLAIMS,
+            "Too many claims"
+        );
         let api = Api::new(&self.server, false)?;
         let saved: State = self
             .state_path
@@ -161,10 +164,6 @@ impl Preview {
                 .and_then(|(id, _)| items?.iter().find(|i| i["id"] == *id));
             let (id, info) = if let Some(info) = info {
                 let id = info["id"].as_str().context("Invalid API ID")?.to_owned();
-                ensure!(
-                    seen.insert(id.clone()),
-                    "Multiple contracts resolve to the same public API"
-                );
                 (id, info.clone())
             } else {
                 let id = format!("preview-api-{index}");
@@ -180,7 +179,15 @@ impl Preview {
                 )
             };
             metadata.insert(id.clone(), info);
-            claims.push(json!({"api_item_id":id,"precondition":contract.precondition,"evidence_url":format!("{repository}/blob/{commit}/{}#L{}-L{}",contract.file,contract.first_line,contract.last_line)}));
+            let mut claim = json!({"api_item_id":id,"precondition":contract.precondition,"evidence_url":format!("{repository}/blob/{commit}/{}#L{}-L{}",contract.file,contract.first_line,contract.last_line)});
+            if contract.formal.is_some() {
+                claim["evidence_ref"] = json!({"run_id":self.run_id,"harness":contract.harness});
+            }
+            ensure!(
+                seen.insert(draft::key(&claim)?),
+                "Multiple contracts resolve to the same public API and theorem"
+            );
+            claims.push(claim);
         }
         let generated = json!({"crate":self.project.name,"version":self.project.version,"tool_version_id":tool_id,"evidence_url":format!("{repository}/tree/{commit}"),"run_ids":[self.run_id],"claims":claims});
         let mut report = draft::compose(&config, generated, &remote, &saved, self.report)?;

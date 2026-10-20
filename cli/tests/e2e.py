@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'status': 'ready'})
         if self.path == '/api/v1/reports/validate':
             assert body['title']
-            assert 1 <= len(body['claims']) <= 100
+            assert 1 <= len(body['claims']) <= 200
             if race:
                 race = False
                 web_edit()
@@ -199,7 +199,7 @@ print('Proved (2 files)')
     creusot.chmod(0o755)
     lake = wrapper / 'lake'
     lake.write_text("""#!/usr/bin/env python3
-import sys,os
+import sys,os,json
 if sys.argv[1:2] == ['build']:
     assert '+Proofs' in sys.argv
     if os.getenv('TEST_LAKE_FAIL'): sys.exit(1)
@@ -211,7 +211,10 @@ else:
     assert 'Lean.collectAxioms' in source and 'some (.thmInfo _)' in source
     if os.getenv('TEST_LEAN_FAIL'):
         print('Unapproved axiom in fixture.f_spec: sorryAx');sys.exit(1)
-    print('proofs.rs:checked:fixture.f_spec')
+    print('proofs.rs:formal:' + json.dumps({'version':1,'theorem':'fixture.f_spec',
+        'module':'Proofs','statement':'True','binders':[],'conclusion':'True',
+        'program':None,'program_head':None,'axioms':[],'first_line':2,'last_line':2,
+        'definitions':[],'definitions_truncated':False,'translation_rerun':False}))
 """)
     lake.chmod(0o755)
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -380,7 +383,8 @@ else:
         assert len(reports[3]['claims']) == 1
         claim = reports[3]['claims'][0]
         assert claim['precondition'] == 'x > 0'
-        assert '/Proofs.lean#L1-L3' in claim['evidence_url']
+        assert claim['evidence_ref']['harness'] == 'fixture.f_spec'
+        assert '/Proofs.lean#L2-L2' in claim['evidence_url']
         config.write_text(config.read_text().replace("x > 0", "x > 1"))
         assert 'Aeneas proof mappings changed' in cli('publish', ok=False)
         config.write_text(config.read_text().replace("x > 1", "x > 0"))

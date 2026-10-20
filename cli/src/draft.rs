@@ -45,6 +45,9 @@ pub fn snapshot(report: &Value) -> Result<Value> {
                 for key in CLAIM_FIELDS {
                     claim[*key] = text(c, key);
                 }
+                if let Some(r) = c.get("evidence_ref").filter(|v| !v.is_null()) {
+                    claim["evidence_ref"] = r.clone();
+                }
                 claim
             })
             .collect(),
@@ -52,17 +55,18 @@ pub fn snapshot(report: &Value) -> Result<Value> {
     Ok(value)
 }
 pub fn key(claim: &Value) -> Result<String> {
-    Ok(claim["api_item_id"]
-        .as_str()
-        .context("Missing API ID")?
-        .into())
+    let api = claim["api_item_id"].as_str().context("Missing API ID")?;
+    Ok(match claim["evidence_ref"]["harness"].as_str() {
+        Some(theorem) => json!([api, theorem]).to_string(),
+        None => api.into(),
+    })
 }
 pub fn claims_by_key(report: &Value) -> Result<BTreeMap<String, Value>> {
     let mut claims = BTreeMap::new();
     for claim in report["claims"].as_array().context("Missing claims")? {
         ensure!(
             claims.insert(key(claim)?, claim.clone()).is_none(),
-            "Existing report has multiple claims for the same API; this CLI cannot update it"
+            "Multiple claims have the same API and theorem (or lack theorem references); this CLI cannot distinguish them"
         );
     }
     Ok(claims)
@@ -96,12 +100,29 @@ pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) ->
         body["dependencies"] = json!([]);
     }
     let old = existing.map(claims_by_key).transpose()?.unwrap_or_default();
-    let mut claims = vec![];
-    for claim in generated["claims"]
+    let generated_claims = generated["claims"]
         .as_array()
-        .context("Missing generated claims")?
-    {
-        let mut merged = if let Some(previous) = old.get(&key(claim)?) {
+        .context("Missing generated claims")?;
+    claims_by_key(&generated)?;
+    let mut claims = vec![];
+    for claim in generated_claims {
+        let previous = old.get(&key(claim)?).or_else(|| {
+            // Preserve the existing single-claim workflow, including theorem renames
+            // and migration from recordings without formal evidence. Never guess
+            // which claim to reuse when either side has multiple claims for this API.
+            let mut matches = old
+                .values()
+                .filter(|c| c["api_item_id"] == claim["api_item_id"]);
+            let first = matches.next()?;
+            (matches.next().is_none()
+                && generated_claims
+                    .iter()
+                    .filter(|c| c["api_item_id"] == claim["api_item_id"])
+                    .count()
+                    == 1)
+                .then_some(first)
+        });
+        let mut merged = if let Some(previous) = previous {
             let mut m = json!({});
             for f in CLAIM_FIELDS {
                 m[*f] = text(previous, f);
@@ -112,6 +133,16 @@ pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) ->
         };
         for f in ["api_item_id", "precondition", "evidence_url"] {
             merged[f] = claim[f].clone();
+        }
+        if let Some(reference) = claim.get("evidence_ref") {
+            merged["evidence_ref"] = reference.clone();
+            if claim["precondition"].as_str() == Some("") {
+                if let Some(previous) = previous {
+                    merged["precondition"] = text(previous, "precondition");
+                }
+            }
+        } else {
+            merged.as_object_mut().unwrap().remove("evidence_ref");
         }
         claims.push(merged);
     }
@@ -131,7 +162,9 @@ pub fn compose(
         if let Some(baseline) = &mut baseline {
             let current = claims_by_key(baseline)?;
             for claim in saved.known_claims.values() {
-                if !current.contains_key(&key(claim)?) {
+                if !current.contains_key(&key(claim)?)
+                    && !current.values().any(|c| c["id"] == claim["id"])
+                {
                     baseline["claims"]
                         .as_array_mut()
                         .context("Missing claims")?
@@ -146,6 +179,28 @@ pub fn compose(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn formal_reference_updates_without_overwriting_author_prose() {
+        let config: Config =
+            toml::from_str("[report]\ntitle='Local'\n[tool]\nname='aeneas'\nversion='1'\n")
+                .unwrap();
+        let old = json!({"claims":[{"id":"stable","api_item_id":"api","precondition":"Author explanation", "evidence_ref":{"run_id":"old","harness":"Old.spec"}}]});
+        let generated = json!({"claims":[{"api_item_id":"api","precondition":"", "evidence_ref":{"run_id":"new","harness":"New.spec"}}]});
+        let body = merge(&config, generated, Some(&old)).unwrap();
+        assert_eq!(body["claims"][0]["id"], "stable");
+        assert_eq!(body["claims"][0]["precondition"], "Author explanation");
+        assert_eq!(body["claims"][0]["evidence_ref"]["harness"], "New.spec");
+        assert_eq!(
+            snapshot(&body).unwrap()["claims"][0]["evidence_ref"],
+            body["claims"][0]["evidence_ref"]
+        );
+        assert!(
+            snapshot(&json!({"claims":[{"api_item_id":"api","evidence_ref":null}]})).unwrap()
+                ["claims"][0]
+                .get("evidence_ref")
+                .is_none()
+        );
+    }
     #[test]
     fn compose_restores_known_claims_only_for_the_selected_publication() {
         let config: Config =
@@ -165,5 +220,92 @@ mod tests {
         assert_eq!(body["explanation"], "Report prose");
         let other = compose(&config, generated, &remote, &state, Some(9)).unwrap();
         assert!(other["claims"][0].get("id").is_none());
+    }
+    #[test]
+    fn multiple_theorems_keep_their_own_ids_and_prose_across_runs() {
+        let config: Config =
+            toml::from_str("[report]\ntitle='Local'\n[tool]\nname='aeneas'\nversion='1'\n")
+                .unwrap();
+        let old = json!({"claims":[
+            {"id":"first","api_item_id":"api","precondition":"first condition","explanation":"first prose","evidence_ref":{"run_id":"old","harness":"A"}},
+            {"id":"second","api_item_id":"api","precondition":"second condition","explanation":"second prose","evidence_ref":{"run_id":"old","harness":"B"}}
+        ]});
+        let generated = json!({"claims":[
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"B"}},
+            {"api_item_id":"api","precondition":"true","evidence_ref":{"run_id":"new","harness":"A"}},
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"C"}}
+        ]});
+        let body = merge(&config, generated, Some(&old)).unwrap();
+        let claims = body["claims"].as_array().unwrap();
+        assert_eq!(claims[0]["id"], "second");
+        assert_eq!(claims[0]["precondition"], "second condition");
+        assert_eq!(claims[0]["explanation"], "second prose");
+        assert_eq!(claims[0]["evidence_ref"]["run_id"], "new");
+        assert_eq!(claims[1]["id"], "first");
+        assert_eq!(claims[1]["precondition"], "true");
+        assert_eq!(claims[1]["explanation"], "first prose");
+        assert!(claims[2].get("id").is_none());
+        // Removing one theorem must not transfer its prose to a replacement.
+        let replacement = json!({"claims":[
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"C"}}
+        ]});
+        assert!(
+            merge(&config, replacement, Some(&old)).unwrap()["claims"][0]
+                .get("id")
+                .is_none()
+        );
+    }
+    #[test]
+    fn restores_each_theorem_and_ignores_cached_old_names_for_current_ids() {
+        let config: Config =
+            toml::from_str("[report]\ntitle='Local'\n[tool]\nname='aeneas'\nversion='1'\n")
+                .unwrap();
+        let a = json!({"id":"first","api_item_id":"api","precondition":"A prose","evidence_ref":{"run_id":"old","harness":"A"}});
+        let b = json!({"id":"second","api_item_id":"api","precondition":"B prose","evidence_ref":{"run_id":"old","harness":"B"}});
+        let mut saved = State {
+            report_id: Some(8),
+            ..State::default()
+        };
+        // Includes an API-only key written by the previous CLI.
+        saved.known_claims.insert("api".into(), a);
+        saved.known_claims.insert(key(&b).unwrap(), b.clone());
+        let remote = Some(json!({"claims":[b]}));
+        let generated = json!({"claims":[
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"A"}},
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"B"}}
+        ]});
+        let body = compose(&config, generated, &remote, &saved, Some(8)).unwrap();
+        assert_eq!(body["claims"][0]["id"], "first");
+        assert_eq!(body["claims"][1]["id"], "second");
+        assert_eq!(body["claims"][0]["precondition"], "A prose");
+        let renamed = Some(
+            json!({"claims":[{"id":"first","api_item_id":"api","precondition":"Current prose","evidence_ref":{"run_id":"current","harness":"Renamed"}}]}),
+        );
+        let generated = json!({"claims":[{"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"A"}}]});
+        let body = compose(&config, generated, &renamed, &saved, Some(8)).unwrap();
+        assert!(body["claims"][0].get("id").is_none());
+    }
+    #[test]
+    fn splitting_a_legacy_claim_does_not_guess_which_theorem_inherits_it() {
+        let config: Config =
+            toml::from_str("[report]\ntitle='Local'\n[tool]\nname='aeneas'\nversion='1'\n")
+                .unwrap();
+        let old =
+            json!({"claims":[{"id":"legacy","api_item_id":"api","precondition":"legacy prose"}]});
+        let generated = json!({"claims":[
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"A"}},
+            {"api_item_id":"api","precondition":"","evidence_ref":{"run_id":"new","harness":"B"}}
+        ]});
+        let body = merge(&config, generated, Some(&old)).unwrap();
+        assert!(body["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c.get("id").is_none()));
+        let duplicate = json!({"claims":[
+            {"api_item_id":"api","evidence_ref":{"run_id":"one","harness":"A"}},
+            {"api_item_id":"api","evidence_ref":{"run_id":"two","harness":"A"}}
+        ]});
+        assert!(claims_by_key(&duplicate).is_err());
     }
 }
