@@ -23,6 +23,8 @@ const staticPaths = [
 ];
 // Only current claims on visible, non-withdrawn reports contribute URLs.
 // UNION deduplicates APIs and releases shared by multiple reports.
+// D1 allows at most five terms per compound SELECT. Expand claim/API rows
+// with a two-row join so the outer UNION stays within that limit.
 const recordsSQL = `
 SELECT 'report' kind, CAST(p.id AS TEXT) id, '' version
 FROM reports p WHERE p.visibility='public' AND p.withdrawn_at IS NULL
@@ -37,15 +39,10 @@ FROM crates cr JOIN releases rel ON rel.crate_id=cr.id
 JOIN reports p ON p.release_id=rel.id
 WHERE p.visibility='public' AND p.withdrawn_at IS NULL
 UNION
-SELECT 'claim', cl.id, ''
+SELECT urls.kind, CASE urls.kind WHEN 'claim' THEN cl.id ELSE cl.api_item_id END, ''
 FROM claims cl JOIN reports p ON p.id=cl.report_id
 JOIN claim_revisions r ON r.claim_id=cl.id
-WHERE p.visibility='public' AND p.withdrawn_at IS NULL
-AND r.report_revision=(SELECT MAX(rr.revision_no) FROM report_revisions rr WHERE rr.report_id=p.id)
-UNION
-SELECT 'api', cl.api_item_id, ''
-FROM claims cl JOIN reports p ON p.id=cl.report_id
-JOIN claim_revisions r ON r.claim_id=cl.id
+CROSS JOIN (SELECT 'claim' kind UNION ALL SELECT 'api') urls
 WHERE p.visibility='public' AND p.withdrawn_at IS NULL
 AND r.report_revision=(SELECT MAX(rr.revision_no) FROM report_revisions rr WHERE rr.report_id=p.id)
 UNION
