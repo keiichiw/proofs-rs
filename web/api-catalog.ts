@@ -52,8 +52,11 @@ export function renderAPICatalog(
     hideCounts?: boolean;
     expandFamilies?: boolean;
     details?: (api: CatalogAPI) => string;
+    apiHref?: (id: string) => string | null;
   } = {},
 ): string {
+  const href =
+    options.apiHref ?? ((id: string) => `/api/${encodeURIComponent(id)}`);
   const prefix = crate.replaceAll("-", "_") + "::";
   const local = (s: string) =>
     s.startsWith(prefix) ? s.slice(prefix.length) : s;
@@ -64,10 +67,12 @@ export function renderAPICatalog(
   ) => {
     if (options.hideCounts) return "";
     const text = a.claim_count ? `${a.claim_count} claims` : "";
-    return `<span class="api-claim-count${text ? "" : " muted"}">${text && a.id ? `<a href="/api/${encodeURIComponent(a.id)}#claims">${text}</a>` : text || "—"}</span>`;
+    return `<span class="api-claim-count${text ? "" : " muted"}">${text && a.id && href(a.id) ? `<a href="${esc(href(a.id)!)}#claims">${text}</a>` : text || "—"}</span>`;
   };
   const link = (a: CatalogAPI, text: string) =>
-    `<a class="api-name" href="/api/${encodeURIComponent(a.id)}">${esc(text)}</a>`;
+    href(a.id)
+      ? `<a class="api-name" href="${esc(href(a.id)!)}">${esc(text)}</a>`
+      : `<span class="api-name">${esc(text)} (unverified)</span>`;
   const row = (a: CatalogAPI, text: string, keyword = "fn ") =>
     `<div class="catalog-row"><span>${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
   const data = apis

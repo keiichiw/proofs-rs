@@ -15,6 +15,7 @@ export function renderRecordedRun(
   index: number,
   report: any,
   includeLogs = false,
+  links: { claim?: (id: string) => string; sarif?: string; logs?: string } = {},
 ) {
   const base = "/api/v1/runs/" + encodeURIComponent(id);
   const entry = sarif.runs[0],
@@ -111,15 +112,15 @@ export function renderRecordedRun(
           } as any
         )[r.kind] ||
         r.kind;
-      return `<tr><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}">Claim #${esc(c.claim_number)}</a>`).join(" · ") || "—"}</td></tr>`;
+      return `<tr><td>${esc(r.message?.text || r.ruleId)}<div class="meta"><code>${esc(harness)}</code></div>${loc ? `<div class="meta"><code>${esc(loc)}</code></div>` : ""}</td><td>${esc(status)}</td><td>${claims.map((c: any) => `<a href="${esc(links.claim ? links.claim(c.id) : `/claim/${encodeURIComponent(c.id)}?report_revision=${report.revision_no}`)}">Claim #${esc(c.claim_number)}</a>`).join(" · ") || "—"}</td></tr>`;
     })
     .join("");
   const item = (label: string, value: any) =>
     `<dt>${esc(label)}</dt><dd class="plain-text">${esc(value)}</dd>`;
-  return `<article class="recorded-run">${report.run_ids.length > 1 ? `<h3>Run ${index + 1}</h3>` : ""}<h3>Run locally</h3><pre><code>${esc(script)}</code></pre><p class="meta">Checks out the recorded source commit from GitHub. Install the report’s tool version before running.</p><p class="run-downloads"><a href="${esc(sourceURL)}">Source on GitHub</a> · <a href="${base}/sarif">SARIF with logs (.json)</a></p><h3>Recorded run</h3><p>${run.execution_successful ? "Completed" : "Unsuccessful"} · ${passed} checks passed · ${failed} failed${other ? ` · ${other} other` : ""}</p><p class="meta">${esc(run.started_at)} · ${(run.duration_ms / 1000).toFixed(1)} seconds · Exit code ${esc(run.exit_code ?? "unavailable")}</p><p class="meta">Recorded on the author’s machine.</p><table><thead><tr><th>Check</th><th>Result</th><th>Claim</th></tr></thead><tbody>${rows}</tbody></table><details><summary>Execution details</summary><dl>${item("Started", run.started_at)}${item("Finished", run.finished_at)}${item("Platform", run.platform)}${item("Rust compiler", run.rustc)}${item("Working directory", run.working_directory)}${item(
+  return `<article class="recorded-run">${report.run_ids.length > 1 ? `<h3>Run ${index + 1}</h3>` : ""}<h3>Run locally</h3><pre><code>${esc(script)}</code></pre><p class="meta">Checks out the recorded source commit from GitHub. Install the report’s tool version before running.</p><p class="run-downloads"><a href="${esc(sourceURL)}">Source on GitHub</a> · <a href="${esc(links.sarif ?? `${base}/sarif`)}">SARIF with logs (.json)</a></p><h3>Recorded run</h3><p>${run.execution_successful ? "Completed" : "Unsuccessful"} · ${passed} checks passed · ${failed} failed${other ? ` · ${other} other` : ""}</p><p class="meta">${esc(run.started_at)} · ${(run.duration_ms / 1000).toFixed(1)} seconds · Exit code ${esc(run.exit_code ?? "unavailable")}</p><p class="meta">Recorded on the author’s machine.</p><table><thead><tr><th>Check</th><th>Result</th><th>Claim</th></tr></thead><tbody>${rows}</tbody></table><details><summary>Execution details</summary><dl>${item("Started", run.started_at)}${item("Finished", run.finished_at)}${item("Platform", run.platform)}${item("Rust compiler", run.rustc)}${item("Working directory", run.working_directory)}${item(
     "Environment overrides",
     Object.entries(run.environment || {})
       .map(([k, v]) => k + "=" + v)
       .join("\n") || "None recorded",
-  )}${item("Git repository", run.source.repository)}${item("Git commit", run.source.commit)}</dl></details>${includeLogs ? `<details class="run-logs" id="logs"><summary>Diagnostics &amp; logs</summary><pre class="run-log-content">${esc(logs)}</pre></details>` : `<p><a href="/runs/${encodeURIComponent(id)}?report=${report.id}&amp;v=${report.revision_no}#logs">Diagnostics &amp; logs</a></p>`}</article>`;
+  )}${item("Git repository", run.source.repository)}${item("Git commit", run.source.commit)}</dl></details>${includeLogs ? `<details class="run-logs" id="logs"><summary>Diagnostics &amp; logs</summary><pre class="run-log-content">${esc(logs)}</pre></details>` : `<p><a href="${esc(links.logs ?? `/runs/${encodeURIComponent(id)}?report=${report.id}&v=${report.revision_no}#logs`)}">Diagnostics &amp; logs</a></p>`}</article>`;
 }

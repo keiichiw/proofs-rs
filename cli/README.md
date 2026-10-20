@@ -19,6 +19,8 @@ cargo proofs --help
 
 The CLI is developed in `cli/` alongside the service. To install a checkout, run `cargo install --path cli --locked` from the repository root. Only the CLI package is distributed on crates.io; access to the service repository is not required to install a published version.
 
+`preview` additionally requires Node.js 24 or newer. Other commands do not require Node.js.
+
 ## Quick start
 
 Run inside the crate to verify:
@@ -28,6 +30,7 @@ cargo proofs init --tool-version 0.66.0 --title 'Contract verification of my cra
 cargo proofs login
 # Commit and push all verification inputs, including Cargo.lock, before run.
 cargo proofs run -- cargo kani
+cargo proofs preview # Requires Node.js 24+; stop with Ctrl+C after reviewing.
 cargo proofs publish --dry-run
 cargo proofs publish
 ```
@@ -58,6 +61,92 @@ cargo proofs publish --server https://proofs-rs-staging.proofs-rs.workers.dev --
 ```
 
 You may set `PROOFS_SERVER` instead. The default is `https://proofs.rs`. Tokens are stored in a per-server file in the OS user config directory (`cargo-proofs`), with mode 0600 on Unix. Set `PROOFS_CONFIG_DIR` to override that credentials directory. Tokens are never saved in the repository. `logout` revokes the token before removing it. HTTP is allowed only for loopback development servers; redirects are not followed.
+
+## Local report preview
+
+Install Node.js 24 or newer, then preview a successful recorded run before publishing:
+
+```sh
+cargo proofs preview
+cargo proofs preview --run <RUN_UUID> --report 123
+cargo proofs preview --port 8080 --no-browser
+```
+
+The command opens a local web server on `127.0.0.1` using an available port by
+default. It displays the report, individual claims, reproduction instructions,
+execution logs, and a SARIF download using the UI bundled with this CLI release.
+No repository checkout or npm installation is needed to use an installed CLI
+that includes `preview`. Stop it with Ctrl+C.
+
+In **Verified APIs**, click an API name or **Claim #…** to open its local claim
+page. Report/claim navigation, recorded-run pages, and SARIF downloads stay on
+localhost. An unresolved API name is marked unverified; its **Claim #…** link is
+still available locally. Tool details, dependency evidence, and the API catalogue
+link within a claim point to the selected remote service.
+
+| Option | Behavior |
+| --- | --- |
+| `--manifest-path PATH`, `-p NAME` | Select the same Cargo package as other CLI commands |
+| `--run UUID` | Use a specific local recording; otherwise pin the latest at startup |
+| `--report ID` | Preview changes to this public report instead of the saved target |
+| `--port PORT` | Listen on this port; `0` (the default) selects an available port |
+| `--no-browser` | Print the URL without opening the browser |
+| `--server ORIGIN` | Read metadata and existing reports from this service; also accepts `PROOFS_SERVER` |
+
+For example, from a repository containing separate crate workspaces:
+
+```sh
+cargo proofs preview --manifest-path path/to/crate/Cargo.toml --no-browser
+```
+
+Edit `proofs.toml` and reload the browser to see changes. The selected run stays
+fixed until restart, even if a newer run is recorded. A malformed configuration
+shows an error page; fix it and reload to recover. Project selection options such
+as `--manifest-path` and `-p` work as with `publish`.
+
+Preview only makes GET requests to `--server`; it never uploads runs, prepares a
+catalogue, validates remotely, publishes, or updates credentials/publication state.
+New reports do not require login. With valid saved credentials, it selects the
+same saved report as `publish`. Use `--report ID` to preview a public existing
+report explicitly without login. If identity lookup fails, automatic selection is
+unavailable and the preview clearly identifies itself as a new report.
+
+Existing Web text is preserved where local settings are omitted; explicitly empty
+settings clear it. Unavailable or ambiguous API mappings use recorded paths and
+show an unverified warning; they cannot preserve existing claim text by guessing
+its API. Missing tool details and dependency reviews are also identified. The
+direct dependency catalogue is unavailable locally; pinned reviewed evidence is
+still shown. No fake publication ID or timestamp is assigned to a new report.
+
+Preview is for reviewing content, not approval to publish. Conflicts, removed
+claims, withdrawn reports, and interrupted publications are shown as warnings.
+`publish` remains responsible for permissions and final validation. Browser-based
+editing, publishing, comments, and stars are not available in the preview.
+
+### Preview and dry-run
+
+`preview` opens the reader-facing UI and uses GET requests only. It does not run
+the verifier or require Node.js for any other CLI command. `publish --dry-run`
+prints prospective publication data, requires login, and may create an API
+catalogue import on the service. Neither publishes a report; only `publish`
+performs the final server-side validation and publication.
+
+### Troubleshooting
+
+- **Unknown `preview` command:** check `cargo proofs --help`. To use this feature
+  from a source checkout, build with `cargo build --manifest-path cli/Cargo.toml
+  --locked`, then invoke `cli/target/debug/cargo-proofs preview --manifest-path
+  /absolute/path/to/your/Cargo.toml`. Use an absolute binary path when running
+  outside the proofs-rs checkout.
+- **No recorded run:** record a successful verification run for the selected
+  package first. `preview` does not start verification automatically.
+- **Tool configuration or crate/version changed:** select a matching recorded run
+  or record again. Editing only report prose needs no new run.
+- **Port in use:** stop the earlier server or omit `--port` to choose a free port.
+- **UI changes are missing after rebuilding the CLI:** stop and restart preview;
+  a running server retains the UI bundle it started with. Reloading only refreshes
+  report data. If you rebuild from source, regenerate the bundle first as described
+  in [Development](#development).
 
 ## Dependency reviews
 
@@ -227,7 +316,14 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo build --locked
 python3 tests/e2e.py target/debug/cargo-proofs
+python3 tests/preview.py target/debug/cargo-proofs
 ```
+
+When changing preview code, shared views, or public assets, run `npm ci` and
+`npm run build:preview` from the repository root **before** building the CLI.
+Commit the generated `cli/preview/server.cjs` and license notices together with
+the sources. `npm run check:preview` detects a stale bundle. Preview E2E tests
+require Node.js 24+.
 
 CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot/Lean (the separate Lean audit job runs Lean), or push user source repositories.
 

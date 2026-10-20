@@ -69,7 +69,7 @@ when there are no additional input assumptions. Each theorem maps to one API.
 Private APIs, ambiguous mappings, and duplicate mappings are rejected.
 `lean_dir` is relative to `Cargo.toml` and defaults to `"."`.
 
-## 3. Commit, record, and publish
+## 3. Commit, record, preview, and publish
 
 Commit and push Rust source, `Cargo.lock`, `proofs.toml`, the generated Lean
 model and proof sources, `lakefile.toml` (or `lakefile.lean`),
@@ -82,9 +82,15 @@ From the Lean project directory:
 ```sh
 cd proofs
 cargo proofs run --manifest-path ../Cargo.toml -- lake build
+cargo proofs preview --manifest-path ../Cargo.toml
 cargo proofs publish --manifest-path ../Cargo.toml --dry-run
 cargo proofs publish --manifest-path ../Cargo.toml
 ```
+
+The preview command requires Node.js 24 or newer. Review the report and each local
+claim page, then stop the server with Ctrl+C before continuing. It reads the
+recorded run without running Lean again. See [Preview a report](preview-a-report.md)
+for editing prose, selecting another run, and interpreting warnings.
 
 Sign in with `cargo proofs login` before publishing if needed. The tool revision
 must be registered and selectable on the service. Changes to mappings or

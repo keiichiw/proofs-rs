@@ -208,6 +208,28 @@ impl Api {
         Ok(found.into_iter().next().unwrap())
     }
 }
+/// Narrow read-only capability: preview code cannot upload, prepare, or publish.
+pub struct ReadOnlyApi(Api);
+impl ReadOnlyApi {
+    pub fn new(server: &str, authenticated: bool) -> Result<Self> {
+        let mut api = Api::new(server, authenticated)?;
+        api.client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .redirect(Policy::none())
+            .user_agent(concat!("cargo-proofs/", env!("CARGO_PKG_VERSION")))
+            .build()?;
+        Ok(Self(api))
+    }
+    pub fn get(&self, path: &str) -> Result<Value> {
+        self.0.get(path)
+    }
+    pub fn resolve(&self, name: &str, version: &str, paths: &[String]) -> Result<(String, String)> {
+        self.0.resolve(name, version, paths)
+    }
+    pub fn tool_version(&self, name: &str, version: &str) -> Result<String> {
+        self.0.tool_version(name, version)
+    }
+}
 fn enabled(v: &Value) -> bool {
     v == true || v == 1
 }

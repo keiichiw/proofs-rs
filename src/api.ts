@@ -1,3 +1,4 @@
+import { claimTitle } from "../web/claim-title";
 import { operation } from "./openapi";
 import * as S from "./schemas";
 import { Hono } from "hono";
@@ -649,9 +650,12 @@ async function validate(c: Ctx, b: any, existing?: any) {
         if (old.api_item_id !== a.id)
           throw new Fault(400, "immutable_claim_target");
       }
-      const title =
-        text(x.title, "Claim title", 1000) ||
-        `Verification of ${a.display_path} (with ${tv.name} ${tv.version})`;
+      const title = claimTitle(
+        text(x.title, "Claim title", 1000),
+        a.display_path,
+        tv.name,
+        tv.version,
+      );
       const evidence_url = optionalURL(x.evidence_url);
       if (!evidence_url && !v.evidence_url)
         throw new Fault(400, "evidence_required");
