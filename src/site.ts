@@ -103,10 +103,16 @@ function accountNavigation(c: Ctx, me: any) {
     ? `<details><summary>${escape(me.user.username)}</summary><div class="profile-menu"><a href="/account">My activity${stars ? ` (${escape(me.karma)} karma)` : ""}</a><a href="/settings">Settings</a>${me.user.role === "admin" ? '<a href="/admin/catalogs">Catalogs</a>' : ""}<form method="post" action="/_actions/logout"><input type="hidden" name="_csrf" value="${escape(me.csrf)}"><button>Sign out</button></form></div></details>`
     : `<div class="signin"><a href="${escape(login)}">Sign in with GitHub</a></div>`;
 }
-function layout(c: Ctx, title: string, body: string, me: any = { user: null }) {
+function layout(
+  c: Ctx,
+  title: string,
+  body: string,
+  me: any = { user: null },
+  canonicalPath?: string,
+) {
   const account = accountNavigation(c, me);
   const canonical = new URL(
-    c.req.path + new URL(c.req.url).search,
+    canonicalPath ?? c.req.path + new URL(c.req.url).search,
     c.env.APP_ORIGIN,
   ).href;
   return pageLayout(title, body, account, canonical);
@@ -126,8 +132,9 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
     return value;
   };
+  let canonicalPath: string | undefined;
   const result = (title: string, body: string, status = 200) =>
-    new Response(layout(c, title, body, me), {
+    new Response(layout(c, title, body, me, canonicalPath), {
       status,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
@@ -306,6 +313,12 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const version =
         current.searchParams.get("version") || releases.default_version;
       if (!version) throw new Fault(404, "crate_not_found");
+      const canonical = new URL(`/crate/${enc(id)}`, c.env.APP_ORIGIN);
+      if (version !== releases.default_version)
+        canonical.searchParams.set("version", version);
+      const cursor = current.searchParams.get("cursor");
+      if (cursor) canonical.searchParams.set("cursor", cursor);
+      canonicalPath = canonical.pathname + canonical.search;
       const apis = await get(`/crates/${enc(id)}/${enc(version)}/apis`);
       const counts = await rows(
         c.env.DB,
