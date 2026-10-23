@@ -4,7 +4,7 @@ import { claimTitle } from "../web/claim-title";
 import { operation } from "./openapi";
 import * as S from "./schemas";
 import { Hono } from "hono";
-import semver from "semver";
+import { defaultRelease, compareReleases } from "./releases";
 import {
   App,
   Ctx,
@@ -354,13 +354,11 @@ api.get(
     ]);
     const items = releases.results as any[];
     const crate = crates.results[0];
-    items.sort((a, b) => semver.rcompare(a.version, b.version));
+    items.sort(compareReleases);
     return c.json({
       items,
       description: crate?.description || "",
-      default_version:
-        items.find((x) => !semver.prerelease(x.version))?.version ||
-        items[0]?.version,
+      default_version: defaultRelease(items)?.version,
     });
   },
 );
