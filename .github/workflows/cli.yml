@@ -63,8 +63,6 @@ jobs:
   lean-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      PROOFS_TEST_AENEAS_CACHE: ${{ runner.temp }}/proofs-aeneas-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,7 +79,10 @@ jobs:
           "$HOME/.elan/bin/lean" +leanprover/lean4:v4.35.0 --version
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Prepare shared pinned Aeneas dependencies
-        run: python3 scripts/prepare-lean-audit.py "$PROOFS_TEST_AENEAS_CACHE"
+        run: |
+          lean_audit_cache="$RUNNER_TEMP/proofs-aeneas-cache"
+          python3 scripts/prepare-lean-audit.py "$lean_audit_cache"
+          echo "PROOFS_TEST_AENEAS_CACHE=$lean_audit_cache" >> "$GITHUB_ENV"
       - name: Check generated audit with real Lean and Aeneas
         working-directory: cli
         run: cargo test --locked aeneas::tests::real_ -- --ignored --test-threads=1
