@@ -1036,8 +1036,8 @@ mod tests {
             "import Aeneas\ntheorem demo.f_spec : True := by trivial\n",
         )
         .unwrap();
-        // Optional local cache reuse avoids fetching/rebuilding the large dependency
-        // graph. CI exercises the fresh, official pinned dependency path below.
+        // Local runs and CI can share freshly prepared pinned dependencies.
+        // Each test still builds and audits its own proof sources.
         if let Ok(cache) = std::env::var("PROOFS_TEST_AENEAS_CACHE") {
             fs::copy(
                 Path::new(&cache).join("lake-manifest.json"),
