@@ -126,6 +126,11 @@ cargo proofs publish --dry-run
 cargo proofs publish
 ```
 
+Before creating or updating a report, the CLI prepares the API catalogue. If the
+server’s catalogue extractor has changed, preparation automatically reindexes the
+stored rustdoc snapshot. Existing API IDs and claims are preserved. The CLI waits
+for this to finish; no administrator refresh is required.
+
 The CLI prints a link to your published report. Run `cargo proofs publish` again to update the same report.
 
 Using another tool? See [Tools](/tools) for supported tools and instructions.

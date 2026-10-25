@@ -5,7 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { app } from "../src/worker";
 import { hash, Env } from "../src/core";
-import { extractAPIs, importJob, refreshCatalog } from "../src/imports";
+import {
+  CATALOG_EXTRACTOR_VERSION,
+  extractAPIs,
+  importJob,
+  refreshCatalog,
+} from "../src/imports";
 import { cleanupRunUploads, readRecord } from "../src/runs";
 function recordedSarif(id: string, command = ["cargo", "kani"]) {
   return {
@@ -1251,7 +1256,7 @@ test("device login, one-time exchange, scope isolation, ownership and revocation
         headers,
       )
     ).body.status,
-    "ready",
+    "pending",
   );
   assert.equal(
     (await request("/admin/audit", "GET", undefined, "", headers)).status,
@@ -1494,6 +1499,14 @@ test("import stores normalized crate description using the existing metadata req
     throw Error("Unexpected request: " + url);
   });
   assert.equal(await importJob(env, "description-import"), true);
+  assert.equal(
+    db
+      .prepare(
+        "SELECT extractor_version FROM catalog_versions WHERE release_id=1",
+      )
+      .get()!.extractor_version,
+    CATALOG_EXTRACTOR_VERSION,
+  );
   assert.equal(
     db
       .prepare(
@@ -4362,5 +4375,93 @@ test("trait declaration methods can be resolved and attached to an existing find
   assert.deepEqual(
     saved.apis.map((a: any) => a.display_path),
     ["sample::T::m"],
+  );
+});
+
+test("publication preparation refreshes stale catalogs for ordinary authors and skips current versions", async () => {
+  const { db, env, request } = await fixture();
+  const report = await request("/reports", "POST", reportInput);
+  const claims = db.prepare("SELECT * FROM claims").all();
+  const before = db.prepare("SELECT * FROM api_items ORDER BY id").all();
+  let reads = 0;
+  const doc = traitImplFixture({ primitive: "u8" });
+  (env as any).ARCHIVE.get = async () => {
+    reads++;
+    return { text: async () => JSON.stringify(doc) };
+  };
+  const prepare = () =>
+    request("/publish/prepare", "POST", { crate: "sample", version: "1.0.0" });
+  const first = await prepare();
+  assert.equal(first.status, 202);
+  assert.equal(
+    (await prepare()).body.id,
+    first.body.id,
+    "share an in-progress refresh",
+  );
+  assert.equal(await importJob(env, first.body.id), true);
+  assert.equal(reads, 1);
+  assert.equal((await prepare()).status, 200);
+  assert.equal(reads, 1, "current catalog does not reread rustdoc");
+  assert.deepEqual(
+    db
+      .prepare(
+        "SELECT * FROM api_items WHERE id IN ('safe','unsafe') ORDER BY id",
+      )
+      .all(),
+    before,
+  );
+  assert.deepEqual(db.prepare("SELECT * FROM claims").all(), claims);
+  assert.equal(
+    (await request(`/reports/${report.body.id}`)).body.revision_no,
+    1,
+  );
+  assert.equal(
+    (await request("/resolve-api?crate=sample&version=1.0.0&path=sample::T::m"))
+      .status,
+    200,
+  );
+  db.exec("UPDATE catalog_versions SET extractor_version=999");
+  assert.equal(
+    (await prepare()).status,
+    200,
+    "older deployments do not downgrade newer catalogs",
+  );
+  await refreshCatalog(env, 1);
+  assert.equal(
+    db.prepare("SELECT extractor_version FROM catalog_versions").get()!
+      .extractor_version,
+    999,
+  );
+});
+
+test("failed catalog refresh stays stale and retries from the archived snapshot", async () => {
+  const { db, env, request } = await fixture();
+  (env as any).ARCHIVE.get = async () => null;
+  const prepared = await request("/publish/prepare", "POST", {
+    crate: "sample",
+    version: "1.0.0",
+  });
+  assert.equal(prepared.status, 202);
+  assert.equal(await importJob(env, prepared.body.id), false);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM catalog_versions").get()!.n,
+    0,
+  );
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM api_items").get()!.n, 2);
+  db.prepare("UPDATE import_jobs SET next_retry_at=NULL WHERE id=?").run(
+    prepared.body.id,
+  );
+  (env as any).ARCHIVE.get = async () => ({
+    text: async () => JSON.stringify(traitImplFixture({ primitive: "u8" })),
+  });
+  assert.equal(await importJob(env, prepared.body.id), true);
+  assert.equal(
+    (
+      await request("/publish/prepare", "POST", {
+        crate: "sample",
+        version: "1.0.0",
+      })
+    ).status,
+    200,
   );
 });

@@ -21,6 +21,26 @@ import {
 } from "./core";
 // Format 60 is still served by docs.rs for releases such as hex 0.4.3.
 export const FORMATS = [60, 61];
+// Bump when extraction or metadata changes require replaying archived rustdoc.
+export const CATALOG_EXTRACTOR_VERSION = 1;
+
+function markCatalogCurrent(db: D1Database, releaseId: number) {
+  return stmt(
+    db,
+    "INSERT INTO catalog_versions(release_id,extractor_version) VALUES(?,?) ON CONFLICT(release_id) DO UPDATE SET extractor_version=MAX(catalog_versions.extractor_version,excluded.extractor_version)",
+    releaseId,
+    CATALOG_EXTRACTOR_VERSION,
+  );
+}
+
+async function catalogCurrent(db: D1Database, releaseId: number) {
+  return !!(await one(
+    db,
+    "SELECT 1 FROM catalog_versions WHERE release_id=? AND extractor_version>=?",
+    releaseId,
+    CATALOG_EXTRACTOR_VERSION,
+  ));
+}
 function typ(t: any): string {
   if (t === null) return "()";
   if (typeof t === "string") return t === "infer" ? "_" : t;
@@ -622,6 +642,7 @@ export async function refreshCatalog(env: Env, releaseId: number) {
     );
   }
   await saveMetadata(env.DB, releaseId, metadata);
+  await markCatalogCurrent(env.DB, releaseId).run();
   return { indexed: apis.length, added };
 }
 importRoutes.post(
@@ -691,7 +712,7 @@ importRoutes.post(
       name,
       version,
     );
-    if (await one(db, "SELECT 1 FROM doc_snapshots WHERE release_id=?", rel.id))
+    if (await catalogCurrent(db, rel.id))
       return c.json({ status: "ready", crate: name, version });
     const running = await one(
       db,
@@ -803,9 +824,11 @@ export async function importJob(env: Env, id: string) {
     if (
       await one(db, "SELECT 1 FROM doc_snapshots WHERE release_id=?", rel.id)
     ) {
+      if (!(await catalogCurrent(db, rel.id)))
+        await refreshCatalog(env, rel.id);
       await stmt(
         db,
-        "UPDATE import_jobs SET status='ready' WHERE id=?",
+        "UPDATE import_jobs SET status='ready',error_code=NULL,lease_until=NULL WHERE id=?",
         id,
       ).run();
       return true;
@@ -877,6 +900,7 @@ export async function importJob(env: Env, id: string) {
         r2key,
         now(),
       ),
+      markCatalogCurrent(db, rel.id),
       ...(typeof meta.version.description === "string"
         ? [
             stmt(
