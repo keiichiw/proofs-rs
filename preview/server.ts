@@ -97,6 +97,7 @@ const server = createServer(async (req, res) => {
       path === "/" ||
       path === "/report" ||
       /^\/claim\/[^/]+$/.test(path) ||
+      /^\/finding\/[^/]+$/.test(path) ||
       /^\/runs\/[^/]+$/.test(path) ||
       /^\/api\/v1\/runs\/[^/]+\/sarif$/.test(path)
     )) {

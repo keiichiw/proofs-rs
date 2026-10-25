@@ -72,10 +72,7 @@ test("report body removes redundant labels and groups claims by API with revisio
     d.querySelector(".report-limitations").textContent,
     /Report limit.*Tool limit/s,
   );
-  assert.equal(
-    d.querySelector(".report-apis h2").textContent,
-    "Verified APIs (1)",
-  );
+  assert.equal(d.querySelector(".report-apis h2").textContent, "APIs (1)");
   assert.equal(d.querySelectorAll('a[href="/api/api-1"]').length, 1);
   assert.equal(d.querySelectorAll(".report-api-claims a").length, 3);
   assert.equal(
@@ -234,5 +231,46 @@ test("crate report summaries show the reviewed count without a denominator", () 
     /3 reviewed dependencies/,
   );
   assert.doesNotMatch(dom.window.document.body.textContent!, /3\s*\//);
+  dom.window.close();
+});
+
+test("report APIs include finding-only APIs and combine associations without duplicates", () => {
+  const views = createViews({ user: null }, {}, () => "");
+  const api = {
+    id: "shared",
+    display_path: "demo::read",
+    kind: "function",
+    signature: "fn read()",
+  };
+  const finding = {
+    id: "f",
+    title: "Signed <read>",
+    validity: "confirmed",
+    apis: [api, { id: "only", display_path: "demo::checked" }, api],
+  };
+  const dom = new JSDOM(
+    views.reportAPIs({
+      crate: "demo",
+      claims: [
+        {
+          ...api,
+          id: "c",
+          api_item_id: "shared",
+          claim_number: 1,
+          report_revision: 2,
+        },
+      ],
+      findings: [finding],
+    }),
+  );
+  const d = dom.window.document;
+  assert.equal(d.querySelector("h2")?.textContent, "APIs (2)");
+  assert.equal(d.querySelectorAll('a[href="/finding/f"]').length, 2);
+  assert.equal(d.querySelectorAll('a[href="/api/only"]').length, 1);
+  const shared = d
+    .querySelector('a[href="/api/shared"]')!
+    .closest(".catalog-row")!;
+  assert.match(shared.textContent!, /Claim #1.*Finding: Signed <read>/);
+  assert.equal(shared.querySelector("read"), null);
   dom.window.close();
 });

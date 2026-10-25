@@ -471,14 +471,19 @@ test("Report and crate pages render findings, owner forms, safe links and curren
   );
   assert.equal(d.querySelectorAll("#findings script").length, 0);
   assert.ok(d.querySelector('form[action="/_actions/finding"]'));
+  assert.equal(d.querySelector(".finding .markdown-body"), null);
+  assert.equal(d.querySelector('form[action="/_actions/edit-finding"]'), null);
+  assert.ok(d.querySelector("#discussion"));
+  assert.ok(d.querySelector(".report-apis"));
+  dom.window.close();
+  dom = await html(`/finding/${id}`);
+  d = dom.window.document;
   assert.ok(d.querySelector('form[action="/_actions/edit-finding"]'));
   assert.ok(d.querySelector('form[action="/_actions/finding-link"]'));
   assert.equal(
     d.querySelector(".finding-links a")!.getAttribute("rel"),
     "noopener noreferrer",
   );
-  assert.ok(d.querySelector("#discussion"));
-  assert.ok(d.querySelector(".report-apis"));
   dom.window.close();
   dom = await html(`/report/${report}?v=1`, false);
   assert.match(
@@ -789,7 +794,7 @@ test("Markdown body is the only required prose, supports observations, and has b
   const detail = (await request(`/findings/${id}`)).body;
   assert.equal(detail.body, input.body);
   assert.equal(JSON.parse(detail.events[0].payload).body, input.body);
-  const r = await app.request(`https://example.test/report/${report}`, {}, env);
+  const r = await app.request(`https://example.test/finding/${id}`, {}, env);
   const dom = new JSDOM(await r.text()),
     d = dom.window.document;
   const finding = d.querySelector(`#finding-${id}`)!;
@@ -896,7 +901,7 @@ test("body migration preserves origin, links, APIs and immutable history without
   assert.equal((await request("/findings/legacy")).body.body, f.body);
   // Submit the actual rendered form, including unchanged migrated prose.
   const page = await app.request(
-    `https://example.test/report/${report}`,
+    `https://example.test/finding/legacy`,
     {
       headers: { Cookie: "__Host-proofsr_session=alice" },
     },
@@ -1120,7 +1125,7 @@ test("crate findings summary stays version scoped, compact, filtered and paginat
     /Full details|Other observation|Observation 31|Observation 32/,
   );
   const finding = d.querySelector(
-    `.crate-findings a[href="/report/${report}#finding-${ids[0]}"]`,
+    `.crate-findings a[href="/finding/${ids[0]}"]`,
   )!;
   assert.equal(finding.textContent, "<script>unsafe title</script>");
   assert.equal(d.querySelectorAll(".crate-findings script").length, 0);

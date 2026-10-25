@@ -133,7 +133,19 @@ export function renderPreview(
       report.id == null
         ? "New report"
         : `Draft revision of report #${esc(report.id)} (based on v${esc(report.base_revision)})`;
-    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportBody(report, run(true), report.findings ? `<section id="findings" class="report-section"><h2>Findings (${report.finding_count})</h2>${report.findings.map((f: any) => views.findingItem(f)).join("")}</section>` : "")}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>${views.reportAPIs(report)}`;
+    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportBody(report, run(true), report.findings ? `<section id="findings" class="report-section"><h2>Findings (${report.finding_count})</h2>${report.findings.map((f: any) => views.findingItem(f, false, [], true)).join("")}</section>` : "")}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>${views.reportAPIs(report)}`;
+  } else if (path.startsWith("/finding/")) {
+    const finding = report.findings?.find(
+      (f: any) => `/finding/${encodeURIComponent(f.id)}` === path,
+    );
+    if (finding) {
+      title = finding.title;
+      body = `<p><a href="/report#finding-${encodeURIComponent(finding.id)}">← ${esc(report.title)}</a></p><h1>${esc(finding.title)}</h1>${views.findingItem(finding)}`;
+    } else {
+      status = 404;
+      body =
+        '<h1>Finding not found</h1><p><a href="/report">Return to report</a></p>';
+    }
   } else if (path.startsWith("/claim/")) {
     const claim = report.claims.find((c: any) => claimHref(c.id) === path);
     if (claim) {

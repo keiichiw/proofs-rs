@@ -38,7 +38,8 @@ edit findings after publication; the CLI does not synchronize or repost this arr
 ## Edit published findings
 
 On a report you authored, open **Add finding** immediately below Overview. Findings
-have permanent IDs and links such as `/report/6#finding-<id>`. Use **Edit** to correct
+have permanent IDs and detail pages at `/finding/<id>`. Report anchors such as
+`/report/6#finding-<id>` remain available. Open the detail page and use **Edit** to correct
 the finding or update its optional status. These changes create finding events without
 creating a new report revision. **Change history** opens the full history, including
 removed links. The finding's origin revision is the current report revision when
@@ -133,3 +134,14 @@ report's crate and version. Publication resolves paths to API IDs and deduplicat
 aliases; an unresolved or ambiguous path prevents publication. Preview displays
 these associations and warns about unresolved paths. This applies to initial
 publication only; edit published findings through the Web/API.
+
+
+Report pages show a compact Findings list with titles, statuses and related APIs.
+Open a finding's title to read its full description, reproduction, supporting links
+and change history on `/finding/:id`. Authors edit findings on that detail page.
+Local preview also provides finding detail pages, including unpublished drafts.
+
+The report's **APIs** section includes APIs referenced by either claims or findings.
+Each API lists its claim links and finding links; APIs with findings but no claims
+are included. A finding does not automatically invalidate a claim: the claim's
+specific contract and the finding's circumstances must be compared.
