@@ -277,17 +277,21 @@ export function extractAPIs(
       trait?: string;
       selfType?: string;
       anchor?: string;
+      declaration?: boolean;
     },
   ) {
     const fn = resolveEmptyPaths(item.inner.function, doc.paths);
     if (!fn || typeof fn.header?.is_unsafe !== "boolean")
       throw new Fault(422, "invalid_rustdoc_function");
-    const name = owner?.trait
-      ? `<${owner.selfType ?? owner.path.join("::")} as ${owner.trait}>::${path.at(-1)}`
-      : path.join("::");
-    const prefix = owner
-      ? `impl${params(owner.impl.generics)} ${owner.trait ? owner.trait + " for " : ""}${typ(owner.impl.for)}${wheres(owner.impl.generics)}\n`
-      : "";
+    const name =
+      owner?.trait && !owner.declaration
+        ? `<${owner.selfType ?? owner.path.join("::")} as ${owner.trait}>::${path.at(-1)}`
+        : path.join("::");
+    const prefix = owner?.declaration
+      ? `trait ${owner.path.join("::")}${params(owner.impl.generics)}${wheres(owner.impl.generics)}\n`
+      : owner
+        ? `impl${params(owner.impl.generics)} ${owner.trait ? owner.trait + " for " : ""}${typ(owner.impl.for)}${wheres(owner.impl.generics)}\n`
+        : "";
     const h = fn.header;
     const abi = typeof h.abi === "string" ? h.abi : Object.keys(h.abi || {})[0];
     const sig =
@@ -317,12 +321,14 @@ export function extractAPIs(
     });
     if (metadata) {
       const imp = owner && canonicalPaths(owner.impl);
-      const trait = owner?.trait
-        ? index[owner.impl.trait?.id]?.inner?.trait
-          ? owner.trait
-          : (imp.trait?.path || owner.trait.replace(/<.*$/, "")) +
-            args(imp.trait?.args)
-        : null;
+      const trait = owner?.declaration
+        ? owner.path.join("::")
+        : owner?.trait
+          ? index[owner.impl.trait?.id]?.inner?.trait
+            ? owner.trait
+            : (imp.trait?.path || owner.trait.replace(/<.*$/, "")) +
+              args(imp.trait?.args)
+          : null;
       metadata.set(name, {
         category: owner?.trait
           ? "trait"
@@ -332,7 +338,8 @@ export function extractAPIs(
               ? "method"
               : "associated",
         trait_path: trait,
-        self_type: owner ? owner.selfType || typ(imp.for) : null,
+        self_type:
+          owner && !owner.declaration ? owner.selfType || typ(imp.for) : null,
         method_name: path.at(-1),
         is_blanket: owner?.trait && owner.impl.blanket_impl != null ? 1 : 0,
       });
@@ -382,6 +389,20 @@ export function extractAPIs(
       const aliases = publicTraits.get(String(id)) || new Set<string>();
       aliases.add(current.join("::"));
       publicTraits.set(String(id), aliases);
+      for (const methodID of inner.trait.items || []) {
+        const method = index[methodID];
+        if (!method) throw new Fault(422, "invalid_rustdoc_trait_item");
+        if (!method.inner?.function) continue;
+        add(method, [...current, method.name], {
+          kind: "trait",
+          path: current,
+          impl: inner.trait,
+          trait: current.join("::"),
+          declaration: true,
+          anchor:
+            method.inner.function.has_body === false ? "tymethod" : "method",
+        });
+      }
       return;
     }
     for (const kind of ["struct", "enum", "union"])

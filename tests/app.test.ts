@@ -887,7 +887,7 @@ test("catalog uses public trait and type aliases without exposing private paths"
   };
   assert.deepEqual(
     extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
-    ["<sample::Alias as sample::PublicTrait>::m"],
+    ["sample::PublicTrait::m", "<sample::Alias as sample::PublicTrait>::m"],
   );
 });
 
@@ -2036,11 +2036,12 @@ test("new trait-driven structural paths match cargo-proofs fixtures", () => {
     const apis = extractAPIs(doc, "sample", "1.0.0");
     assert.deepEqual(
       apis.map((a) => a.canonical_key),
-      [`<${c.key} as sample::T>::m`],
+      ["sample::T::m", `<${c.key} as sample::T>::m`],
       c.source,
     );
     assert.equal(
-      apis[0].upstream_url,
+      apis.find((a) => a.canonical_key === `<${c.key} as sample::T>::m`)!
+        .upstream_url,
       "https://docs.rs/sample/1.0.0/sample/trait.T.html#tymethod.m",
     );
   }
@@ -2107,12 +2108,17 @@ test("trait traversal preserves legacy entries and all public aliases without du
   const legacy = extractAPIs(doc, "sample", "1.0.0");
   doc.index[1].inner.trait.implementations = [3, 3];
   assert.deepEqual(extractAPIs(doc, "sample", "1.0.0"), legacy);
-  assert.equal(legacy.length, 4);
+  assert.equal(legacy.length, 6);
   doc.index[3].inner.impl.for = { primitive: "u8" };
   doc.index[5].inner.struct.impls = [];
   assert.deepEqual(
     extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
-    ["<u8 as sample::T>::m", "<u8 as sample::Alias>::m"],
+    [
+      "sample::T::m",
+      "sample::Alias::m",
+      "<u8 as sample::T>::m",
+      "<u8 as sample::Alias>::m",
+    ],
   );
   doc.index[1].visibility = "default";
   doc.index[0].inner.module.items = [1];
@@ -2140,7 +2146,10 @@ test("trait traversal excludes synthetic, negative, external and private nominal
   ]) {
     const doc = traitImplFixture({ primitive: "u8" });
     change(doc);
-    assert.deepEqual(extractAPIs(doc, "sample", "1.0.0"), []);
+    assert.deepEqual(
+      extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
+      ["sample::T::m"],
+    );
   }
   const doc = traitImplFixture({ primitive: "u8" });
   delete doc.index[3];
@@ -2158,7 +2167,7 @@ test("hex trait fixture includes every macro array impl, Vec and generic ToHex",
     ),
   );
   const apis = extractAPIs(doc, "hex", "0.4.3");
-  assert.equal(apis.length, 162);
+  assert.equal(apis.length, 165);
   const keys = new Set(apis.map((a) => a.canonical_key));
   assert(keys.has("<alloc::vec::Vec<u8> as hex::FromHex>::from_hex"));
   assert(keys.has("<T as hex::ToHex>::encode_hex"));
@@ -2195,8 +2204,8 @@ test("structural trait arguments distinguish impls and refresh preserves reports
   (env as any).ARCHIVE.get = async () => ({
     text: async () => JSON.stringify(doc),
   });
-  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 2, added: 2 });
-  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 2, added: 0 });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 3, added: 3 });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 3, added: 0 });
   assert.deepEqual(
     db
       .prepare(
@@ -2248,7 +2257,7 @@ test("nested local type references use public aliases in structural keys", () =>
   };
   doc.index[0].inner.module.items.push(6);
   assert.equal(
-    extractAPIs(doc, "sample", "1.0.0")[0].canonical_key,
+    extractAPIs(doc, "sample", "1.0.0")[1].canonical_key,
     "<alloc::vec::Vec<sample::Alias> as sample::T>::m",
   );
 });
@@ -4316,4 +4325,42 @@ test("crate canonical and sitemap agree with public SemVer defaults", async () =
   } finally {
     db.close();
   }
+});
+
+test("trait declaration methods can be resolved and attached to an existing finding", async () => {
+  const { env, request } = await fixture();
+  const report = await request("/reports", "POST", reportInput);
+  const finding = await request(`/reports/${report.body.id}/findings`, "POST", {
+    title: "Default method returns an incorrect value",
+    body: "The trait default method has a reproducible counterexample.",
+  });
+  assert.equal(finding.status, 201);
+  const doc = traitImplFixture({ primitive: "u8" });
+  doc.index[1].inner.trait.implementations = [];
+  doc.index[2].inner.function.has_body = true;
+  doc.index[2].visibility = "default";
+  (env as any).ARCHIVE.get = async () => ({
+    text: async () => JSON.stringify(doc),
+  });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 1, added: 1 });
+  const resolved = await request(
+    "/resolve-api?crate=sample&version=1.0.0&path=sample::T::m",
+  );
+  assert.equal(resolved.status, 200);
+  const api = (await request(`/apis/${resolved.body.id}`)).body;
+  assert.equal(
+    api.upstream_url,
+    "https://docs.rs/sample/1.0.0/sample/trait.T.html#method.m",
+  );
+  assert.match(api.signature, /^trait sample::T\npub fn m/);
+  const updated = await request(`/findings/${finding.body.id}`, "PATCH", {
+    edit_version: 1,
+    api_item_ids: [resolved.body.id],
+  });
+  assert.equal(updated.status, 200);
+  const saved = (await request(`/findings/${finding.body.id}`)).body;
+  assert.deepEqual(
+    saved.apis.map((a: any) => a.display_path),
+    ["sample::T::m"],
+  );
 });
