@@ -4,6 +4,7 @@ A public registry for Rust formal verification results.
 
 - [Website](https://proofs.rs)
 - [Book](https://proofs.rs/book/)
+- [Zulip](https://proofs-rs.zulipchat.com/)
 - [CLI](cli/README.md)
 - [Development](docs/development.md)
 
