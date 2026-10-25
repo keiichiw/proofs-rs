@@ -201,6 +201,30 @@ impl Preview {
             }
         } else if let Some(findings) = report.as_object_mut().unwrap().remove("findings") {
             report["finding_drafts"] = findings;
+            let mut related = vec![];
+            for finding in &config.report.findings {
+                let mut apis = BTreeMap::new();
+                for path in &finding.api_paths {
+                    match api.resolve(
+                        &self.project.name,
+                        &self.project.version,
+                        &[path.trim().to_owned()],
+                    ) {
+                        Ok((id, _)) => {
+                            apis.insert(id.clone(), json!({"id":id,"display_path":path.trim()}));
+                        }
+                        Err(_) => {
+                            warnings.push(format!("Finding API mapping unverified: {path}. Publication requires a unique API match."));
+                            apis.insert(
+                                path.clone(),
+                                json!({"display_path":path,"unverified":true}),
+                            );
+                        }
+                    }
+                }
+                related.push(apis.into_values().collect::<Vec<_>>());
+            }
+            report["finding_draft_apis"] = json!(related);
         }
         if let Some(r) = &remote {
             let retained: BTreeSet<_> = report["claims"]

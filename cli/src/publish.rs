@@ -335,6 +335,10 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
     let generated = json!({"crate":project.name,"version":project.version,"tool_version_id":tool,"evidence_url":format!("{}/tree/{}", source["repositoryUri"].as_str().unwrap(), source["revisionId"].as_str().unwrap()),"run_ids":[run_id],"claims":claims});
     // Unspecified editorial fields are preserved. Force changes only fields owned by this CLI/config.
     let mut body = crate::draft::compose(&config, generated, &remote, &saved, selected)?;
+    crate::draft::resolve_finding_apis(&config, &mut body, |path| {
+        api.resolve(&project.name, &project.version, &[path.to_owned()])
+            .map(|(id, _)| id)
+    })?;
     validate_dependencies(&api, &body, &entry["properties"]["proofs"])?;
     if let Some(report) = &remote {
         body["expected_revision"] = report["revision_no"].clone();

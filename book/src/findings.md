@@ -118,3 +118,18 @@ Initial `POST /reports` and `/reports/validate` accept an optional `findings` ar
 Claims and successful recorded runs remain required. Report revisions reject
 `findings`; use the independent APIs to add or change them. Finding edits and
 link changes retain their own history without changing the report revision.
+
+Related APIs can be specified by public Rust paths in `proofs.toml`:
+
+```toml
+[[report.findings]]
+title = "Empty input behavior"
+body = "Describe the observed behavior here."
+api_paths = ["my_crate::parse", "my_crate::Parser::parse"]
+```
+
+`api_paths` is optional (up to 50 paths). Each path must resolve uniquely in the
+report's crate and version. Publication resolves paths to API IDs and deduplicates
+aliases; an unresolved or ambiguous path prevents publication. Preview displays
+these associations and warns about unresolved paths. This applies to initial
+publication only; edit published findings through the Web/API.

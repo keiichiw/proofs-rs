@@ -404,3 +404,19 @@ test("existing report preview renders published Markdown and remote history with
   );
   withdrawn.window.close();
 });
+
+test("finding draft API associations link resolved paths and label unresolved paths", () => {
+  const data = fixture();
+  data.report.finding_drafts = [{ title: "Observation", body: "Body" }];
+  data.report.finding_draft_apis = [[
+    { id: "api-f", display_path: "demo::f" },
+    { display_path: "demo::<missing>", unverified: true },
+  ]];
+  const dom = new JSDOM(renderPreview(data, "/report").html);
+  const finding = dom.window.document.querySelector(".finding")!;
+  assert.equal(finding.querySelector('a[href="https://staging.example/api/api-f"]')?.textContent, "demo::f");
+  assert.match(finding.textContent!, /demo::<missing> \(API unverified\)/);
+  assert.equal(finding.querySelector('a[href*="undefined"]'), null);
+  assert.equal(finding.querySelector("missing"), null);
+  dom.window.close();
+});

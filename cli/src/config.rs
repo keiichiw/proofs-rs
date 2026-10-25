@@ -36,6 +36,8 @@ pub struct Report {
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Finding {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_paths: Vec<String>,
     pub title: String,
     pub body: String,
 }
@@ -47,6 +49,14 @@ impl Report {
             "At most 20 report.findings are allowed"
         );
         for (index, finding) in self.findings.iter().enumerate() {
+            ensure!(
+                finding.api_paths.len() <= 50,
+                "At most 50 API paths per finding are allowed"
+            );
+            ensure!(
+                finding.api_paths.iter().all(|p| !p.trim().is_empty()),
+                "Finding API paths must not be empty"
+            );
             for (name, value, limit) in [
                 ("title", &finding.title, 1000),
                 ("body", &finding.body, 10000),
@@ -393,7 +403,11 @@ mod tests {
             ("title".into(), "🦀".repeat(5001)),
         ] {
             let mut cfg = parse(valid).unwrap();
-            cfg.report.findings = vec![Finding { title, body }];
+            cfg.report.findings = vec![Finding {
+                title,
+                body,
+                api_paths: vec![],
+            }];
             assert!(cfg.report.validate().is_err());
         }
     }

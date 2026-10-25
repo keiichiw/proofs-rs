@@ -379,3 +379,18 @@ Preview reloads this prose without rerunning verification. Findings are created
 atomically with a new report. When revising an existing report, preview shows its
 published findings and publish leaves them unchanged; add or edit them through
 the report page or Findings API. The local array is not synchronized or reposted.
+
+Related APIs can be specified by public Rust paths in `proofs.toml`:
+
+```toml
+[[report.findings]]
+title = "Empty input behavior"
+body = "Describe the observed behavior here."
+api_paths = ["my_crate::parse", "my_crate::Parser::parse"]
+```
+
+`api_paths` is optional (up to 50 paths). Each path must resolve uniquely in the
+report's crate and version. Publication resolves paths to API IDs and deduplicates
+aliases; an unresolved or ambiguous path prevents publication. Preview displays
+these associations and warns about unresolved paths. This applies to initial
+publication only; edit published findings through the Web/API.

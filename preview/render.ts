@@ -85,7 +85,7 @@ export function renderPreview(
       validity: "reported",
       upstream_status: "not_reported",
       duplicate_of: null,
-      apis: [],
+      apis: report.finding_draft_apis?.[index] ?? [],
       links: [],
     }));
   }
