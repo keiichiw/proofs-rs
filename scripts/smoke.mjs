@@ -84,3 +84,61 @@ for (const path of [
   }
   console.log("OK " + path);
 }
+
+// SEO responses must bypass authentication and asset fallback routing.
+async function seoCheck(path, status = 200) {
+  const response = await fetch(origin + path, { redirect: "manual" });
+  if (response.status !== status)
+    throw Error(`${path} returned ${response.status}, expected ${status}`);
+  if (response.headers.has("set-cookie")) throw Error(`${path} set a cookie`);
+  console.log("OK " + path);
+  return response;
+}
+const robots = await seoCheck("/robots.txt");
+const robotsText = await robots.text();
+if (environment === "production") {
+  if (!robotsText.includes(`Sitemap: ${origin}/sitemap.xml`))
+    throw Error("Missing sitemap advertisement");
+  const index = await seoCheck("/sitemap.xml");
+  const indexText = await index.text();
+  if (
+    !index.headers.get("content-type")?.includes("application/xml") ||
+    !indexText.includes("<sitemapindex")
+  )
+    throw Error("Invalid sitemap index");
+  const pages = await seoCheck("/sitemap-pages.xml");
+  if (!(await pages.text()).includes("<urlset"))
+    throw Error("Invalid static sitemap");
+  const first = `${origin}/sitemap-records-1.xml`;
+  const hasRecords = indexText.includes(`<loc>${first}</loc>`);
+  const records = await seoCheck(
+    "/sitemap-records-1.xml",
+    hasRecords ? 200 : 404,
+  );
+  if (hasRecords && !(await records.text()).includes("<urlset"))
+    throw Error("Invalid records sitemap");
+  for (const [old, target] of [
+    ["/sitemaps/pages.xml", "/sitemap-pages.xml"],
+    ["/sitemaps/records-1.xml", "/sitemap-records-1.xml"],
+  ]) {
+    const redirect = await seoCheck(old, 308);
+    if (redirect.headers.get("location") !== origin + target)
+      throw Error("Incorrect sitemap redirect");
+  }
+} else {
+  if (!robotsText.includes("Disallow: /"))
+    throw Error("Staging robots allows crawling");
+  for (const path of [
+    "/sitemap.xml",
+    "/sitemap-pages.xml",
+    "/sitemap-records-1.xml",
+    "/sitemaps/pages.xml",
+  ]) {
+    const response = await seoCheck(path, 404);
+    if (
+      response.headers.get("cache-control") !== "no-store" ||
+      !response.headers.get("x-robots-tag")?.includes("noindex")
+    )
+      throw Error("Staging sitemap is cacheable or indexable");
+  }
+}

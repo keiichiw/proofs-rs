@@ -3468,6 +3468,17 @@ test("optional staging pagination fixture is repeatable and provides two HTML pa
   assert.equal(ids(second).length, 6);
   assert.equal(new Set([...ids(first), ...ids(second)]).size, 36);
   assert.equal(second.window.document.querySelector('a[rel="next"]'), null);
+  const canonical = new URL(
+    second.window.document
+      .querySelector('link[rel="canonical"]')!
+      .getAttribute("href")!,
+  );
+  assert.equal(canonical.pathname, "/crate/pagination-demo");
+  assert.equal(canonical.searchParams.get("version"), null);
+  assert.equal(
+    canonical.searchParams.get("cursor"),
+    new URL(next, env.APP_ORIGIN).searchParams.get("cursor"),
+  );
 });
 
 test("My activity always shows report and comment sections without section navigation", async () => {
@@ -4237,4 +4248,72 @@ test("report and recorded-run limits accept 200 claims and reject 201", async ()
     400,
   );
   assert.equal((await request("/reports", "POST", input)).status, 201);
+});
+
+test("crate canonical and sitemap agree with public SemVer defaults", async () => {
+  const { JSDOM } = await import("jsdom");
+  const { seoResponse } = await import("../src/seo");
+  const { db, env, request } = await fixture();
+  try {
+    assert.equal((await request("/reports", "POST", reportInput)).status, 201);
+    for (const [id, version] of [
+      [2, "1.9.0"],
+      [3, "1.10.0"],
+      [4, "2.0.0-rc.1"],
+    ] as const) {
+      db.prepare(
+        "INSERT INTO releases(id,crate_id,version,created_at) VALUES(?,1,?,'2026-01-01')",
+      ).run(id, version);
+      db.prepare(
+        "INSERT INTO reports(id,create_key,release_id,author_id,created_at,updated_at) VALUES(?,?,?,'alice','2026-01-01','2026-01-01')",
+      ).run(id, `canonical-${id}`, id);
+    }
+    const read = async (query: string) => {
+      const response = await app.request(
+        env.APP_ORIGIN + "/crate/sample" + query,
+        {},
+        env,
+      );
+      assert.equal(response.status, 200);
+      return new JSDOM(await response.text()).window.document;
+    };
+    for (const expected of ["1.10.0", "1.9.0", "2.0.0-rc.1"]) {
+      assert.equal(
+        (await request("/crates/sample/releases")).body.default_version,
+        expected,
+      );
+      const doc = await read("?utm_source=test");
+      assert.ok(doc.querySelector("h1")!.textContent!.includes(expected));
+      assert.equal(
+        doc.querySelector('link[rel="canonical"]')!.getAttribute("href"),
+        env.APP_ORIGIN + "/crate/sample",
+      );
+      const explicit = await read(`?version=${expected}&utm_source=test`);
+      assert.equal(
+        explicit.querySelector('link[rel="canonical"]')!.getAttribute("href"),
+        env.APP_ORIGIN + "/crate/sample",
+      );
+      const xml = await (await seoResponse(
+        { ...env, ENVIRONMENT: "production" },
+        "/sitemap-records-1.xml",
+      ))!.text();
+      assert.ok(!xml.includes(`/crate/sample?version=${expected}</loc>`));
+      if (expected === "1.10.0")
+        db.exec(
+          "UPDATE reports SET withdrawn_at='2026-02-01' WHERE release_id=3",
+        );
+      else if (expected === "1.9.0")
+        db.exec(
+          "UPDATE reports SET visibility='hidden' WHERE release_id IN (1,2)",
+        );
+    }
+    // The only remaining published version is now the prerelease.
+    const old = await read("?version=1.0.0&utm_source=test");
+    assert.equal(
+      old.querySelector('link[rel="canonical"]')!.getAttribute("href"),
+      env.APP_ORIGIN + "/crate/sample?version=1.0.0",
+    );
+  } finally {
+    db.close();
+  }
 });

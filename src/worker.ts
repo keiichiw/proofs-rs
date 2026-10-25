@@ -45,7 +45,14 @@ app.use("*", async (c, next) =>
 // Sitemap and robots responses do not authenticate visitors or set cookies.
 app.use("*", async (c, next) => {
   if (["GET", "HEAD"].includes(c.req.method)) {
-    const response = await seoResponse(c.env, c.req.path);
+    let waitUntil: ((promise: Promise<unknown>) => void) | undefined;
+    try {
+      const ctx = c.executionCtx;
+      waitUntil = (promise) => ctx.waitUntil(promise);
+    } catch {
+      /* app.request tests have no execution context. */
+    }
+    const response = await seoResponse(c.env, c.req.path, { waitUntil });
     if (response) return response;
   }
   await next();
