@@ -124,19 +124,27 @@ export function createViews(
     if (!c.tool_limitations) return "";
     return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
   }
-  function findingItem(f: any, editable = false, apis: any[] = []) {
-    const permalink = options.preview
-      ? `/report#finding-${enc(f.id)}`
-      : `/report/${f.report_id}#finding-${enc(f.id)}`;
+  function findingItem(
+    f: any,
+    editable = false,
+    apis: any[] = [],
+    compact = false,
+  ) {
+    const permalink = `/finding/${enc(f.id)}`;
     return `<article class="finding" id="finding-${esc(f.id)}"><h3><a href="${permalink}">${esc(f.title)}</a></h3>
       ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${esc(f.validity)} · ${esc(f.upstream_status)} (author reported)</p>` : ""}${f.withdrawn_at ? '<p class="meta">Report withdrawn</p>' : ""}
-      ${f.apis.length ? `<p>${f.apis.map((a: any) => a.unverified ? `<code>${esc(a.display_path)}</code> (API unverified)` : `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`).join(", ")}</p>` : ""}
+      ${f.apis.length ? `<p>${f.apis.map((a: any) => (a.unverified ? `<code>${esc(a.display_path)}</code> (API unverified)` : `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`)).join(", ")}</p>` : ""}
       ${f.draft ? '<p class="meta">Local Finding draft · Not submitted</p>' : `<p class="meta">Found in <a href="${esc(external(`/report/${f.report_id}?v=${f.origin_revision_no}`))}">Report #${f.report_id} v${f.origin_revision_no}</a> · Updated ${date(f.updated_at)}</p>`}
       ${f.duplicate_of ? `<p>Duplicate of <a href="${esc(external(`/finding/${enc(f.duplicate_of)}`))}">${esc(f.duplicate_of)}</a></p>` : ""}
+      ${
+        compact
+          ? ""
+          : `
       <ul class="finding-links">${f.links.map((l: any) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.kind)}${l.version ? ` · ${esc(l.version)}` : ""}</a>${editable ? action("delete-finding-link", { id: f.id, link_id: l.id, edit_version: f.edit_version, _back: permalink }, "Remove link") : ""}</li>`).join("")}</ul>
       <div class="markdown-body">${renderMarkdown(f.body, 3)}</div>${f.evidence_url ? `<p><a href="${esc(f.evidence_url)}" target="_blank" rel="noopener noreferrer">Evidence</a></p>` : ""}
       ${f.draft ? "" : `<details><summary>Change history</summary>${f.events ? `<ol>${f.events.map((e: any) => `<li>v${e.edit_version} · ${esc(e.action)} · ${date(e.created_at)}<pre>${esc(JSON.stringify(JSON.parse(e.payload), null, 2))}</pre></li>`).join("")}</ol>` : `<p><a href="${esc(external(`/finding/${enc(f.id)}`))}">View full history</a></p>`}</details>`}
-      ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}</article>`;
+      ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}`
+      } </article>`;
   }
   function findingForm(reportID: number, f?: any, apis: any[] = []) {
     const hidden = (name: string, value: unknown) =>
@@ -208,15 +216,29 @@ export function createViews(
       if (!groups.has(claim.api_item_id)) groups.set(claim.api_item_id, []);
       groups.get(claim.api_item_id)!.push(claim);
     }
-    const apis = [...groups].map(([id, claims]) => ({
-      ...claims[0],
-      id,
+    const apiMap = new Map<string, any>();
+    const findingGroups = new Map<string, any[]>();
+    for (const [id, claims] of groups) {
+      apiMap.set(id, { ...claims[0], id, claim_count: claims.length });
+    }
+    for (const finding of c.findings ?? []) {
+      for (const api of finding.apis ?? []) {
+        // Unresolved paths are local identities, never catalog API IDs.
+        const id = api.unverified ? `unresolved:${api.display_path}` : api.id;
+        if (!id) continue;
+        if (!apiMap.has(id)) apiMap.set(id, { ...api, id, claim_count: 0 });
+        if (!findingGroups.has(id)) findingGroups.set(id, []);
+        if (!findingGroups.get(id)!.some((f) => f.id === finding.id))
+          findingGroups.get(id)!.push(finding);
+      }
+    }
+    const apis = [...apiMap.values()].map((api) => ({
+      ...api,
+      signature: api.signature ?? "",
       kind:
-        claims[0].kind ||
-        (claims[0].signature?.startsWith("impl") ? "method" : "function"),
-      claim_count: claims.length,
+        api.kind || (api.signature?.startsWith("impl") ? "method" : "function"),
     }));
-    return `<section class="report-apis"><h2>Verified APIs (${apis.length})</h2>${renderAPICatalog(
+    return `<section class="report-apis"><h2>APIs (${apis.length})</h2>${renderAPICatalog(
       apis,
       c.crate,
       {
@@ -224,19 +246,25 @@ export function createViews(
         hideCounts: true,
         expandFamilies: true,
         apiHref: (id) => {
+          if (apiMap.get(id).unverified) return null;
           if (!options.preview || id.startsWith("preview-api-"))
             return apiHref(id);
-          const claim = groups.get(id)![0];
-          return claimHref(claim.id, claim.report_revision);
+          const claim = groups.get(id)?.[0];
+          return claim
+            ? claimHref(claim.id, claim.report_revision)
+            : apiHref(id);
         },
-        details: (api) =>
-          `<div class="report-api-claims"><span class="claim-links">${groups
-            .get(api.id)!
-            .map(
-              (claim) =>
-                `<a href="${esc(claimHref(claim.id, claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
-            )
-            .join(", ")}</span></div>`,
+        details: (api) => {
+          const claims = (groups.get(api.id) ?? []).map(
+            (claim) =>
+              `<a href="${esc(claimHref(claim.id, claim.report_revision))}">Claim #${esc(claim.claim_number)}</a>`,
+          );
+          const findings = (findingGroups.get(api.id) ?? []).map(
+            (f) =>
+              `<a href="/finding/${enc(f.id)}">Finding: ${esc(f.title)}</a>${f.validity !== "reported" ? ` <span class="meta">(${esc(f.validity)})</span>` : ""}`,
+          );
+          return `<div class="report-api-claims"><span class="claim-links">${claims.join(", ")}</span>${findings.length ? `<span class="finding-links">${claims.length ? " · " : ""}${findings.join(", ")}</span>` : ""}</div>`;
+        },
       },
     )}</section>`;
   }

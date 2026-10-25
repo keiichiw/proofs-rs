@@ -306,20 +306,23 @@ test("Finding drafts appear after Overview, remain separate from successful chec
   );
   assert.equal(
     d.querySelector("#finding-draft-1 h3 a")!.getAttribute("href"),
-    "/report#finding-draft-1",
+    "/finding/draft-1",
   );
   assert.equal(
     d.querySelector("#finding-draft-1 h3")!.textContent,
     "Signed read <bug>",
   );
   assert.equal(d.querySelectorAll("#findings form").length, 0);
-  assert.equal(d.querySelector("#findings strong")?.textContent, "-1");
+  assert.equal(d.querySelector("#findings .markdown-body"), null);
+  const detail = new JSDOM(renderPreview(snapshot, "/finding/draft-1").html)
+    .window.document;
+  assert.equal(detail.querySelector(".finding strong")?.textContent, "-1");
   assert.match(
-    d.querySelector("#findings pre code")!.textContent!,
+    detail.querySelector(".finding pre code")!.textContent!,
     /try_get_int/,
   );
   assert.equal(
-    d.querySelectorAll("#findings script, #findings a[href^='javascript:']")
+    detail.querySelectorAll(".finding script, .finding a[href^='javascript:']")
       .length,
     0,
   );
@@ -376,10 +379,7 @@ test("existing report preview renders published Markdown and remote history with
   ];
   const dom = new JSDOM(renderPreview(snapshot, "/report").html),
     d = dom.window.document;
-  assert.equal(
-    d.querySelector("#finding-published strong")?.textContent,
-    "Published",
-  );
+  assert.equal(d.querySelector("#finding-published .markdown-body"), null);
   assert.match(d.querySelector(".report-outcome")!.textContent!, /1 findings/);
   assert.equal(d.querySelectorAll(".finding").length, 2);
   assert.doesNotMatch(
@@ -387,11 +387,18 @@ test("existing report preview renders published Markdown and remote history with
     /Local Finding draft/,
   );
   assert.equal(
-    d.querySelector("#finding-published details a")?.getAttribute("href"),
-    `${snapshot.server}/finding/published`,
+    d.querySelector("#finding-published h3 a")?.getAttribute("href"),
+    "/finding/published",
   );
   assert.equal(d.querySelectorAll("#findings form").length, 0);
   dom.window.close();
+  const detail = new JSDOM(renderPreview(snapshot, "/finding/published").html);
+  assert.equal(
+    detail.window.document.querySelector(".finding strong")?.textContent,
+    "Published",
+  );
+  assert.equal(renderPreview(snapshot, "/finding/missing").status, 404);
+  detail.window.close();
   snapshot.report.findings[0].withdrawn_at = "2026-10-23T12:00:00Z";
   const withdrawn = new JSDOM(renderPreview(snapshot, "/report").html);
   assert.match(
@@ -408,13 +415,19 @@ test("existing report preview renders published Markdown and remote history with
 test("finding draft API associations link resolved paths and label unresolved paths", () => {
   const data = fixture();
   data.report.finding_drafts = [{ title: "Observation", body: "Body" }];
-  data.report.finding_draft_apis = [[
-    { id: "api-f", display_path: "demo::f" },
-    { display_path: "demo::<missing>", unverified: true },
-  ]];
+  data.report.finding_draft_apis = [
+    [
+      { id: "api-f", display_path: "demo::f" },
+      { display_path: "demo::<missing>", unverified: true },
+    ],
+  ];
   const dom = new JSDOM(renderPreview(data, "/report").html);
   const finding = dom.window.document.querySelector(".finding")!;
-  assert.equal(finding.querySelector('a[href="https://staging.example/api/api-f"]')?.textContent, "demo::f");
+  assert.equal(
+    finding.querySelector('a[href="https://staging.example/api/api-f"]')
+      ?.textContent,
+    "demo::f",
+  );
   assert.match(finding.textContent!, /demo::<missing> \(API unverified\)/);
   assert.equal(finding.querySelector('a[href*="undefined"]'), null);
   assert.equal(finding.querySelector("missing"), null);

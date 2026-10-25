@@ -95,7 +95,7 @@ export async function reportFindings(db: D1Database, reportID: number) {
     ),
     stmt(
       db,
-      "SELECT fa.finding_id,a.id,a.display_path FROM finding_apis fa JOIN api_items a ON a.id=fa.api_item_id JOIN findings f ON f.id=fa.finding_id WHERE f.report_id=? ORDER BY a.display_path",
+      "SELECT fa.finding_id,a.* FROM finding_apis fa JOIN api_items a ON a.id=fa.api_item_id JOIN findings f ON f.id=fa.finding_id WHERE f.report_id=? ORDER BY a.display_path",
       reportID,
     ),
     stmt(
