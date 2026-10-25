@@ -274,3 +274,33 @@ Migration 0009 registers Aeneas Lean revision
 `/tool-version/aeneas-be86ab0f1989d04944292b345b24c435be3ad10a`, and
 `/book/aeneas.html`. Further upstream revisions require explicit catalogue
 registration; following an upstream branch does not register new versions.
+
+### Sitemap freshness and free-plan usage
+
+Production advertises `/sitemap.xml` in robots.txt. Its child files are
+`/sitemap-pages.xml` and `/sitemap-records-N.xml`; legacy `/sitemaps/` URLs
+redirect with HTTP 308. Submit the index in Search Console and check its fetch
+and processing status after deployment. Staging blocks crawling and returns
+non-cacheable 404s for sitemap paths.
+
+XML responses use Workers Cache API with a one-hour TTL. `X-Sitemap-Cache`
+reports HIT or MISS; hits perform no D1 queries. Cache contents are local to a
+Cloudflare data center and may be evicted early. Every request still invokes
+the Worker. The TTL bounds server-side sitemap staleness, not Google's next
+crawl. Cached XML may contain a recently withdrawn/hidden URL until expiry;
+the page itself continues to enforce its current visibility rules.
+
+On a records/index miss, two D1 queries select public release defaults and
+count/read the URL set. Structured `sitemap_generated` logs contain `path` and
+combined `rows_read`. Check D1 daily row metrics, Workers CPU time and errors,
+and HIT/MISS responses on the production custom domain. Local tests and staging
+cannot establish production CPU usage or cache effectiveness. No KV, additional
+R2 storage, scheduled generation, or paid cache features are required. Change
+the cache generation key when altering XML/canonical generation rules.
+
+The latest stable public release (or newest prerelease when no stable release
+is public) uses `/crate/name` as canonical. Older releases use `?version=...`.
+Sitemaps omit the duplicate explicit default-version URL. Only report/claim
+verification content has `lastmod`, using its report revision or newer tool
+limitations timestamp; request/deployment time and discussion counters are not
+used as content timestamps.

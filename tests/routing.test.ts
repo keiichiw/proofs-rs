@@ -88,7 +88,7 @@ test("SEO routes bypass HTML, authentication and static asset routing", async ()
   } as unknown as Env;
   for (const [path, contentType] of [
     ["/robots.txt", "text/plain; charset=utf-8"],
-    ["/sitemaps/pages.xml", "application/xml; charset=utf-8"],
+    ["/sitemap-pages.xml", "application/xml; charset=utf-8"],
   ]) {
     const response = await app.request("https://proofs.rs" + path, {}, env);
     assert.equal(response.status, 200);

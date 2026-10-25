@@ -78,9 +78,14 @@ jobs:
           # Elan installs toolchains lazily; finish before tests launch Lean in parallel.
           "$HOME/.elan/bin/lean" +leanprover/lean4:v4.35.0 --version
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Prepare shared pinned Aeneas dependencies
+        run: |
+          lean_audit_cache="$RUNNER_TEMP/proofs-aeneas-cache"
+          python3 scripts/prepare-lean-audit.py "$lean_audit_cache"
+          echo "PROOFS_TEST_AENEAS_CACHE=$lean_audit_cache" >> "$GITHUB_ENV"
       - name: Check generated audit with real Lean and Aeneas
         working-directory: cli
-        run: cargo test --locked aeneas::tests::real_ -- --ignored
+        run: cargo test --locked aeneas::tests::real_ -- --ignored --test-threads=1
       - name: Record, publish locally, and render real formal evidence
         run: |
           python3 cli/tests/aeneas_e2e.py cli/target/debug/cargo-proofs /tmp/aeneas-record
