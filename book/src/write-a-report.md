@@ -18,6 +18,9 @@ source, verification contracts or harnesses, and recorded results. Write for
 someone deciding whether they can rely on the API. Explain the concrete
 guarantees, applicability to the published crate, assumptions, and remaining
 uncertainty. Identify missing evidence rather than filling gaps with guesses.
+If adding [[report.findings]], write each title and Markdown body in English.
+Include only findings that add information beyond the report body; do not repeat
+the overview, assumptions, or limitations.
 Preserve unrelated configuration and machine-readable claims. Do not publish.
 ```
 

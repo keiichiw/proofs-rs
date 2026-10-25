@@ -1,6 +1,7 @@
+import { reportFindings } from "./findings";
 import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
-import { Fault, rows, latest } from "./core";
+import { Fault, rows, one, latest } from "./core";
 import { legal } from "../web/legal";
 import { renderAPICatalog } from "../web/api-catalog";
 import { renderRecordedRun } from "../web/recorded-run";
@@ -25,6 +26,7 @@ const pageNames = new Set([
   "api",
   "reports",
   "report",
+  "finding",
   "claim",
   "login",
   "signup",
@@ -200,6 +202,8 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       crateCrumbs,
       claimCrumbs,
       claimItem,
+      findingItem,
+      findingForm,
       reportSummary,
       reportContent,
       reportBody,
@@ -295,7 +299,11 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     }
     if (p === "crate" && id) {
       const section = current.searchParams.get("section");
-      if (section === "apis" || section === "reports") {
+      if (
+        section === "apis" ||
+        section === "reports" ||
+        section === "findings"
+      ) {
         current.searchParams.delete("section");
         return c.redirect(
           current.pathname + current.search + "#" + section,
@@ -313,13 +321,51 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         id,
         version,
       );
+      const findingCursor = current.searchParams.get("findings_cursor");
+      const crateFindings = await get(
+        `/crates/${enc(id)}/${enc(version)}/findings${findingCursor ? `?cursor=${enc(findingCursor)}` : ""}`,
+      );
+      const findingCount = await rows(
+        c.env.DB,
+        "SELECT COUNT(*) n FROM findings f JOIN reports p ON p.id=f.report_id JOIN releases r ON r.id=p.release_id JOIN crates c ON c.id=r.crate_id WHERE c.name=? AND r.version=? AND p.visibility='public' AND p.withdrawn_at IS NULL AND f.validity NOT IN ('invalid','duplicate')",
+        id,
+        version,
+      );
+      // Keep pagination pinned to the version the reader selected (including
+      // when the first page used the default version).
+      current.searchParams.set("version", version);
+      const statusNames: Record<string, string> = {
+        reported: "Reported",
+        confirmed: "Confirmed",
+        disputed: "Disputed",
+        reported_upstream: "Reported upstream",
+        fix_proposed: "Fix proposed",
+        fix_merged: "Fix merged",
+        released: "Released",
+        wont_fix: "Won’t fix",
+      };
+      const linkNames: Record<string, string> = {
+        issue: "Issue",
+        pr: "PR",
+        commit: "Commit",
+        release: "Release",
+        report: "Revalidation report",
+      };
+      const findingRows = crateFindings.items
+        .map((f: any) => {
+          const validity = statusNames[f.validity] ?? f.validity;
+          const upstream = statusNames[f.upstream_status];
+          return `<tr><td><a href="/report/${f.report_id}#finding-${enc(f.id)}">${esc(f.title)}</a></td><td>${esc(validity)}${upstream ? `<br>${esc(upstream)}` : ""}</td><td><a href="/report/${f.report_id}?v=${f.origin_revision_no}">#${f.report_id} · v${f.origin_revision_no}</a></td><td>${f.links.map((l: any) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(linkNames[l.kind])}${l.version ? ` · ${esc(l.version)}` : ""}</a>`).join("<br>") || "—"}</td></tr>`;
+        })
+        .join("");
+      const findingSection = `<section aria-labelledby="findings"><h2 id="findings">Findings (${findingCount[0].n})</h2><p class="meta">For version ${esc(version)}. Statuses are author reported.</p>${findingRows ? `<div class="table-wrap"><table class="crate-findings" aria-label="Findings for ${esc(version)}"><thead><tr><th scope="col">Finding</th><th scope="col">Status</th><th scope="col">Report</th><th scope="col">Links</th></tr></thead><tbody>${findingRows}</tbody></table></div>` : "<p>No findings reported for this version.</p>"}${pagination(crateFindings, "findings_cursor")}</section>`;
       const reports = await list(
         `/crates/${enc(id)}/${enc(version)}/reports`,
         (x) => reportSummary(x, true),
       );
       return result(
         `${id} ${version}`,
-        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><h2 id="apis">APIs (${apis.items.length})</h2>${renderAPICatalog(apis.items, id)}<h2 id="reports">Reports (${counts[0].n})</h2>${reports}`,
+        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><nav class="filterbar" aria-label="Sections for version ${esc(version)}"><a href="#findings">${findingCount[0].n} finding${findingCount[0].n === 1 ? "" : "s"}</a> · <a href="#apis">${apis.items.length} API${apis.items.length === 1 ? "" : "s"}</a> · <a href="#reports">${counts[0].n} report${counts[0].n === 1 ? "" : "s"}</a></nav>${findingSection}<h2 id="apis">APIs (${apis.items.length})</h2>${renderAPICatalog(apis.items, id)}<h2 id="reports">Reports (${counts[0].n})</h2>${reports}`,
       );
     }
     if (p === "api" && id) {
@@ -371,6 +417,18 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     }
     if (current.searchParams.has("sign_in"))
       return c.redirect(config.login_url, 302);
+    if (p === "finding" && id) {
+      const f = await get(`/findings/${enc(id)}`);
+      const owner = await get(`/reports/${f.report_id}`);
+      const editable = me.user?.id === owner.author_id && !f.withdrawn_at;
+      const apis = editable
+        ? await get(`/crates/${enc(f.crate)}/${enc(f.version)}/apis`)
+        : null;
+      return result(
+        f.title,
+        `<h1>${esc(f.title)}</h1>${findingItem(f, editable, apis?.items ?? [])}`,
+      );
+    }
     if (p === "report" && id) {
       const revision = current.searchParams.get("v");
       const item = await get(
@@ -432,7 +490,19 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           }
         }
       }
-      const content = reportBody(item, recorded.join(""));
+      item.findings = await reportFindings(c.env.DB, item.id);
+      item.finding_count = item.withdrawn_at
+        ? 0
+        : item.findings.filter(
+            (f: any) => !["invalid", "duplicate"].includes(f.validity),
+          ).length;
+      const editableFindings =
+        me.user?.id === item.author_id && !item.withdrawn_at;
+      const findingAPIs = editableFindings
+        ? await get(`/crates/${enc(item.crate)}/${enc(item.version)}/apis`)
+        : null;
+      const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, editableFindings, findingAPIs?.items ?? [])).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
+      const content = reportBody(item, recorded.join(""), findingSection);
       const commentForm = (editing: any, replying: any) =>
         `${editing ? "" : `<h3>${replying ? "Reply to #" + replying.sequence_no : "Add a comment"}</h3>`}<form method="post" action="/_actions/${editing ? "edit-comment" : "comment"}" id="${editing ? "comment-editor-form" : "comment-form"}"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_back" value="/report/${item.id}?v=${item.revision_no}#discussion"><input type="hidden" name="id" value="${esc(editing?.id || item.id)}"><input type="hidden" name="edit_version" value="${editing?.edit_version || 0}"><input type="hidden" name="reply_to_id" value="${esc(replying?.id || "")}"><input type="hidden" name="_key" value="${crypto.randomUUID()}">${editing ? "" : `<label>Report revision <select name="revision_no">${history.map((h) => `<option value="${h.revision_no}"${h.revision_no === (replying?.revision_no || item.revision_no) ? " selected" : ""}>v${h.revision_no}</option>`).join("")}</select></label>`}<textarea name="body" required maxlength="5000" aria-label="Comment">${esc(editing?.body || "")}</textarea><button>${editing ? "Save" : "Post comment"}</button>${editing || replying ? ` <a href="/report/${item.id}?v=${item.revision_no}#discussion">Cancel</a>` : ""}</form>`;
       const byParent = new Map<string | null, any[]>();
@@ -728,6 +798,69 @@ export async function siteAction(c: Ctx, fetch: SiteFetch): Promise<Response> {
     case "revoke":
       path = "/me/tokens/" + id;
       method = "DELETE";
+      break;
+    case "finding":
+    case "edit-finding":
+      path = name === "finding" ? `/reports/${id}/findings` : `/findings/${id}`;
+      method = name === "finding" ? "POST" : "PATCH";
+      body = {
+        title: field("title"),
+        body: field("body"),
+        evidence_url: field("evidence_url") || null,
+        api_item_ids: form.has("api_ids")
+          ? field("api_ids")
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean)
+          : form.getAll("api_item_ids").map(String),
+        ...(name === "edit-finding"
+          ? {
+              edit_version: Number(field("edit_version")),
+              validity: field("validity"),
+              upstream_status: field("upstream_status"),
+              duplicate_of: field("duplicate_of") || null,
+            }
+          : {}),
+      };
+      if (name === "edit-finding") {
+        const current = await one(
+          c.env.DB,
+          "SELECT body,edit_version FROM findings WHERE id=?",
+          field("id"),
+        );
+        // HTML form submission normalizes textarea newlines to CRLF. Preserve
+        // unchanged historical prose, even when it exceeds today's input limit.
+        const newlines = (value: string) => value.replace(/\r\n|\r/g, "\n");
+        if (
+          current &&
+          (current.edit_version !== body.edit_version ||
+            newlines(current.body) === newlines(body.body))
+        )
+          delete body.body;
+        // Stale forms omit the body too: the API's version guard must return
+        // 409, rather than rejecting unchanged legacy prose with 400 first.
+        // Ownership, CSRF and the transactional version check remain in the API.
+      }
+      break;
+    case "finding-link":
+      path = `/findings/${id}/links`;
+      body = {
+        kind: field("kind"),
+        url: field("url"),
+        version: field("version") || null,
+        target_report_id: field("target_report_id")
+          ? Number(field("target_report_id"))
+          : null,
+        target_revision_no: field("target_revision_no")
+          ? Number(field("target_revision_no"))
+          : null,
+        edit_version: Number(field("edit_version")),
+      };
+      break;
+    case "delete-finding-link":
+      path = `/findings/${id}/links/${enc(field("link_id"))}`;
+      method = "DELETE";
+      body = { edit_version: Number(field("edit_version")) };
       break;
     case "comment":
       path = `/reports/${id}/comments`;

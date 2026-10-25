@@ -72,6 +72,7 @@ pub fn claims_by_key(report: &Value) -> Result<BTreeMap<String, Value>> {
     Ok(claims)
 }
 pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) -> Result<Value> {
+    config.report.validate()?;
     let mut body = if let Some(existing) = existing {
         snapshot(existing)?
     } else {
@@ -147,6 +148,11 @@ pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) ->
         claims.push(merged);
     }
     body["claims"] = Value::Array(claims);
+    // Findings have their own identity and history. Only create them with a new
+    // Report; revisions never repost the local authoring array.
+    if existing.is_none() && !config.report.findings.is_empty() {
+        body["findings"] = json!(config.report.findings);
+    }
     Ok(body)
 }
 
@@ -179,6 +185,20 @@ pub fn compose(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn findings_are_created_once_and_never_added_to_revision_payloads() {
+        let cfg: Config = toml::from_str("[report]\ntitle='Report'\n[[report.findings]]\ntitle='Observation'\nbody='**Markdown**'\n[tool]\nname='kani'\nversion='1'\n").unwrap();
+        let generated = json!({"claims":[],"run_ids":["run"]});
+        let first = merge(&cfg, generated.clone(), None).unwrap();
+        assert_eq!(first["findings"][0]["body"], "**Markdown**");
+        let mut existing = first.clone();
+        existing["findings"][0]["body"] = json!("Web edit");
+        let revision = merge(&cfg, generated, Some(&existing)).unwrap();
+        assert!(revision.get("findings").is_none());
+        assert!(snapshot(&existing).unwrap().get("findings").is_none());
+        assert_eq!(existing["findings"][0]["body"], "Web edit");
+        assert_eq!(first["run_ids"], revision["run_ids"]);
+    }
     #[test]
     fn formal_reference_updates_without_overwriting_author_prose() {
         let config: Config =

@@ -66,10 +66,12 @@ function recordedSarif(id: string, command = ["cargo", "kani"]) {
     ],
   };
 }
-function database() {
+function database(throughMigration?: string) {
   const db = new DatabaseSync(":memory:");
   for (const f of readdirSync(new URL("../migrations/", import.meta.url))
-    .filter((f) => f.endsWith(".sql"))
+    .filter(
+      (f) => f.endsWith(".sql") && (!throughMigration || f <= throughMigration),
+    )
     .sort())
     db.exec(
       readFileSync(new URL("../migrations/" + f, import.meta.url), "utf8"),
@@ -115,8 +117,8 @@ function database() {
     } as unknown as D1Database,
   };
 }
-export async function fixture(seedTools = true) {
-  const { db, binding } = database();
+export async function fixture(seedTools = true, throughMigration?: string) {
+  const { db, binding } = database(throughMigration);
   if (seedTools)
     db.exec(
       "INSERT INTO tools VALUES('kani','Kani','Test verifier','https://example.test',1); INSERT INTO tool_versions(id,tool_id,version,selectable) VALUES('kani-0.68.0','kani','0.68.0',1);",
@@ -1122,7 +1124,7 @@ test("OpenAPI covers non-admin routes and excludes administrative schemas", asyn
         (r) =>
           r.method.toLowerCase() +
           " " +
-          r.path.replace(/:([a-zA-Z]+)/g, "{$1}"),
+          r.path.replace(/:([a-zA-Z_]+)/g, "{$1}"),
       ),
   );
   const documented = new Set(

@@ -124,8 +124,39 @@ export function createViews(
     if (!c.tool_limitations) return "";
     return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
   }
+  function findingItem(f: any, editable = false, apis: any[] = []) {
+    const permalink = options.preview
+      ? `/report#finding-${enc(f.id)}`
+      : `/report/${f.report_id}#finding-${enc(f.id)}`;
+    return `<article class="finding" id="finding-${esc(f.id)}"><h3><a href="${permalink}">${esc(f.title)}</a></h3>
+      ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${esc(f.validity)} · ${esc(f.upstream_status)} (author reported)</p>` : ""}${f.withdrawn_at ? '<p class="meta">Report withdrawn</p>' : ""}
+      ${f.apis.length ? `<p>${f.apis.map((a: any) => `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`).join(", ")}</p>` : ""}
+      ${f.draft ? '<p class="meta">Local Finding draft · Not submitted</p>' : `<p class="meta">Found in <a href="${esc(external(`/report/${f.report_id}?v=${f.origin_revision_no}`))}">Report #${f.report_id} v${f.origin_revision_no}</a> · Updated ${date(f.updated_at)}</p>`}
+      ${f.duplicate_of ? `<p>Duplicate of <a href="${esc(external(`/finding/${enc(f.duplicate_of)}`))}">${esc(f.duplicate_of)}</a></p>` : ""}
+      <ul class="finding-links">${f.links.map((l: any) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.kind)}${l.version ? ` · ${esc(l.version)}` : ""}</a>${editable ? action("delete-finding-link", { id: f.id, link_id: l.id, edit_version: f.edit_version, _back: permalink }, "Remove link") : ""}</li>`).join("")}</ul>
+      <div class="markdown-body">${renderMarkdown(f.body, 3)}</div>${f.evidence_url ? `<p><a href="${esc(f.evidence_url)}" target="_blank" rel="noopener noreferrer">Evidence</a></p>` : ""}
+      ${f.draft ? "" : `<details><summary>Change history</summary>${f.events ? `<ol>${f.events.map((e: any) => `<li>v${e.edit_version} · ${esc(e.action)} · ${date(e.created_at)}<pre>${esc(JSON.stringify(JSON.parse(e.payload), null, 2))}</pre></li>`).join("")}</ol>` : `<p><a href="${esc(external(`/finding/${enc(f.id)}`))}">View full history</a></p>`}</details>`}
+      ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}</article>`;
+  }
+  function findingForm(reportID: number, f?: any, apis: any[] = []) {
+    const hidden = (name: string, value: unknown) =>
+      `<input type="hidden" name="${name}" value="${esc(value)}">`;
+    const select = (name: string, values: string[], current: string) =>
+      `<label>${name === "validity" ? "Validity" : "Upstream status"}<select name="${name}">${values.map((value) => `<option${value === current ? " selected" : ""}>${value}</option>`).join("")}</select></label>`;
+    return `<form method="post" action="/_actions/${f ? "edit-finding" : "finding"}" class="finding-form">${hidden("_csrf", me.csrf)}${hidden("_key", crypto.randomUUID())}${hidden("id", f?.id ?? reportID)}${hidden("_back", `/report/${reportID}#${f ? `finding-${f.id}` : "findings"}`)}${f ? hidden("edit_version", f.edit_version) : ""}
+      <p>Summarize what you learned during verification. Markdown, code blocks and links are supported.</p>
+      <label>Title<input name="title" required maxlength="1000" value="${esc(f?.title)}"></label>
+      <label>Body (Markdown)<textarea name="body" required maxlength="10000">${esc(f?.body)}</textarea></label>
+      <details><summary>Optional metadata</summary>
+      <label>Evidence URL (optional)<input name="evidence_url" type="url" maxlength="2000" value="${esc(f?.evidence_url)}" placeholder="https://"></label>
+      <label>APIs (optional; multiple allowed)<select multiple name="api_item_ids">${apis.map((a) => `<option value="${esc(a.id)}"${f?.apis.some((x: any) => x.id === a.id) ? " selected" : ""}>${esc(a.display_path)}</option>`).join("")}</select></label>
+      ${f ? `${select("validity", ["reported", "confirmed", "disputed", "invalid", "duplicate"], f.validity)}${select("upstream_status", ["not_reported", "reported_upstream", "fix_proposed", "fix_merged", "released", "wont_fix"], f.upstream_status)}<label>Duplicate Finding ID<input name="duplicate_of" value="${esc(f.duplicate_of)}"></label><p>Statuses are author reported. Add a supporting link before selecting an upstream status. A release link needs a version.</p>` : ""}</details><button>${f ? "Save finding" : "Add finding"}</button></form>`;
+  }
+  function findingLinkForm(f: any) {
+    return `<form method="post" action="/_actions/finding-link" class="finding-form"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_key" value="${crypto.randomUUID()}"><input type="hidden" name="id" value="${esc(f.id)}"><input type="hidden" name="edit_version" value="${f.edit_version}"><input type="hidden" name="_back" value="/report/${f.report_id}#finding-${esc(f.id)}"><label>Kind<select name="kind">${["issue", "pr", "commit", "release", "report"].map((k) => `<option>${k}</option>`).join("")}</select></label><label>HTTPS URL<input name="url" type="url" required maxlength="2000"></label><label>Fixed version (required for release)<input name="version" maxlength="100"></label><label>Revalidation Report ID (report links only)<input name="target_report_id" type="number" min="1"></label><label>Report revision (report links only)<input name="target_revision_no" type="number" min="1"></label><button>Add link</button></form>`;
+  }
   function reportContent(c: any, stars = false) {
-    return `${stars ? titleWithStars("report", c) : `<h1>${esc(c.title)}</h1>`}<p class="report-tool">${toolLink(c)}</p>`;
+    return `${stars ? titleWithStars("report", c) : `<h1>${esc(c.title)}</h1>`}<p class="report-tool">${toolLink(c)}</p>${c.findings ? `<p class="report-outcome">${c.claim_count ?? c.claims?.length ?? 0} verified claims · ${c.finding_count ?? 0} findings</p>` : ""}`;
   }
   function reproduceSection(
     runIds: string[],
@@ -136,8 +167,9 @@ export function createViews(
       ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body">${recorded}</div>${environment ? `<details class="report-environment"><summary>Environment</summary><div class="markdown-body">${renderMarkdown(environment, 2)}</div></details>` : ""}</details>`
       : "";
   }
-  function reportBody(c: any, recorded = "") {
+  function reportBody(c: any, recorded = "", findingsHTML = "") {
     return `${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
+    ${findingsHTML}
     ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment, recorded)}</section>` : ""}
     ${c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2><div class="markdown-body">${renderMarkdown(c.trusted_assumptions, 2)}</div></section>` : ""}
     ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${c.limitations ? `<div class="markdown-body">${renderMarkdown(c.limitations, 2)}</div>` : ""}${toolLimitations(c)}</section>` : ""}
@@ -243,7 +275,7 @@ export function createViews(
       ${[f.conclusion, ...f.binders.map((b: any) => b.type)].some((s: string) => s.includes("↑")) ? '<p class="meta">In Lean notation, ↑ denotes an implicit type conversion (coercion).</p>' : ""}
       ${f.program ? `<h3>Target program</h3><pre><code>${esc(f.program)}</code></pre>` : ""}
       <details><summary>Complete Lean proposition</summary><button type="button" data-copy-formal>Copy proposition</button><span role="status" data-copy-status></span><pre tabindex="0"><code>${esc(f.statement)}</code></pre></details>
-      <p><a href="${esc(f.source_url)}">Theorem source at recorded commit</a> · <a href="${esc(f.check_url)}">Recorded check</a></p>
+      <p>${f.source_url ? `<a href="${esc(f.source_url)}">Theorem source at recorded commit</a>` : "Theorem source is in the local snapshot"} · <a href="${esc(f.check_url)}">Recorded check</a></p>
       <details><summary>Referenced definitions (up to 100 direct references)</summary><ul>${f.definitions.map((d: any) => `<li>${d.source_url ? `<a href="${esc(d.source_url)}"><code>${esc(d.name)}</code></a>` : `<code>${esc(d.name)}</code> · ${esc(d.module)}`}</li>`).join("")}</ul>${f.definitions_truncated ? "<p>Reference limit reached; consult the full theorem source.</p>" : ""}</details>
       <p class="meta">Mapping: ${esc(f.mapping)}. Translation was not rerun by this recording.</p></section>`;
   }
@@ -266,6 +298,8 @@ export function createViews(
     crateCrumbs,
     claimCrumbs,
     claimItem,
+    findingItem,
+    findingForm,
     reportSummary,
     reportContent,
     reportBody,

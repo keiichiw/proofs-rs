@@ -275,3 +275,132 @@ test("preview resolves inline definition links at the same recorded revision as 
   );
   assert.equal(href(preview), href(live));
 });
+
+test("Finding drafts appear after Overview, remain separate from successful checks, and have local anchors", () => {
+  const snapshot = fixture();
+  snapshot.report.finding_drafts = [
+    {
+      title: "Signed read <bug>",
+      body: "Return **-1**, but returns 255.\n\n```rust\ntry_get_int(1)\n```\n\n[Issue](https://example.test/issue)\n\n<script>bad()</script>\n\n[bad](javascript:alert(1))",
+      evidence_url: "https://example.test/evidence",
+      api_item_ids: [],
+    },
+  ];
+  snapshot.sarif.runs[0].properties.proofs.localOnly = true;
+  snapshot.sarif.runs[0].versionControlProvenance[0].repositoryUri =
+    "file:///local/source";
+  const result = renderPreview(snapshot, "/report");
+  const dom = new JSDOM(result.html),
+    d = dom.window.document;
+  assert.equal(
+    d.querySelector(".report-explanation")!.nextElementSibling!.id,
+    "findings",
+  );
+  assert.match(
+    d.querySelector(".report-outcome")!.textContent!,
+    /1 verified claims · 1 findings/,
+  );
+  assert.match(
+    d.querySelector("#findings")!.textContent!,
+    /Local Finding draft · Not submitted/,
+  );
+  assert.equal(
+    d.querySelector("#finding-draft-1 h3 a")!.getAttribute("href"),
+    "/report#finding-draft-1",
+  );
+  assert.equal(
+    d.querySelector("#finding-draft-1 h3")!.textContent,
+    "Signed read <bug>",
+  );
+  assert.equal(d.querySelectorAll("#findings form").length, 0);
+  assert.equal(d.querySelector("#findings strong")?.textContent, "-1");
+  assert.match(
+    d.querySelector("#findings pre code")!.textContent!,
+    /try_get_int/,
+  );
+  assert.equal(
+    d.querySelectorAll("#findings script, #findings a[href^='javascript:']")
+      .length,
+    0,
+  );
+  assert.doesNotMatch(
+    d.querySelector("#findings")!.textContent!,
+    /not_reported|Expected behavior|Reproduction steps/,
+  );
+
+  assert.match(
+    d.querySelector(".recorded-run")!.textContent!,
+    /cannot be uploaded or published/,
+  );
+  assert.equal(
+    [...d.querySelectorAll("a")].filter(
+      (a) => a.textContent === "Source on GitHub",
+    ).length,
+    0,
+  );
+  assert.equal(snapshot.sarif.runs[0].results.length, 1);
+  assert.equal(snapshot.report.findings, undefined);
+  dom.window.close();
+  snapshot.report.finding_drafts[0].body = "";
+  assert.throws(() => renderPreview(snapshot, "/report"));
+});
+
+test("existing report preview renders published Markdown and remote history without draft identities", () => {
+  const snapshot = fixture();
+  snapshot.report.id = 12;
+  snapshot.report.findings = [
+    {
+      id: "published",
+      report_id: 12,
+      origin_revision_no: 1,
+      title: "An observation",
+      body: "**Published** body",
+      validity: "reported",
+      upstream_status: "not_reported",
+      updated_at: "2026-10-23T00:00:00Z",
+      links: [],
+      apis: [],
+    },
+    {
+      id: "invalid",
+      report_id: 12,
+      origin_revision_no: 1,
+      title: "Historical",
+      body: "Old body",
+      validity: "invalid",
+      upstream_status: "not_reported",
+      updated_at: "2026-10-23T00:00:00Z",
+      links: [],
+      apis: [],
+    },
+  ];
+  const dom = new JSDOM(renderPreview(snapshot, "/report").html),
+    d = dom.window.document;
+  assert.equal(
+    d.querySelector("#finding-published strong")?.textContent,
+    "Published",
+  );
+  assert.match(d.querySelector(".report-outcome")!.textContent!, /1 findings/);
+  assert.equal(d.querySelectorAll(".finding").length, 2);
+  assert.doesNotMatch(
+    d.querySelector("#findings")!.textContent!,
+    /Local Finding draft/,
+  );
+  assert.equal(
+    d.querySelector("#finding-published details a")?.getAttribute("href"),
+    `${snapshot.server}/finding/published`,
+  );
+  assert.equal(d.querySelectorAll("#findings form").length, 0);
+  dom.window.close();
+  snapshot.report.findings[0].withdrawn_at = "2026-10-23T12:00:00Z";
+  const withdrawn = new JSDOM(renderPreview(snapshot, "/report").html);
+  assert.match(
+    withdrawn.window.document.querySelector(".report-outcome")!.textContent!,
+    /0 findings/,
+  );
+  assert.equal(
+    withdrawn.window.document.querySelectorAll(".finding").length,
+    2,
+  );
+  withdrawn.window.close();
+});

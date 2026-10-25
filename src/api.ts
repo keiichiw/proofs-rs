@@ -1,3 +1,4 @@
+import { findings, validateFinding, findingStatements } from "./findings";
 import { decodeEvidence } from "./core";
 import { claimFormalEvidence } from "./runs";
 import { claimTitle } from "../web/claim-title";
@@ -37,6 +38,7 @@ import {
 import { runs, validateReportRuns } from "./runs";
 const api = new Hono<App>();
 api.route("/runs", runs);
+api.route("/", findings);
 const visible = (db: D1Database, id: number) =>
   one(db, "SELECT * FROM reports WHERE id=? AND visibility=?", id, "public");
 async function report(c: Ctx) {
@@ -767,6 +769,15 @@ async function validate(c: Ctx, b: any, existing?: any) {
       withdrawn: false,
     });
   }
+  if (existing && b.findings !== undefined)
+    throw new Fault(400, "findings_use_independent_api");
+  if (!existing && b.findings !== undefined) {
+    if (!Array.isArray(b.findings) || b.findings.length > 20)
+      throw new Fault(400, "invalid_findings");
+    v.findings = [];
+    for (const input of b.findings)
+      v.findings.push(await validateFinding(c.env.DB, input, rel.id));
+  }
   return v;
 }
 function revisionStatements(
@@ -931,6 +942,9 @@ api.post(
         now(),
       ),
       ...revisionStatements(c, v, key, 1, true),
+      ...(v.findings ?? []).flatMap((input: any) =>
+        findingStatements(c, input, key, 1, true),
+      ),
       stmt(
         c.env.DB,
         "UPDATE idempotency_keys SET resource_id=(SELECT CAST(id AS TEXT) FROM reports WHERE create_key=?) WHERE user_id=? AND operation=? AND key=?",
@@ -957,7 +971,9 @@ api.post(
     S.z.object({ id: S.integer, revision_no: S.integer }),
     {
       tags: ["Reports"],
-      body: S.reportInput.extend({ expected_revision: S.positiveInput }),
+      body: S.reportInput
+        .omit({ findings: true })
+        .extend({ expected_revision: S.positiveInput }),
       auth: "user",
       write: true,
       idempotent: true,

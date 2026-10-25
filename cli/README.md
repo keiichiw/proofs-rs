@@ -361,3 +361,21 @@ records. Translation itself is not rerun by the recorder.
 
 See [the Aeneas guide](https://proofs.rs/book/aeneas.html) for setup, scope,
 provenance, limits, and the tested Lean 4.35.0 / Aeneas be86ab0f adapter.
+
+### Findings in the report draft
+
+Add optional `[[report.findings]]` entries to `proofs.toml`, each with `title` and
+Markdown `body`. Titles are limited to 1,000 characters, bodies to 10,000, and an
+initial report to 20 findings. A finding can describe an observation, precondition,
+limitation, or bug; no fixed reproduction format is required.
+
+```toml
+[[report.findings]]
+title = "A useful observation"
+body = "The property requires **nonempty input**."
+```
+
+Preview reloads this prose without rerunning verification. Findings are created
+atomically with a new report. When revising an existing report, preview shows its
+published findings and publish leaves them unchanged; add or edit them through
+the report page or Findings API. The local array is not synchronized or reposted.

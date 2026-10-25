@@ -191,6 +191,17 @@ impl Preview {
         }
         let generated = json!({"crate":self.project.name,"version":self.project.version,"tool_version_id":tool_id,"evidence_url":format!("{repository}/tree/{commit}"),"run_ids":[self.run_id],"claims":claims});
         let mut report = draft::compose(&config, generated, &remote, &saved, self.report)?;
+        if let Some(id) = self.report {
+            if !config.report.findings.is_empty() {
+                warnings.push("report.findings applies only to new reports. This preview shows published findings; add or edit them using the report page or Findings API.".into());
+            }
+            match published_findings(id, |path| api.get(path)) {
+                Ok(items) => report["findings"] = json!(items),
+                Err(_) => warnings.push("Published findings could not be loaded; their contents and count are unavailable.".into()),
+            }
+        } else if let Some(findings) = report.as_object_mut().unwrap().remove("findings") {
+            report["finding_drafts"] = findings;
+        }
         if let Some(r) = &remote {
             let retained: BTreeSet<_> = report["claims"]
                 .as_array()
@@ -274,6 +285,34 @@ impl Preview {
         }
         Ok(json!({"report":report,"sarif":recorded.sarif,"warnings":warnings,"server":self.server}))
     }
+}
+
+fn published_findings(
+    report: u64,
+    mut get: impl FnMut(&str) -> Result<Value>,
+) -> Result<Vec<Value>> {
+    let base = format!("/api/v1/reports/{report}/findings");
+    let mut path = base.clone();
+    let mut seen = BTreeSet::new();
+    let mut findings = vec![];
+    loop {
+        let page = get(&path)?;
+        findings.extend(
+            page["items"]
+                .as_array()
+                .context("Missing findings")?
+                .clone(),
+        );
+        match page.get("next_cursor") {
+            Some(Value::Null) => break,
+            Some(Value::String(cursor)) => {
+                ensure!(seen.insert(cursor.clone()), "Repeated findings cursor");
+                path = format!("{base}?cursor={}", url_component(cursor));
+            }
+            _ => bail!("Invalid findings cursor"),
+        }
+    }
+    Ok(findings)
 }
 
 fn url_component(s: &str) -> String {
@@ -403,5 +442,34 @@ fn open_browser(url: &str) {
     let result = Command::new("xdg-open").arg(url).status();
     if !result.is_ok_and(|s| s.success()) {
         eprintln!("Could not open the browser; open {url} manually.");
+    }
+}
+
+#[cfg(test)]
+mod finding_tests {
+    use super::*;
+    #[test]
+    fn published_findings_load_all_pages_and_reject_incomplete_lists() {
+        let mut requests = vec![];
+        let found = published_findings(12, |path| {
+            requests.push(path.to_owned());
+            Ok(if requests.len() == 1 {
+                json!({"items":[{"id":"first"}],"next_cursor":"next-page"})
+            } else {
+                json!({"items":[{"id":"last"}],"next_cursor":null})
+            })
+        })
+        .unwrap();
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            requests,
+            [
+                "/api/v1/reports/12/findings",
+                "/api/v1/reports/12/findings?cursor=next-page"
+            ]
+        );
+        assert!(published_findings(12, |_| Ok(json!({"items":[],"next_cursor":"same"}))).is_err());
+        assert!(published_findings(12, |_| Ok(json!({"items":[]}))).is_err());
+        assert!(published_findings(12, |_| bail!("unavailable")).is_err());
     }
 }

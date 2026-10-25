@@ -834,3 +834,42 @@ textarea {
   text-decoration-style: dotted;
   text-underline-offset: 3px;
 }
+
+.finding {
+  border: 1px solid var(--border, #8886);
+  border-radius: 0.4rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  scroll-margin-top: 1rem;
+}
+.finding h3 {
+  margin-top: 0;
+}
+.finding details {
+  margin-top: 0.75rem;
+}
+.finding pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.finding-form label {
+  display: block;
+  margin: 0.75rem 0;
+}
+.finding-form input,
+.finding-form textarea,
+.finding-form select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+.finding-form textarea {
+  min-height: 6rem;
+}
+.finding-links .inline-action {
+  margin-left: 0.75rem;
+}
+.report-outcome {
+  font-weight: 600;
+}

@@ -25,6 +25,9 @@ cargo proofs init --tool kani
 Discovers `#[kani::proof_for_contract(...)]` harnesses and creates one claim per API.
 
 Edit `proofs.toml` to set the report title and check the tool version used for verification. You can also add an explanation, assumptions, limitations, and environment.
+Optional `[[report.findings]]` entries contain a title and Markdown body and are
+created with the initial report. See [Findings](findings.md) for an example and
+editing after publication.
 
 For help explaining what crate users can rely on, see [Write a useful report](write-a-report.md).
 It includes a report-writing skill you can give your AI agent.
@@ -179,3 +182,10 @@ Submodule snapshots use an isolated temporary clone so initialization cannot alt
 the original checkout's Git configuration. Recording checks pinned HEADs and tracked
 files before and after verification, and removes the snapshot on success or failure.
 Reproduction instructions initialize submodules after checking out the source commit.
+
+## Bugs discovered during verification
+
+After publishing, use **Add finding** on your report to record a reproducible bug.
+Issue and PR links can be added later without creating a report revision. See
+[Report a finding](findings.md) for status evidence, duplicate management, and API
+publication with an optional initial findings array.

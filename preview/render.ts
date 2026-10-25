@@ -1,3 +1,4 @@
+import { findingInput, z } from "../src/schemas";
 import {
   resolveContract,
   checkAnchor,
@@ -38,6 +39,11 @@ export function renderPreview(
 ): { status: number; html: string } {
   // Enrich a copy: a later request must not inherit changes to a prior snapshot.
   const report = structuredClone(snapshot.report);
+  const localOnly = snapshot.sarif.runs[0].properties.proofs.localOnly === true;
+  if (localOnly) {
+    report.evidence_url = "";
+    for (const claim of report.claims) claim.evidence_url = "";
+  }
   // Publication trims editorial strings before persisting them.
   const trimFields = (value: any, fields: string[]) => {
     for (const field of fields)
@@ -69,6 +75,28 @@ export function renderPreview(
     shared_trusted_assumptions: report.trusted_assumptions,
     shared_limitations: report.limitations,
   }));
+  if (report.finding_drafts !== undefined) {
+    const drafts = z.array(findingInput).max(20).parse(report.finding_drafts);
+    report.findings = drafts.map((f, index) => ({
+      ...f,
+      id: `draft-${index + 1}`,
+      draft: true,
+      report_id: report.id,
+      validity: "reported",
+      upstream_status: "not_reported",
+      duplicate_of: null,
+      apis: [],
+      links: [],
+    }));
+  }
+  if (report.findings) {
+    report.finding_count = report.withdrawn_at
+      ? 0
+      : report.findings.filter(
+          (f: any) =>
+            !f.withdrawn_at && !["invalid", "duplicate"].includes(f.validity),
+        ).length;
+  }
   const claimHref = (id: string) => `/claim/${encodeURIComponent(id)}`;
   const views = createViews(
     { user: null },
@@ -105,7 +133,7 @@ export function renderPreview(
       report.id == null
         ? "New report"
         : `Draft revision of report #${esc(report.id)} (based on v${esc(report.base_revision)})`;
-    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportBody(report, run(true))}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>${views.reportAPIs(report)}`;
+    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportBody(report, run(true), report.findings ? `<section id="findings" class="report-section"><h2>Findings (${report.finding_count})</h2>${report.findings.map((f: any) => views.findingItem(f)).join("")}</section>` : "")}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>${views.reportAPIs(report)}`;
   } else if (path.startsWith("/claim/")) {
     const claim = report.claims.find((c: any) => claimHref(c.id) === path);
     if (claim) {
@@ -121,6 +149,11 @@ export function renderPreview(
             ),
             check_url: `/runs/${encodeURIComponent(runId)}#${checkAnchor(contract.harness)}`,
           };
+          if (localOnly) {
+            claim.formal_evidence.source_url = null;
+            for (const d of claim.formal_evidence.definitions)
+              d.source_url = null;
+          }
         }
       }
       title = claim.title;

@@ -298,6 +298,9 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
         claims.push(claim);
     }
     let selected = options.report.or(saved.report_id);
+    if selected.is_some() && !config.report.findings.is_empty() {
+        eprintln!("report.findings applies only to new reports. Existing findings are unchanged; add or edit them using the report page or Findings API.");
+    }
     let remote = selected
         .map(|id| api.get(&format!("/api/v1/reports/{id}")))
         .transpose()?;
