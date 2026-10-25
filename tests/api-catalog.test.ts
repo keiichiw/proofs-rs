@@ -107,7 +107,13 @@ test("hex metadata keeps identities and renders 160 FromHex impls plus direct To
     d.querySelector("summary")!.textContent!,
     /from_hex.*160 implementations/,
   );
-  assert.equal(d.querySelectorAll("a").length, 162);
+  assert.equal(d.querySelectorAll("a").length, 165);
+  const declarations = [...d.querySelectorAll("section.api-category")].find(
+    (section) => section.querySelector("h3")?.textContent === "Traits",
+  )!;
+  assert.equal(declarations.querySelectorAll("a.api-name").length, 3);
+  assert.match(declarations.textContent!, /trait FromHex/);
+  assert.doesNotMatch(declarations.textContent!, /impl /);
 });
 test("catalogue escapes names and preserves legacy links before metadata refresh", () => {
   const d = new JSDOM(

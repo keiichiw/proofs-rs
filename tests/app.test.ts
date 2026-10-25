@@ -5,7 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { app } from "../src/worker";
 import { hash, Env } from "../src/core";
-import { extractAPIs, importJob, refreshCatalog } from "../src/imports";
+import {
+  CATALOG_EXTRACTOR_VERSION,
+  extractAPIs,
+  importJob,
+  refreshCatalog,
+} from "../src/imports";
 import { cleanupRunUploads, readRecord } from "../src/runs";
 function recordedSarif(id: string, command = ["cargo", "kani"]) {
   return {
@@ -887,7 +892,7 @@ test("catalog uses public trait and type aliases without exposing private paths"
   };
   assert.deepEqual(
     extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
-    ["<sample::Alias as sample::PublicTrait>::m"],
+    ["sample::PublicTrait::m", "<sample::Alias as sample::PublicTrait>::m"],
   );
 });
 
@@ -1251,7 +1256,7 @@ test("device login, one-time exchange, scope isolation, ownership and revocation
         headers,
       )
     ).body.status,
-    "ready",
+    "pending",
   );
   assert.equal(
     (await request("/admin/audit", "GET", undefined, "", headers)).status,
@@ -1494,6 +1499,14 @@ test("import stores normalized crate description using the existing metadata req
     throw Error("Unexpected request: " + url);
   });
   assert.equal(await importJob(env, "description-import"), true);
+  assert.equal(
+    db
+      .prepare(
+        "SELECT extractor_version FROM catalog_versions WHERE release_id=1",
+      )
+      .get()!.extractor_version,
+    CATALOG_EXTRACTOR_VERSION,
+  );
   assert.equal(
     db
       .prepare(
@@ -2036,11 +2049,12 @@ test("new trait-driven structural paths match cargo-proofs fixtures", () => {
     const apis = extractAPIs(doc, "sample", "1.0.0");
     assert.deepEqual(
       apis.map((a) => a.canonical_key),
-      [`<${c.key} as sample::T>::m`],
+      ["sample::T::m", `<${c.key} as sample::T>::m`],
       c.source,
     );
     assert.equal(
-      apis[0].upstream_url,
+      apis.find((a) => a.canonical_key === `<${c.key} as sample::T>::m`)!
+        .upstream_url,
       "https://docs.rs/sample/1.0.0/sample/trait.T.html#tymethod.m",
     );
   }
@@ -2107,12 +2121,17 @@ test("trait traversal preserves legacy entries and all public aliases without du
   const legacy = extractAPIs(doc, "sample", "1.0.0");
   doc.index[1].inner.trait.implementations = [3, 3];
   assert.deepEqual(extractAPIs(doc, "sample", "1.0.0"), legacy);
-  assert.equal(legacy.length, 4);
+  assert.equal(legacy.length, 6);
   doc.index[3].inner.impl.for = { primitive: "u8" };
   doc.index[5].inner.struct.impls = [];
   assert.deepEqual(
     extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
-    ["<u8 as sample::T>::m", "<u8 as sample::Alias>::m"],
+    [
+      "sample::T::m",
+      "sample::Alias::m",
+      "<u8 as sample::T>::m",
+      "<u8 as sample::Alias>::m",
+    ],
   );
   doc.index[1].visibility = "default";
   doc.index[0].inner.module.items = [1];
@@ -2140,7 +2159,10 @@ test("trait traversal excludes synthetic, negative, external and private nominal
   ]) {
     const doc = traitImplFixture({ primitive: "u8" });
     change(doc);
-    assert.deepEqual(extractAPIs(doc, "sample", "1.0.0"), []);
+    assert.deepEqual(
+      extractAPIs(doc, "sample", "1.0.0").map((a) => a.canonical_key),
+      ["sample::T::m"],
+    );
   }
   const doc = traitImplFixture({ primitive: "u8" });
   delete doc.index[3];
@@ -2158,7 +2180,7 @@ test("hex trait fixture includes every macro array impl, Vec and generic ToHex",
     ),
   );
   const apis = extractAPIs(doc, "hex", "0.4.3");
-  assert.equal(apis.length, 162);
+  assert.equal(apis.length, 165);
   const keys = new Set(apis.map((a) => a.canonical_key));
   assert(keys.has("<alloc::vec::Vec<u8> as hex::FromHex>::from_hex"));
   assert(keys.has("<T as hex::ToHex>::encode_hex"));
@@ -2195,8 +2217,8 @@ test("structural trait arguments distinguish impls and refresh preserves reports
   (env as any).ARCHIVE.get = async () => ({
     text: async () => JSON.stringify(doc),
   });
-  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 2, added: 2 });
-  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 2, added: 0 });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 3, added: 3 });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 3, added: 0 });
   assert.deepEqual(
     db
       .prepare(
@@ -2248,7 +2270,7 @@ test("nested local type references use public aliases in structural keys", () =>
   };
   doc.index[0].inner.module.items.push(6);
   assert.equal(
-    extractAPIs(doc, "sample", "1.0.0")[0].canonical_key,
+    extractAPIs(doc, "sample", "1.0.0")[1].canonical_key,
     "<alloc::vec::Vec<sample::Alias> as sample::T>::m",
   );
 });
@@ -4316,4 +4338,130 @@ test("crate canonical and sitemap agree with public SemVer defaults", async () =
   } finally {
     db.close();
   }
+});
+
+test("trait declaration methods can be resolved and attached to an existing finding", async () => {
+  const { env, request } = await fixture();
+  const report = await request("/reports", "POST", reportInput);
+  const finding = await request(`/reports/${report.body.id}/findings`, "POST", {
+    title: "Default method returns an incorrect value",
+    body: "The trait default method has a reproducible counterexample.",
+  });
+  assert.equal(finding.status, 201);
+  const doc = traitImplFixture({ primitive: "u8" });
+  doc.index[1].inner.trait.implementations = [];
+  doc.index[2].inner.function.has_body = true;
+  doc.index[2].visibility = "default";
+  (env as any).ARCHIVE.get = async () => ({
+    text: async () => JSON.stringify(doc),
+  });
+  assert.deepEqual(await refreshCatalog(env, 1), { indexed: 1, added: 1 });
+  const resolved = await request(
+    "/resolve-api?crate=sample&version=1.0.0&path=sample::T::m",
+  );
+  assert.equal(resolved.status, 200);
+  const api = (await request(`/apis/${resolved.body.id}`)).body;
+  assert.equal(
+    api.upstream_url,
+    "https://docs.rs/sample/1.0.0/sample/trait.T.html#method.m",
+  );
+  assert.match(api.signature, /^trait sample::T\npub fn m/);
+  const updated = await request(`/findings/${finding.body.id}`, "PATCH", {
+    edit_version: 1,
+    api_item_ids: [resolved.body.id],
+  });
+  assert.equal(updated.status, 200);
+  const saved = (await request(`/findings/${finding.body.id}`)).body;
+  assert.deepEqual(
+    saved.apis.map((a: any) => a.display_path),
+    ["sample::T::m"],
+  );
+});
+
+test("publication preparation refreshes stale catalogs for ordinary authors and skips current versions", async () => {
+  const { db, env, request } = await fixture();
+  const report = await request("/reports", "POST", reportInput);
+  const claims = db.prepare("SELECT * FROM claims").all();
+  const before = db.prepare("SELECT * FROM api_items ORDER BY id").all();
+  let reads = 0;
+  const doc = traitImplFixture({ primitive: "u8" });
+  (env as any).ARCHIVE.get = async () => {
+    reads++;
+    return { text: async () => JSON.stringify(doc) };
+  };
+  const prepare = () =>
+    request("/publish/prepare", "POST", { crate: "sample", version: "1.0.0" });
+  const first = await prepare();
+  assert.equal(first.status, 202);
+  assert.equal(
+    (await prepare()).body.id,
+    first.body.id,
+    "share an in-progress refresh",
+  );
+  assert.equal(await importJob(env, first.body.id), true);
+  assert.equal(reads, 1);
+  assert.equal((await prepare()).status, 200);
+  assert.equal(reads, 1, "current catalog does not reread rustdoc");
+  assert.deepEqual(
+    db
+      .prepare(
+        "SELECT * FROM api_items WHERE id IN ('safe','unsafe') ORDER BY id",
+      )
+      .all(),
+    before,
+  );
+  assert.deepEqual(db.prepare("SELECT * FROM claims").all(), claims);
+  assert.equal(
+    (await request(`/reports/${report.body.id}`)).body.revision_no,
+    1,
+  );
+  assert.equal(
+    (await request("/resolve-api?crate=sample&version=1.0.0&path=sample::T::m"))
+      .status,
+    200,
+  );
+  db.exec("UPDATE catalog_versions SET extractor_version=999");
+  assert.equal(
+    (await prepare()).status,
+    200,
+    "older deployments do not downgrade newer catalogs",
+  );
+  await refreshCatalog(env, 1);
+  assert.equal(
+    db.prepare("SELECT extractor_version FROM catalog_versions").get()!
+      .extractor_version,
+    999,
+  );
+});
+
+test("failed catalog refresh stays stale and retries from the archived snapshot", async () => {
+  const { db, env, request } = await fixture();
+  (env as any).ARCHIVE.get = async () => null;
+  const prepared = await request("/publish/prepare", "POST", {
+    crate: "sample",
+    version: "1.0.0",
+  });
+  assert.equal(prepared.status, 202);
+  assert.equal(await importJob(env, prepared.body.id), false);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM catalog_versions").get()!.n,
+    0,
+  );
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM api_items").get()!.n, 2);
+  db.prepare("UPDATE import_jobs SET next_retry_at=NULL WHERE id=?").run(
+    prepared.body.id,
+  );
+  (env as any).ARCHIVE.get = async () => ({
+    text: async () => JSON.stringify(traitImplFixture({ primitive: "u8" })),
+  });
+  assert.equal(await importJob(env, prepared.body.id), true);
+  assert.equal(
+    (
+      await request("/publish/prepare", "POST", {
+        crate: "sample",
+        version: "1.0.0",
+      })
+    ).status,
+    200,
+  );
 });

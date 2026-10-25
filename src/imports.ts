@@ -21,6 +21,26 @@ import {
 } from "./core";
 // Format 60 is still served by docs.rs for releases such as hex 0.4.3.
 export const FORMATS = [60, 61];
+// Bump when extraction or metadata changes require replaying archived rustdoc.
+export const CATALOG_EXTRACTOR_VERSION = 1;
+
+function markCatalogCurrent(db: D1Database, releaseId: number) {
+  return stmt(
+    db,
+    "INSERT INTO catalog_versions(release_id,extractor_version) VALUES(?,?) ON CONFLICT(release_id) DO UPDATE SET extractor_version=MAX(catalog_versions.extractor_version,excluded.extractor_version)",
+    releaseId,
+    CATALOG_EXTRACTOR_VERSION,
+  );
+}
+
+async function catalogCurrent(db: D1Database, releaseId: number) {
+  return !!(await one(
+    db,
+    "SELECT 1 FROM catalog_versions WHERE release_id=? AND extractor_version>=?",
+    releaseId,
+    CATALOG_EXTRACTOR_VERSION,
+  ));
+}
 function typ(t: any): string {
   if (t === null) return "()";
   if (typeof t === "string") return t === "infer" ? "_" : t;
@@ -277,17 +297,21 @@ export function extractAPIs(
       trait?: string;
       selfType?: string;
       anchor?: string;
+      declaration?: boolean;
     },
   ) {
     const fn = resolveEmptyPaths(item.inner.function, doc.paths);
     if (!fn || typeof fn.header?.is_unsafe !== "boolean")
       throw new Fault(422, "invalid_rustdoc_function");
-    const name = owner?.trait
-      ? `<${owner.selfType ?? owner.path.join("::")} as ${owner.trait}>::${path.at(-1)}`
-      : path.join("::");
-    const prefix = owner
-      ? `impl${params(owner.impl.generics)} ${owner.trait ? owner.trait + " for " : ""}${typ(owner.impl.for)}${wheres(owner.impl.generics)}\n`
-      : "";
+    const name =
+      owner?.trait && !owner.declaration
+        ? `<${owner.selfType ?? owner.path.join("::")} as ${owner.trait}>::${path.at(-1)}`
+        : path.join("::");
+    const prefix = owner?.declaration
+      ? `trait ${owner.path.join("::")}${params(owner.impl.generics)}${wheres(owner.impl.generics)}\n`
+      : owner
+        ? `impl${params(owner.impl.generics)} ${owner.trait ? owner.trait + " for " : ""}${typ(owner.impl.for)}${wheres(owner.impl.generics)}\n`
+        : "";
     const h = fn.header;
     const abi = typeof h.abi === "string" ? h.abi : Object.keys(h.abi || {})[0];
     const sig =
@@ -317,12 +341,14 @@ export function extractAPIs(
     });
     if (metadata) {
       const imp = owner && canonicalPaths(owner.impl);
-      const trait = owner?.trait
-        ? index[owner.impl.trait?.id]?.inner?.trait
-          ? owner.trait
-          : (imp.trait?.path || owner.trait.replace(/<.*$/, "")) +
-            args(imp.trait?.args)
-        : null;
+      const trait = owner?.declaration
+        ? owner.path.join("::")
+        : owner?.trait
+          ? index[owner.impl.trait?.id]?.inner?.trait
+            ? owner.trait
+            : (imp.trait?.path || owner.trait.replace(/<.*$/, "")) +
+              args(imp.trait?.args)
+          : null;
       metadata.set(name, {
         category: owner?.trait
           ? "trait"
@@ -332,7 +358,8 @@ export function extractAPIs(
               ? "method"
               : "associated",
         trait_path: trait,
-        self_type: owner ? owner.selfType || typ(imp.for) : null,
+        self_type:
+          owner && !owner.declaration ? owner.selfType || typ(imp.for) : null,
         method_name: path.at(-1),
         is_blanket: owner?.trait && owner.impl.blanket_impl != null ? 1 : 0,
       });
@@ -382,6 +409,20 @@ export function extractAPIs(
       const aliases = publicTraits.get(String(id)) || new Set<string>();
       aliases.add(current.join("::"));
       publicTraits.set(String(id), aliases);
+      for (const methodID of inner.trait.items || []) {
+        const method = index[methodID];
+        if (!method) throw new Fault(422, "invalid_rustdoc_trait_item");
+        if (!method.inner?.function) continue;
+        add(method, [...current, method.name], {
+          kind: "trait",
+          path: current,
+          impl: inner.trait,
+          trait: current.join("::"),
+          declaration: true,
+          anchor:
+            method.inner.function.has_body === false ? "tymethod" : "method",
+        });
+      }
       return;
     }
     for (const kind of ["struct", "enum", "union"])
@@ -601,6 +642,7 @@ export async function refreshCatalog(env: Env, releaseId: number) {
     );
   }
   await saveMetadata(env.DB, releaseId, metadata);
+  await markCatalogCurrent(env.DB, releaseId).run();
   return { indexed: apis.length, added };
 }
 importRoutes.post(
@@ -670,7 +712,7 @@ importRoutes.post(
       name,
       version,
     );
-    if (await one(db, "SELECT 1 FROM doc_snapshots WHERE release_id=?", rel.id))
+    if (await catalogCurrent(db, rel.id))
       return c.json({ status: "ready", crate: name, version });
     const running = await one(
       db,
@@ -782,9 +824,11 @@ export async function importJob(env: Env, id: string) {
     if (
       await one(db, "SELECT 1 FROM doc_snapshots WHERE release_id=?", rel.id)
     ) {
+      if (!(await catalogCurrent(db, rel.id)))
+        await refreshCatalog(env, rel.id);
       await stmt(
         db,
-        "UPDATE import_jobs SET status='ready' WHERE id=?",
+        "UPDATE import_jobs SET status='ready',error_code=NULL,lease_until=NULL WHERE id=?",
         id,
       ).run();
       return true;
@@ -856,6 +900,7 @@ export async function importJob(env: Env, id: string) {
         r2key,
         now(),
       ),
+      markCatalogCurrent(db, rel.id),
       ...(typeof meta.version.description === "string"
         ? [
             stmt(

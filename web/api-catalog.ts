@@ -27,7 +27,9 @@ function describe(a: CatalogAPI) {
   return {
     api: a,
     category:
-      a.category ||
+      (a.category === "trait" && a.trait_path && a.self_type == null && !legacy
+        ? "trait-declaration"
+        : a.category) ||
       (legacy
         ? "trait"
         : a.kind === "function"
@@ -85,7 +87,7 @@ export function renderAPICatalog(
     if (!content && options.hideEmpty) return "";
     return `<section class="api-category"><h3>${title}</h3>${content || `<p class="muted">${empty}</p>`}</section>`;
   }
-  function inherent(category: string) {
+  function inherent(category: string, keyword = "impl ") {
     const groups = new Map<string, ReturnType<typeof describe>[]>();
     for (const a of data.filter((a) => a.category === category)) {
       if (!groups.has(a.self)) groups.set(a.self, []);
@@ -95,7 +97,7 @@ export function renderAPICatalog(
       .sort(([a], [b]) => cmp(a, b))
       .map(
         ([type, items]) =>
-          `<section class="api-impl"><h4><code><span class="api-keyword">impl </span>${esc(local(type))}</code></h4>${items
+          `<section class="api-impl"><h4><code><span class="api-keyword">${keyword}</span>${esc(local(type))}</code></h4>${items
             .sort((a, b) => cmp(a.method, b.method))
             .map((a) => row(a.api, a.method))
             .join("")}</section>`,
@@ -159,6 +161,9 @@ export function renderAPICatalog(
       "No associated functions.",
     ) +
     section("Methods", inherent("method"), "No inherent methods.") +
+    (data.some((a) => a.category === "trait-declaration")
+      ? section("Traits", inherent("trait-declaration", "trait "), "")
+      : "") +
     section(
       "Trait implementations",
       traits(false),
