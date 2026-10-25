@@ -4026,6 +4026,18 @@ test(
         path,
         `pub fn ${path.split("::").at(-1)}(x: u32) -> u32`,
       );
+    // This fixture seeds API entries directly and has no import queue worker.
+    // Mark that prepared catalogue current, just as a completed import would.
+    db.prepare(
+      "INSERT INTO catalog_versions(release_id,extractor_version) VALUES(1,?)",
+    ).run(CATALOG_EXTRACTOR_VERSION);
+    const prepared = await request("/publish/prepare", "POST", {
+      crate: "formal_fixture",
+      version: "0.1.0",
+    });
+    assert.equal(prepared.status, 200);
+    assert.equal(prepared.body.status, "ready");
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM import_jobs").get()!.n, 0);
     const objects = new Map<string, any>();
     env.ARCHIVE = {
       put: async (key: string, bytes: ArrayBuffer) =>
