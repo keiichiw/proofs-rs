@@ -124,7 +124,7 @@ app.use("*", async (c, next) => {
       c.req.method === "GET" &&
       (path === "/api/v1/me" ||
         path === "/api/v1/me/reports" ||
-        /^\/api\/v1\/(runs|crates|apis|claims|reports|tools|resolve-api|imports|health|config|terms)(\/|$)/.test(
+        /^\/api\/v1\/(runs|crates|apis|claims|reports|findings|tools|resolve-api|imports|health|config|terms)(\/|$)/.test(
           path,
         ));
     const writable =
@@ -141,7 +141,15 @@ app.use("*", async (c, next) => {
     const administrative =
       path.startsWith("/api/v1/admin/") &&
       ["GET", "POST"].includes(c.req.method);
-    if (!readable && !writable && !administrative)
+    const findingWrite =
+      (c.req.method === "POST" &&
+        /^\/api\/v1\/(reports\/[^/]+\/findings|findings\/[^/]+\/links)$/.test(
+          path,
+        )) ||
+      (c.req.method === "PATCH" && /^\/api\/v1\/findings\/[^/]+$/.test(path)) ||
+      (c.req.method === "DELETE" &&
+        /^\/api\/v1\/findings\/[^/]+\/links\/[^/]+$/.test(path));
+    if (!readable && !writable && !findingWrite && !administrative)
       throw new Fault(403, "insufficient_scope");
   }
   if (write && !publicDevicePaths.has(path)) {

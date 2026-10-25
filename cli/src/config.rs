@@ -22,6 +22,8 @@ pub(crate) fn same_path(left: &Path, right: &Path) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct Report {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<Finding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -30,6 +32,45 @@ pub struct Report {
     pub limitations: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
+}
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Finding {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_paths: Vec<String>,
+    pub title: String,
+    pub body: String,
+}
+impl Report {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(!self.title.trim().is_empty(), "[report].title is required");
+        ensure!(
+            self.findings.len() <= 20,
+            "At most 20 report.findings are allowed"
+        );
+        for (index, finding) in self.findings.iter().enumerate() {
+            ensure!(
+                finding.api_paths.len() <= 50,
+                "At most 50 API paths per finding are allowed"
+            );
+            ensure!(
+                finding.api_paths.iter().all(|p| !p.trim().is_empty()),
+                "Finding API paths must not be empty"
+            );
+            for (name, value, limit) in [
+                ("title", &finding.title, 1000),
+                ("body", &finding.body, 10000),
+            ] {
+                // Match the service's JavaScript string-length limit.
+                ensure!(
+                    !value.trim().is_empty() && value.trim().encode_utf16().count() <= limit,
+                    "report.findings[{}].{name} must contain 1–{limit} characters",
+                    index + 1
+                );
+            }
+        }
+        Ok(())
+    }
 }
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -255,10 +296,7 @@ impl Project {
             &fs::read_to_string(self.config_path())
                 .context("Read proofs.toml; run cargo proofs init first")?,
         )?;
-        ensure!(
-            !config.report.title.trim().is_empty(),
-            "[report].title is required"
-        );
+        config.report.validate()?;
         config.tool.validate()?;
         Ok(config)
     }
@@ -341,6 +379,38 @@ pub fn init(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn report_findings_are_optional_freeform_bounded_and_strict() {
+        let base = "[report]\ntitle='Report'\n[tool]\nname='kani'\nversion='1'\n";
+        let parse = |extra: &str| toml::from_str::<Config>(&format!("{base}{extra}"));
+        assert!(parse("").unwrap().report.findings.is_empty());
+        let valid = "[[report.findings]]\ntitle='Observation'\nbody='**Markdown** and `code`'\n";
+        let cfg = parse(&valid.repeat(2)).unwrap();
+        cfg.report.validate().unwrap();
+        assert_eq!(cfg.report.findings.len(), 2);
+        assert!(parse(&valid.repeat(21)).unwrap().report.validate().is_err());
+        for invalid in [
+            "[[report.findings]]\ntitle='Missing body'\n".to_owned(),
+            format!("{valid}unknown='x'\n"),
+        ] {
+            assert!(parse(&invalid).is_err());
+        }
+        for (title, body) in [
+            (" ".into(), "body".into()),
+            ("title".into(), " ".into()),
+            ("x".repeat(1001), "body".into()),
+            ("title".into(), "x".repeat(10001)),
+            ("title".into(), "🦀".repeat(5001)),
+        ] {
+            let mut cfg = parse(valid).unwrap();
+            cfg.report.findings = vec![Finding {
+                title,
+                body,
+                api_paths: vec![],
+            }];
+            assert!(cfg.report.validate().is_err());
+        }
+    }
     #[test]
     fn dependency_reviews_are_optional_strict_and_positive() {
         let base = "[report]\ntitle='Local'\n[tool]\nname='kani'\nversion='1'\n";

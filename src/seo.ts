@@ -18,6 +18,7 @@ const staticPaths = [
   "/book/publish-a-report.html",
   "/book/write-a-report.html",
   "/book/review-a-dependency.html",
+  "/book/findings.html",
   "/book/preview-a-report.html",
   "/book/aeneas.html",
   "/book/api-documentation.html",

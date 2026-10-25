@@ -44,7 +44,8 @@ localhost. Tool details, dependency evidence, and the API catalogue link within
 a claim open the selected remote service. An unresolved API name has no catalogue
 link; its **Claim #…** link still opens locally.
 
-Edit the report fields in `proofs.toml`, save, and reload the browser. Changes to
+Edit the report fields, including optional `[[report.findings]]` entries with
+`title` and Markdown `body`, in `proofs.toml`, save, and reload the browser. Changes to
 prose do not require another verification run. A configuration error appears as an
 error page; correct it and reload. The preview has no browser-based editor,
 publication button, comments, or stars.
@@ -76,6 +77,10 @@ values clear it. Claim text is preserved by matching APIs, while preconditions
 and evidence come from the recorded run. Local claim pages show this proposed
 content, including when the claims already have permanent published IDs.
 
+For an existing report, preview shows its published findings. Local
+`report.findings` is used only for initial publication; later additions and edits
+use the website or Findings API. See [Findings](findings.md).
+
 New reports need no login. If saved authentication is unavailable, automatic
 report selection is unavailable too: preview explains that it is showing a new
 report unless you supplied `--report`. To read another service, pass `--server
@@ -92,11 +97,11 @@ A changed server revision, claims absent from the draft, a withdrawn report, or
 an interrupted publication is reported without changing publication state.
 Preview does not resolve these publication conditions for you.
 
-| Command | What it does |
-| --- | --- |
-| `cargo proofs preview` | Opens the local reader UI; only GET requests to the service; no upload or publication-state updates |
+| Command                          | What it does                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `cargo proofs preview`           | Opens the local reader UI; only GET requests to the service; no upload or publication-state updates           |
 | `cargo proofs publish --dry-run` | Prints prospective publication data; requires authentication and may prepare the API catalogue on the service |
-| `cargo proofs publish` | Uploads the recorded SARIF, performs final validation, and publishes or revises the report |
+| `cargo proofs publish`           | Uploads the recorded SARIF, performs final validation, and publishes or revises the report                    |
 
 The UI matches the CLI release you installed. To pick up a newly built or installed
 UI bundle, stop and restart preview; browser reload refreshes report data only.

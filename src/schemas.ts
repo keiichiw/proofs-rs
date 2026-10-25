@@ -376,6 +376,111 @@ const claimFields = {
   evidence_url: optional(1000),
   limitations: optional(),
 };
+export const findingValidity = z.enum([
+  "reported",
+  "confirmed",
+  "disputed",
+  "invalid",
+  "duplicate",
+]);
+export const findingUpstream = z.enum([
+  "not_reported",
+  "reported_upstream",
+  "fix_proposed",
+  "fix_merged",
+  "released",
+  "wont_fix",
+]);
+export const findingLinkKind = z.enum([
+  "issue",
+  "pr",
+  "commit",
+  "release",
+  "report",
+]);
+export const httpsURL = string
+  .trim()
+  .max(2000)
+  .url()
+  .refine((value) => {
+    try {
+      const u = new URL(value);
+      return u.protocol === "https:" && !u.username && !u.password;
+    } catch {
+      return false;
+    }
+  }, "Use an HTTPS URL without credentials");
+export const findingFields = {
+  title: required(1000),
+  body: required(),
+  evidence_url: httpsURL.nullable().optional(),
+  api_item_ids: z
+    .array(required(200))
+    .max(50)
+    .refine((a) => new Set(a).size === a.length)
+    .optional(),
+};
+export const findingInput = z.strictObject(findingFields);
+export const editFinding = z.strictObject({
+  title: findingFields.title.optional(),
+  body: findingFields.body.optional(),
+  evidence_url: findingFields.evidence_url,
+  api_item_ids: findingFields.api_item_ids,
+  validity: findingValidity.optional(),
+  upstream_status: findingUpstream.optional(),
+  duplicate_of: required(100).nullable().optional(),
+  edit_version: integer.positive(),
+});
+export const findingLinkInput = z.strictObject({
+  kind: findingLinkKind,
+  url: httpsURL,
+  version: required(100).nullable().optional(),
+  target_report_id: integer.positive().nullable().optional(),
+  target_revision_no: integer.positive().nullable().optional(),
+  edit_version: integer.positive(),
+});
+export const findingLink = z.object({
+  id: string,
+  finding_id: string,
+  kind: findingLinkKind,
+  url: string,
+  version: nullableString,
+  target_report_id: integer.nullable(),
+  target_revision_no: integer.nullable(),
+  created_at: string,
+  deleted_at: nullableString,
+});
+export const findingEvent = z.object({
+  id: string,
+  finding_id: string,
+  edit_version: integer,
+  actor_id: nullableString,
+  action: string,
+  payload: string,
+  created_at: string,
+});
+export const finding = z
+  .object({
+    id: string,
+    report_id: integer,
+    origin_revision_no: integer,
+    title: string,
+    body: string,
+    evidence_url: nullableString,
+    validity: findingValidity,
+    upstream_status: findingUpstream,
+    duplicate_of: nullableString,
+    edit_version: integer,
+    created_at: string,
+    updated_at: string,
+    crate: string,
+    version: string,
+    withdrawn_at: nullableString,
+    apis: z.array(z.object({ id: string, display_path: string })),
+    links: z.array(findingLink),
+  })
+  .meta({ id: "Finding" });
+export const findingDetail = finding.extend({ events: z.array(findingEvent) });
 export const reportInput = z
   .object({
     crate: required(100),
@@ -393,6 +498,7 @@ export const reportInput = z
       .max(MAX_REPORT_CLAIMS),
     run_ids: z.array(string).min(1).max(10),
     dependencies: z.array(dependencyInput).max(100).optional(),
+    findings: z.array(findingInput).max(20).optional(),
   })
   .meta({ id: "ReportInput" });
 export const validatedClaim = z.object({
@@ -420,6 +526,7 @@ export const validatedReport = z.object({
   claims: z.array(validatedClaim),
   run_ids: z.array(string),
   dependencies: z.array(dependency),
+  findings: z.array(findingInput).optional(),
   changes: z.object({
     added: integer,
     retained: z.array(string),

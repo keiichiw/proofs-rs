@@ -72,6 +72,7 @@ pub fn claims_by_key(report: &Value) -> Result<BTreeMap<String, Value>> {
     Ok(claims)
 }
 pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) -> Result<Value> {
+    config.report.validate()?;
     let mut body = if let Some(existing) = existing {
         snapshot(existing)?
     } else {
@@ -147,7 +148,39 @@ pub fn merge(config: &Config, mut generated: Value, existing: Option<&Value>) ->
         claims.push(merged);
     }
     body["claims"] = Value::Array(claims);
+    // Findings have their own identity and history. Only create them with a new
+    // Report; revisions never repost the local authoring array.
+    if existing.is_none() && !config.report.findings.is_empty() {
+        body["findings"] = json!(config
+            .report
+            .findings
+            .iter()
+            .map(|f| json!({"title":f.title,"body":f.body}))
+            .collect::<Vec<_>>());
+    }
     Ok(body)
+}
+
+/// Resolve each related API independently; aliases resolving to one ID are deduplicated.
+pub fn resolve_finding_apis(
+    config: &Config,
+    body: &mut Value,
+    mut resolve: impl FnMut(&str) -> Result<String>,
+) -> Result<()> {
+    if let Some(findings) = body.get_mut("findings").and_then(Value::as_array_mut) {
+        for (finding, local) in findings.iter_mut().zip(&config.report.findings) {
+            let mut ids = BTreeMap::new();
+            for path in &local.api_paths {
+                let id = resolve(path.trim())
+                    .with_context(|| format!("Resolve API {path} for finding {}", local.title))?;
+                ids.insert(id, ());
+            }
+            if !ids.is_empty() {
+                finding["api_item_ids"] = json!(ids.into_keys().collect::<Vec<_>>());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn compose(
@@ -179,6 +212,39 @@ pub fn compose(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn related_finding_apis_resolve_independently_and_stay_out_of_revisions() {
+        let cfg: Config = toml::from_str("[report]\ntitle='Report'\n[[report.findings]]\ntitle='Observation'\nbody='Body'\napi_paths=['sample::a','sample::alias','sample::b']\n[tool]\nname='kani'\nversion='1'\n").unwrap();
+        let generated = json!({"claims":[],"run_ids":["run"]});
+        let mut body = merge(&cfg, generated.clone(), None).unwrap();
+        assert!(body["findings"][0].get("api_paths").is_none());
+        resolve_finding_apis(&cfg, &mut body, |path| {
+            Ok(if path == "sample::b" { "b" } else { "a" }.into())
+        })
+        .unwrap();
+        assert_eq!(body["findings"][0]["api_item_ids"], json!(["a", "b"]));
+        assert!(resolve_finding_apis(&cfg, &mut body, |_| anyhow::bail!("missing API")).is_err());
+        let mut revision = merge(&cfg, generated, Some(&body)).unwrap();
+        resolve_finding_apis(&cfg, &mut revision, |_| {
+            panic!("revisions must not resolve local findings")
+        })
+        .unwrap();
+        assert!(revision.get("findings").is_none());
+    }
+    #[test]
+    fn findings_are_created_once_and_never_added_to_revision_payloads() {
+        let cfg: Config = toml::from_str("[report]\ntitle='Report'\n[[report.findings]]\ntitle='Observation'\nbody='**Markdown**'\n[tool]\nname='kani'\nversion='1'\n").unwrap();
+        let generated = json!({"claims":[],"run_ids":["run"]});
+        let first = merge(&cfg, generated.clone(), None).unwrap();
+        assert_eq!(first["findings"][0]["body"], "**Markdown**");
+        let mut existing = first.clone();
+        existing["findings"][0]["body"] = json!("Web edit");
+        let revision = merge(&cfg, generated, Some(&existing)).unwrap();
+        assert!(revision.get("findings").is_none());
+        assert!(snapshot(&existing).unwrap().get("findings").is_none());
+        assert_eq!(existing["findings"][0]["body"], "Web edit");
+        assert_eq!(first["run_ids"], revision["run_ids"]);
+    }
     #[test]
     fn formal_reference_updates_without_overwriting_author_prose() {
         let config: Config =

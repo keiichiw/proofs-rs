@@ -8,7 +8,7 @@ const markdown = new MarkdownIt({
 }).disable("image");
 
 /** Render untrusted prose below the containing page or preset section heading. */
-export function renderMarkdown(source: string, parentLevel: 1 | 2): string {
+export function renderMarkdown(source: string, parentLevel: 1 | 2 | 3): string {
   const tokens = markdown.parse(source, {});
   for (const token of tokens) {
     if (token.type === "heading_open" || token.type === "heading_close") {
