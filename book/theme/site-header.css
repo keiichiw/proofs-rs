@@ -83,6 +83,7 @@ html.sidebar-visible #menu-bar,
     order: 3;
     width: 100%;
     margin: 0;
+    flex-wrap: wrap;
   }
 }
 .proofs-site-account {
@@ -159,7 +160,8 @@ html:not([data-theme="base"]) .content {
     gap: 8px 14px;
   }
 }
-@media (max-width: 360px) {
+@media (max-width: 440px) {
+  :root,
   html:not([data-theme="base"]) {
     --proofs-header-height: 140px;
   }
