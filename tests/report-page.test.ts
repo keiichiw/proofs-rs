@@ -3,6 +3,105 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createViews } from "../src/site-views";
 
+test("finding related links identify destinations in Web and preview views", () => {
+  const links = [
+    {
+      kind: "pr",
+      url: "https://github.com/owner/repo/pull/123?diff=split#discussion",
+    },
+    { kind: "issue", url: "https://github.com/owner/repo/issues/456/" },
+    {
+      kind: "report",
+      url: "https://proofs.rs/report/8?v=2",
+      target_report_id: 8,
+      target_revision_no: 2,
+    },
+    { kind: "commit", url: "https://github.com/owner/repo/commit/abcdef" },
+    {
+      kind: "release",
+      url: "https://github.com/owner/repo/releases/tag/v1.2",
+      version: "1.2",
+    },
+    { kind: "pr", url: "https://git.example.test/owner/repo/merge_requests/9" },
+    {
+      kind: "issue",
+      url: "https://github.com.example.test/owner/repo/issues/1",
+    },
+    {
+      kind: "commit",
+      url: "https://example.test/" + "long-path/".repeat(50),
+      version: "<img src=x onerror=alert(1)>",
+    },
+  ].map((link, i) => ({ id: `link-${i}`, ...link }));
+  const finding = {
+    id: "finding-1",
+    report_id: 8,
+    origin_revision_no: 1,
+    title: "Finding",
+    body: "Description",
+    updated_at: "2026-10-25",
+    validity: "reported",
+    upstream_status: "not_reported",
+    apis: [],
+    links,
+    edit_version: 3,
+  };
+  for (const preview of [false, true]) {
+    const actions: unknown[] = [];
+    const { findingItem } = createViews(
+      { user: null },
+      {},
+      (name, fields) => {
+        actions.push({ name, fields });
+        return "<button>Remove link</button>";
+      },
+      { preview },
+    );
+    const dom = new JSDOM(findingItem(finding, true));
+    const d = dom.window.document;
+    assert.equal(
+      d.querySelector(".finding-related-links h4")?.textContent,
+      "Related links",
+    );
+    const anchors = [...d.querySelectorAll(".finding-links a")];
+    assert.deepEqual(
+      anchors.slice(0, 7).map((a) => a.textContent),
+      [
+        "PR · owner/repo#123",
+        "Issue · owner/repo#456",
+        "Report #8 · v2",
+        "Commit · github.com/owner/repo/commit/abcdef",
+        "Release · github.com/owner/repo/releases/tag/v1.2 · 1.2",
+        "PR · git.example.test/owner/repo/merge_requests/9",
+        "Issue · github.com.example.test/owner/repo/issues/1",
+      ],
+    );
+    anchors.forEach((a, i) => {
+      assert.equal(a.getAttribute("href"), links[i].url);
+      assert.equal(a.getAttribute("target"), "_blank");
+      assert.equal(a.getAttribute("rel"), "noopener noreferrer");
+    });
+    assert.match(
+      anchors.at(-1)!.textContent!,
+      /<img src=x onerror=alert\(1\)>/,
+    );
+    assert.equal(d.querySelector("img"), null);
+    assert.equal(actions.length, links.length);
+    assert.deepEqual(actions[0], {
+      name: "delete-finding-link",
+      fields: {
+        id: "finding-1",
+        link_id: "link-0",
+        edit_version: 3,
+        _back: "/finding/finding-1",
+      },
+    });
+    assert(!findingItem({ ...finding, links: [] }).includes("Related links"));
+    assert(!findingItem(finding, false, [], true).includes("Related links"));
+    dom.window.close();
+  }
+});
+
 test("report body removes redundant labels and groups claims by API with revision links", () => {
   const c = {
     title: "Report",

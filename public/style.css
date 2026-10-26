@@ -873,6 +873,9 @@ textarea {
 .finding-links .inline-action {
   margin-left: 0.75rem;
 }
+.finding-related-links a {
+  overflow-wrap: anywhere;
+}
 .report-outcome {
   font-weight: 600;
 }
