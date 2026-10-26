@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createServer } from "node:net";
 import { once } from "node:events";
@@ -99,6 +99,7 @@ test(
   "real local Worker: scenarios, sessions, Finding edits, persistence and reset",
   { timeout: 180_000 },
   async () => {
+    await mkdir(resolve(root, ".wrangler"), { recursive: true });
     const path = await mkdtemp(resolve(root, ".wrangler/demo-test-"));
     const socket = createServer().listen(0, "127.0.0.1");
     await once(socket, "listening");
