@@ -880,35 +880,61 @@ textarea {
   font-weight: 600;
 }
 `},"/theme-a.css":{type:"text/css; charset=utf-8",content:`/* Presentation only. The unchanged style.css is the base theme. */
+html:not([data-theme="base"]) {
+  --ink: #242a32;
+  --muted: #626d79;
+  --line: #e1e5e9;
+  --line-strong: #bbc3cc;
+  --surface: #f4f6f8;
+  --surface-hover: #e9eef3;
+  --accent: #285da0;
+  --visited: #65518a;
+  --danger: #b42318;
+  --radius: 4px;
+  --serif: Georgia, "Times New Roman", serif;
+  --mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
 html:not([data-theme="base"]) body {
   box-sizing: border-box;
   max-width: 1120px;
   margin: 0 auto;
   padding: 28px 32px;
-  color: #242a32;
+  color: var(--ink);
   background: #fff;
-  font:
-    16px/1.65 Georgia,
-    "Times New Roman",
-    serif;
+  font: 16px/1.65 var(--serif);
+  -webkit-text-size-adjust: 100%;
 }
+html:not([data-theme="base"]) ::selection {
+  background: #d6e4f5;
+}
+
+/* Links keep underlines, drawn lighter until hovered. */
 html:not([data-theme="base"]) a,
 html:not([data-theme="base"]) .link-button,
 html:not([data-theme="base"]) #account-nav summary {
-  color: #285da0;
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   text-underline-offset: 3px;
 }
 html:not([data-theme="base"]) a:visited {
-  color: #65518a;
+  color: var(--visited);
+}
+html:not([data-theme="base"]) a:hover,
+html:not([data-theme="base"]) .link-button:hover,
+html:not([data-theme="base"]) #account-nav summary:hover {
+  text-decoration-color: currentColor;
 }
 html:not([data-theme="base"]) .brand,
 html:not([data-theme="base"]) .brand:visited {
-  color: #242a32;
+  color: var(--ink);
   text-decoration: none;
   font-size: 25px;
 }
+
 html:not([data-theme="base"]) header {
-  border-color: #e1e5e9;
+  border-color: var(--line);
   padding-bottom: 22px;
   gap: 20px;
 }
@@ -919,73 +945,151 @@ html:not([data-theme="base"]) nav {
 html:not([data-theme="base"]) #account-nav {
   font-size: 14px;
 }
+html:not([data-theme="base"]) .profile-menu {
+  border-color: var(--line-strong);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  box-shadow: 0 4px 14px rgb(36 42 50 / 8%);
+}
 html:not([data-theme="base"]) main {
   margin: 32px auto 48px;
 }
 html:not([data-theme="base"]) footer {
-  border-color: #e1e5e9;
-  color: #626d79;
+  border-color: var(--line);
+  color: var(--muted);
   font-size: 13px;
   padding-top: 16px;
 }
+html:not([data-theme="base"]) .breadcrumbs {
+  font-size: 14px;
+}
+html:not([data-theme="base"]) .filterbar {
+  display: block;
+  font-size: 14px;
+}
+html:not([data-theme="base"]) .filterbar a {
+  margin-right: 0;
+}
+html:not([data-theme="base"]) .breadcrumbs span {
+  color: var(--line-strong);
+}
+
+/* Headings */
+html:not([data-theme="base"]) :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--ink);
+  line-height: 1.3;
+}
 html:not([data-theme="base"]) h1 {
   font-size: 30px;
-  line-height: 1.3;
   letter-spacing: -0.5px;
   margin: 20px 0;
 }
 html:not([data-theme="base"]) h2 {
   font-size: 22px;
   line-height: 1.4;
-  margin: 28px 0 12px;
+  margin: 32px 0 12px;
 }
 html:not([data-theme="base"]) h3 {
   font-size: 18px;
+  margin: 20px 0 8px;
+}
+html:not([data-theme="base"]) h4 {
+  font-size: 16px;
+  margin: 18px 0 6px;
+}
+html:not([data-theme="base"]) :is(h5, h6) {
+  font-size: 15px;
+  margin: 18px 0 4px;
+}
+html:not([data-theme="base"]) h6 {
+  color: var(--muted);
 }
 html:not([data-theme="base"]) .meta,
 html:not([data-theme="base"]) .small,
 html:not([data-theme="base"]) .row-sub,
 html:not([data-theme="base"]) .results-summary,
 html:not([data-theme="base"]) .api-keyword,
-html:not([data-theme="base"]) .implementation-count {
-  color: #626d79;
+html:not([data-theme="base"]) .implementation-count,
+html:not([data-theme="base"]) .lean-role {
+  color: var(--muted);
 }
 html:not([data-theme="base"]) .implementation-count {
   font-family: inherit;
 }
+html:not([data-theme="base"]) .error {
+  color: var(--danger);
+}
+
+/* Code */
+html:not([data-theme="base"]) code,
+html:not([data-theme="base"]) .code,
+html:not([data-theme="base"]) .api-name,
+html:not([data-theme="base"]) .tag,
+html:not([data-theme="base"]) pre {
+  font-family: var(--mono);
+}
+html:not([data-theme="base"]) code,
+html:not([data-theme="base"]) .api-name {
+  font-size: 0.875em;
+}
+html:not([data-theme="base"]) pre code {
+  font-size: inherit;
+}
+html:not([data-theme="base"]) h1.code {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+html:not([data-theme="base"]) pre,
+html:not([data-theme="base"]) .reproduce pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+html:not([data-theme="base"]) .markdown-body :not(pre) > code {
+  background: var(--surface);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+/* Controls */
 html:not([data-theme="base"]) input,
 html:not([data-theme="base"]) select,
 html:not([data-theme="base"]) textarea,
-html:not([data-theme="base"]) button {
+html:not([data-theme="base"]) button,
+html:not([data-theme="base"]) .button-link {
   box-sizing: border-box;
   font: inherit;
-  border: 1px solid #bbc3cc;
-  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
   padding: 7px 10px;
 }
 html:not([data-theme="base"]) input,
 html:not([data-theme="base"]) select,
 html:not([data-theme="base"]) textarea {
   background: #fff;
-  color: #242a32;
+  color: var(--ink);
 }
 html:not([data-theme="base"]) button,
 html:not([data-theme="base"]) .button-link {
-  background: #f4f6f8;
-  color: #242a32;
-}
-html:not([data-theme="base"]) .button-link {
-  font: inherit;
-  border: 1px solid #bbc3cc;
-  border-radius: 3px;
-  padding: 7px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  line-height: 1.3;
 }
 html:not([data-theme="base"]) button:hover,
 html:not([data-theme="base"]) .button-link:hover {
-  background: #e9eef3;
+  background: var(--surface-hover);
 }
 html:not([data-theme="base"]) button:disabled {
   opacity: 0.65;
+}
+html:not([data-theme="base"]) input:focus,
+html:not([data-theme="base"]) select:focus,
+html:not([data-theme="base"]) textarea:focus {
+  border-color: var(--accent);
 }
 html:not([data-theme="base"]) a:focus-visible,
 html:not([data-theme="base"]) button:focus-visible,
@@ -993,25 +1097,38 @@ html:not([data-theme="base"]) input:focus-visible,
 html:not([data-theme="base"]) select:focus-visible,
 html:not([data-theme="base"]) textarea:focus-visible,
 html:not([data-theme="base"]) summary:focus-visible {
-  outline: 2px solid #285da0;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 html:not([data-theme="base"]) .link-button {
   border: 0;
   background: none;
   padding: 0;
-  color: #285da0;
+  color: var(--accent);
 }
+html:not([data-theme="base"])
+  :is(.reproduce, .report-environment, .tool-limitations, .claim-report-context)
+  summary {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+html:not([data-theme="base"]) summary::marker {
+  color: var(--muted);
+}
+
+/* Tables and lists */
 html:not([data-theme="base"]) th,
 html:not([data-theme="base"]) td {
-  border-color: #e1e5e9;
+  border-color: var(--line);
   padding-top: 12px;
   padding-bottom: 12px;
 }
 html:not([data-theme="base"]) th {
   font-size: 13px;
-  color: #626d79;
-  border-bottom-color: #bbc3cc;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom-color: var(--line-strong);
 }
 html:not([data-theme="base"]) .crate-list th,
 html:not([data-theme="base"]) .crate-list td {
@@ -1026,52 +1143,85 @@ html:not([data-theme="base"]) .recorded-run + .recorded-run,
 html:not([data-theme="base"]) .catalog-row,
 html:not([data-theme="base"]) .catalog-columns,
 html:not([data-theme="base"]) .api-family > summary,
-html:not([data-theme="base"]) .api-impl h4 {
-  border-color: #e1e5e9;
+html:not([data-theme="base"]) .api-impl h4,
+html:not([data-theme="base"]) .lean-conclusion {
+  border-color: var(--line);
 }
-html:not([data-theme="base"]) pre,
-html:not([data-theme="base"]) .reproduce pre {
-  background: #f4f6f8;
-  border-radius: 3px;
-  padding: 14px 16px;
+html:not([data-theme="base"]) .api-implementations {
+  border-color: var(--line);
 }
-html:not([data-theme="base"]) code,
-html:not([data-theme="base"]) .code,
-html:not([data-theme="base"]) .api-name,
-html:not([data-theme="base"]) pre {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+html:not([data-theme="base"]) .api-family > summary:hover {
+  background: var(--surface);
 }
-html:not([data-theme="base"]) .report-context {
-  border-color: #e1e5e9;
-  border-radius: 3px;
-  padding: 16px 20px;
+
+/* Boxed content */
+html:not([data-theme="base"]) .report-context,
+html:not([data-theme="base"]) .finding {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 22px;
 }
-html:not([data-theme="base"]) .profile-menu {
-  border-color: #bbc3cc;
-  border-radius: 3px;
+html:not([data-theme="base"]) .finding h3 {
+  font-size: 19px;
+  margin-top: 0;
 }
+html:not([data-theme="base"]) .finding > p {
+  margin: 6px 0;
+}
+html:not([data-theme="base"]) .confirmation-dialog {
+  color: var(--ink);
+  background: #fff;
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  padding: 22px 24px;
+  box-shadow:
+    0 0 0 100vmax rgb(36 42 50 / 35%),
+    0 10px 30px rgb(36 42 50 / 18%);
+}
+
+/* Markdown prose */
+html:not([data-theme="base"]) .markdown-body blockquote {
+  color: var(--muted);
+  border-left-color: var(--line-strong);
+}
+html:not([data-theme="base"]) .markdown-body :is(th, td) {
+  border-color: var(--line);
+  padding: 6px 12px;
+}
+html:not([data-theme="base"]) .markdown-body th {
+  background: var(--surface);
+  color: var(--ink);
+}
+html:not([data-theme="base"]) .markdown-body :is(ul, ol) {
+  padding-left: 1.5em;
+}
+html:not([data-theme="base"]) .markdown-body li + li {
+  margin-top: 2px;
+}
+html:not([data-theme="base"]) hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+
+/* Home */
 html:not([data-theme="base"]) .home-search {
   padding: 32px 0 40px;
 }
 html:not([data-theme="base"]) .home-search h1 {
   font-size: 32px;
 }
-html:not([data-theme="base"]) .api-implementations {
-  border-color: #e1e5e9;
-}
-html:not([data-theme="base"]) .api-family > summary:hover {
-  background: #f4f6f8;
-}
 html:not([data-theme="base"]) .vote button {
   padding: 2px 4px;
 }
 html:not([data-theme="base"]) .vote button[aria-pressed="true"] {
-  color: #285da0;
+  color: var(--accent);
 }
 html:not([data-theme="base"]) .vote button:focus-visible {
-  outline: 2px solid #285da0;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+
 @media (max-width: 600px) {
   html:not([data-theme="base"]) body {
     padding: 16px;
@@ -1087,8 +1237,15 @@ html:not([data-theme="base"]) .vote button:focus-visible {
   html:not([data-theme="base"]) .home-search h1 {
     font-size: 26px;
   }
+  html:not([data-theme="base"]) h1.code {
+    font-size: 20px;
+  }
   html:not([data-theme="base"]) .home-search {
     padding: 20px 0 28px;
+  }
+  html:not([data-theme="base"]) .report-context,
+  html:not([data-theme="base"]) .finding {
+    padding: 14px 16px;
   }
 }
 `},"/theme-header.css":{type:"text/css; charset=utf-8",content:`/* Shared by the app and mdBook; base retains each original header. */
@@ -1105,10 +1262,15 @@ html:not([data-theme="base"]) .proofs-site-header {
 html:not([data-theme="base"]) .proofs-site-header a,
 html:not([data-theme="base"]) .proofs-site-header summary {
   color: #285da0;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   text-underline-offset: 3px;
 }
 html:not([data-theme="base"]) .proofs-site-header a:visited {
   color: #65518a;
+}
+html:not([data-theme="base"]) .proofs-site-header :is(a, summary):hover {
+  text-decoration-color: currentColor;
 }
 html:not([data-theme="base"])
   .proofs-site-header
@@ -1127,14 +1289,14 @@ html:not([data-theme="base"]) .proofs-site-header #account-nav {
 }
 html:not([data-theme="base"]) .proofs-site-header .profile-menu {
   border: 1px solid #bbc3cc;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 html:not([data-theme="base"]) .proofs-site-header button {
   font: inherit;
   background: #f4f6f8;
   color: #242a32;
   border: 1px solid #bbc3cc;
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 7px 10px;
 }
 html:not([data-theme="base"])
