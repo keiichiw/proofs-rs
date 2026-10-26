@@ -104,14 +104,25 @@ export function renderAPICatalog(
     href(a.id)
       ? `<a class="api-name" href="${esc(href(a.id)!)}">${esc(text)}</a>`
       : `<span class="api-name">${esc(text)} (unverified)</span>`;
-  const signature = (a: CatalogAPI) => {
+  // As in rustdoc's impl blocks, the declaration itself is the row, with
+  // the item name as its link; rows without a usable declaration keep a label.
+  const declared = (a: CatalogAPI, text: string) => {
     const line = declaration(a.signature);
-    return line
-      ? `<code class="api-signature" title="${esc(line)}">${signatureHTML(line)}</code>`
-      : "";
+    const name = line.match(/\bfn\s+\w+/);
+    if (!name) return "";
+    let before = esc(line.slice(0, name.index));
+    if (/\bunsafe\b/.test(before))
+      before = before.replace(
+        /\bunsafe\b/,
+        '<strong class="unsafe">unsafe</strong>',
+      );
+    else if (a.is_unsafe) before += '<strong class="unsafe">unsafe</strong> ';
+    return `<code class="api-signature">${before}fn ${link(a, text)}${esc(line.slice(name.index! + name[0].length))}</code>`;
   };
+  const label = (a: CatalogAPI, text: string, keyword: string) =>
+    `<span class="api-label">${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>`;
   const row = (a: CatalogAPI, text: string, keyword = "fn ") =>
-    `<div class="catalog-row"><span><span class="api-label">${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>${signature(a)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
+    `<div class="catalog-row"><span>${(keyword && declared(a, text)) || label(a, text, keyword)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
   const data = apis
     .map(describe)
     .sort(
