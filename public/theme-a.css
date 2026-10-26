@@ -1,20 +1,25 @@
 /* Presentation only. The unchanged style.css is the base theme. */
+/* Palette and typefaces follow rustdoc's light theme. */
 html:not([data-theme="base"]) {
-  --ink: #242a32;
-  --muted: #626d79;
-  --line: #e1e5e9;
-  --line-strong: #bbc3cc;
-  --surface: #f4f6f8;
-  --surface-hover: #e9eef3;
-  --accent: #285da0;
-  --visited: #65518a;
+  --ink: #000;
+  --muted: #5d6670;
+  --line: #e0e0e0;
+  --line-strong: #c8c8c8;
+  --heading-rule: #ddd;
+  --surface: #f5f5f5;
+  --surface-hover: #ebebeb;
+  --accent: #3873ad;
+  --visited: #3873ad;
   --danger: #b42318;
+  --kind-fn: #ad7c37;
+  --kind-type: #ad378a;
+  --kind-trait: #6e4fc9;
   --radius: 4px;
-  --serif: Georgia, "Times New Roman", serif;
-  --sans:
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Fira Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono:
-    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
 }
 html:not([data-theme="base"]) body {
   box-sizing: border-box;
@@ -23,14 +28,14 @@ html:not([data-theme="base"]) body {
   padding: 28px 32px;
   color: var(--ink);
   background: #fff;
-  font: 16px/1.65 var(--serif);
+  font: 16px/1.55 var(--serif);
   -webkit-text-size-adjust: 100%;
 }
 html:not([data-theme="base"]) ::selection {
-  background: #d6e4f5;
+  background: #d4e4f4;
 }
 
-/* Prose stays serif; navigation, metadata and controls use the UI face. */
+/* Prose is serif; headings, navigation, metadata and controls use Fira Sans. */
 html:not([data-theme="base"])
   :is(
     nav,
@@ -45,6 +50,13 @@ html:not([data-theme="base"])
     footer,
     .vote,
     .badge,
+    .item-kind,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
     button,
     .button-link,
     input,
@@ -61,8 +73,8 @@ html:not([data-theme="base"])
     .comment-top,
     .comment-top time
   ) {
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 /* Links keep underlines, drawn lighter until hovered. */
@@ -86,7 +98,6 @@ html:not([data-theme="base"]) .brand,
 html:not([data-theme="base"]) .brand:visited {
   color: var(--ink);
   text-decoration: none;
-  font-size: 25px;
 }
 
 html:not([data-theme="base"]) header {
@@ -96,11 +107,9 @@ html:not([data-theme="base"]) header {
 }
 html:not([data-theme="base"]) nav {
   margin-left: 0;
-  font-size: 14px;
 }
 html:not([data-theme="base"]) #account-nav {
   font-family: var(--sans);
-  font-size: 14px;
 }
 html:not([data-theme="base"]) .profile-menu {
   border-color: var(--line-strong);
@@ -134,21 +143,22 @@ html:not([data-theme="base"]) .breadcrumbs span {
 /* Headings */
 html:not([data-theme="base"]) :is(h1, h2, h3, h4, h5, h6) {
   color: var(--ink);
-  line-height: 1.3;
+  font-weight: 500;
+  line-height: 1.25;
 }
 html:not([data-theme="base"]) h1 {
-  font-size: 30px;
-  letter-spacing: -0.5px;
-  margin: 20px 0;
+  font-size: 26px;
+  margin: 18px 0 16px;
 }
 html:not([data-theme="base"]) h2 {
-  font-size: 22px;
-  line-height: 1.4;
+  font-size: 21px;
   margin: 32px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--heading-rule);
 }
 html:not([data-theme="base"]) h3 {
   font-size: 18px;
-  margin: 20px 0 8px;
+  margin: 22px 0 8px;
 }
 html:not([data-theme="base"]) h4 {
   font-size: 16px;
@@ -157,6 +167,10 @@ html:not([data-theme="base"]) h4 {
 html:not([data-theme="base"]) :is(h5, h6) {
   font-size: 15px;
   margin: 18px 0 4px;
+}
+html:not([data-theme="base"]) .markdown-body :is(h2, h3, h4, h5, h6) {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 html:not([data-theme="base"]) h6 {
   color: var(--muted);
@@ -189,6 +203,9 @@ html:not([data-theme="base"]) code,
 html:not([data-theme="base"]) .api-name {
   font-size: 0.875em;
 }
+html:not([data-theme="base"]) :is(h1, h2, h3, h4) code {
+  font-size: 0.9em;
+}
 html:not([data-theme="base"]) pre code {
   font-size: inherit;
 }
@@ -197,22 +214,21 @@ html:not([data-theme="base"]) .tag {
 }
 html:not([data-theme="base"]) h1.code {
   font-size: 24px;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-weight: 500;
 }
 html:not([data-theme="base"]) pre,
 html:not([data-theme="base"]) .reproduce pre {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 6px;
   padding: 14px 16px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
 }
 html:not([data-theme="base"]) .markdown-body :not(pre) > code {
   background: var(--surface);
   border-radius: 3px;
-  padding: 0.1em 0.3em;
+  padding: 0.1em 0.25em;
 }
 
 /* Controls */
@@ -291,9 +307,9 @@ html:not([data-theme="base"]) td {
   padding-bottom: 12px;
 }
 html:not([data-theme="base"]) th {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
   border-bottom-color: var(--line-strong);
 }
 html:not([data-theme="base"]) .crate-list th,
@@ -370,6 +386,83 @@ html:not([data-theme="base"]) hr {
   margin: 24px 0;
 }
 
+/* API items: signature first, names coloured by kind as in rustdoc. */
+html:not([data-theme="base"]) .item-kind {
+  margin: 18px 0 2px;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+html:not([data-theme="base"]) .item-kind + h1 {
+  margin-top: 0;
+}
+html:not([data-theme="base"]) .path-prefix {
+  color: var(--muted);
+  font-weight: 400;
+}
+html:not([data-theme="base"]) h1 .item-name {
+  color: var(--kind-fn);
+}
+html:not([data-theme="base"]) pre.signature {
+  font-size: 15px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+html:not([data-theme="base"]) .fn-name {
+  color: var(--kind-fn);
+  font-weight: 600;
+}
+html:not([data-theme="base"]) .catalog-row .api-name,
+html:not([data-theme="base"]) .api-family > summary code {
+  color: var(--kind-fn);
+}
+html:not([data-theme="base"]) .catalog-row a.api-name:visited {
+  color: var(--kind-fn);
+}
+html:not([data-theme="base"]) .kind-type {
+  color: var(--kind-type);
+}
+html:not([data-theme="base"]) .kind-trait {
+  color: var(--kind-trait);
+}
+html:not([data-theme="base"]) .api-impl h4 code {
+  font-size: 15px;
+}
+html:not([data-theme="base"]) .catalog-row > span:first-child {
+  min-width: 0;
+}
+html:not([data-theme="base"]) :is(.api-label, .api-family > summary > span) {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+html:not([data-theme="base"])
+  :is(.api-label, .api-family > summary > span)
+  :is(.api-name, code) {
+  font-size: inherit;
+}
+html:not([data-theme="base"]) .api-family .implementation-count {
+  font-family: var(--sans);
+  font-size: 13px;
+}
+html:not([data-theme="base"]) .unsafe {
+  color: #b42318;
+  font-weight: 600;
+}
+html:not([data-theme="base"]) .api-signature {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+html:not([data-theme="base"]) .api-signature .fn-name {
+  color: inherit;
+  font-weight: 600;
+}
+
 /* Author-reported statuses */
 html:not([data-theme="base"]) .badge {
   display: inline-block;
@@ -377,7 +470,7 @@ html:not([data-theme="base"]) .badge {
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--surface);
-  color: #46505b;
+  color: #474747;
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
@@ -423,8 +516,9 @@ html:not([data-theme="base"]) .revision-more[open] {
 
 /* Lists of reports and claims: title first, metadata below. */
 html:not([data-theme="base"]) .claim-item > a:first-child {
+  font-family: var(--sans);
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
 }
 html:not([data-theme="base"]) .claim-item > a:first-child:hover {
@@ -448,7 +542,7 @@ html:not([data-theme="base"]) .home-search {
   padding: 32px 0 40px;
 }
 html:not([data-theme="base"]) .home-search h1 {
-  font-size: 32px;
+  font-size: 34px;
 }
 html:not([data-theme="base"]) .vote {
   color: var(--muted);
@@ -487,7 +581,7 @@ html:not([data-theme="base"]) .vote button:focus-visible {
   }
   html:not([data-theme="base"]) h1,
   html:not([data-theme="base"]) .home-search h1 {
-    font-size: 26px;
+    font-size: 22px;
   }
   html:not([data-theme="base"]) h1.code {
     font-size: 20px;
