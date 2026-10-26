@@ -3,7 +3,12 @@ import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
 import { Fault, rows, one, latest } from "./core";
 import { legal } from "../web/legal";
-import { renderAPICatalog } from "../web/api-catalog";
+import {
+  apiKindLabel,
+  itemPathHTML,
+  renderAPICatalog,
+  signatureHTML,
+} from "../web/api-catalog";
 import { renderRecordedRun } from "../web/recorded-run";
 import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
@@ -393,7 +398,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         a.display_path,
-        `${breadcrumbs(crateCrumbs(a, "apis"))}<h1 class="code">${esc(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${esc(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
+        `${breadcrumbs(crateCrumbs(a, "apis"))}<p class="item-kind">${esc(apiKindLabel(a))}</p><h1 class="code">${itemPathHTML(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${signatureHTML(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
       );
     }
     if (p === "reports")

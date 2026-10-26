@@ -46,6 +46,35 @@ function describe(a: CatalogAPI) {
     blanket: a.is_blanket === 1,
   };
 }
+const kindLabels: Record<string, string> = {
+  function: "Function",
+  associated: "Associated function",
+  method: "Method",
+  trait: "Trait method",
+  "trait-declaration": "Trait method",
+};
+export function apiKindLabel(a: CatalogAPI) {
+  return kindLabels[describe(a).category] ?? "Function";
+}
+// The declaration line of a signature, without any `impl … for …` header.
+function declaration(signature: string) {
+  const lines = signature.split("\n").map((line) => line.trim());
+  return lines.find((line) => /\bfn\b/.test(line)) ?? lines.at(-1) ?? "";
+}
+// Escaped signature with the function name marked, as in rustdoc's item-decl.
+export function signatureHTML(signature: string) {
+  return esc(signature).replace(
+    /\bfn (\w+)/,
+    'fn <span class="fn-name">$1</span>',
+  );
+}
+// Item path with the module prefix separated from the item name.
+export function itemPathHTML(path: string) {
+  const i = path.lastIndexOf("::");
+  return i < 0
+    ? `<span class="item-name">${esc(path)}</span>`
+    : `<span class="path-prefix">${esc(path.slice(0, i + 2))}</span><span class="item-name">${esc(path.slice(i + 2))}</span>`;
+}
 export function renderAPICatalog(
   apis: CatalogAPI[],
   crate: string,
@@ -75,8 +104,14 @@ export function renderAPICatalog(
     href(a.id)
       ? `<a class="api-name" href="${esc(href(a.id)!)}">${esc(text)}</a>`
       : `<span class="api-name">${esc(text)} (unverified)</span>`;
+  const signature = (a: CatalogAPI) => {
+    const line = declaration(a.signature);
+    return line
+      ? `<code class="api-signature" title="${esc(line)}">${signatureHTML(line)}</code>`
+      : "";
+  };
   const row = (a: CatalogAPI, text: string, keyword = "fn ") =>
-    `<div class="catalog-row"><span>${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
+    `<div class="catalog-row"><span><span class="api-label">${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>${signature(a)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
   const data = apis
     .map(describe)
     .sort(
@@ -97,7 +132,7 @@ export function renderAPICatalog(
       .sort(([a], [b]) => cmp(a, b))
       .map(
         ([type, items]) =>
-          `<section class="api-impl"><h4><code><span class="api-keyword">${keyword}</span>${esc(local(type))}</code></h4>${items
+          `<section class="api-impl"><h4><code><span class="api-keyword">${keyword}</span><span class="${keyword === "trait " ? "kind-trait" : "kind-type"}">${esc(local(type))}</span></code></h4>${items
             .sort((a, b) => cmp(a.method, b.method))
             .map((a) => row(a.api, a.method))
             .join("")}</section>`,
@@ -137,7 +172,7 @@ export function renderAPICatalog(
               .join("")}</div></details>`;
           })
           .join("");
-        return `<section class="api-impl"><h4><code><span class="api-keyword">impl </span>${esc(trait)}<span class="api-keyword"> for </span>${types.size === 1 ? esc(local(items[0].self)) : "…"}</code></h4>${body}</section>`;
+        return `<section class="api-impl"><h4><code><span class="api-keyword">impl </span><span class="kind-trait">${esc(trait)}</span><span class="api-keyword"> for </span><span class="kind-type">${types.size === 1 ? esc(local(items[0].self)) : "…"}</span></code></h4>${body}</section>`;
       })
       .join("");
   }
