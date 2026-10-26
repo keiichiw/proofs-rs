@@ -18,6 +18,8 @@
   },
   "include": [
     "src/**/*.ts",
+    "demo/**/*.ts",
+    "scripts/demo.ts",
     "tests/**/*.ts",
     "vite.config.ts",
     "preview/**/*.ts"

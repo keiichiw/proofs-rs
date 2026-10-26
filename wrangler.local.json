@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "proofs-rs-local-demo",
+  "main": "demo/worker.ts",
+  "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "assets": {
+    "directory": ".wrangler/demo-assets",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "dev": { "ip": "127.0.0.1", "port": 8787 },
+  "vars": {
+    "ENVIRONMENT": "local-demo",
+    "APP_ORIGIN": "http://127.0.0.1:8787",
+    "EXTERNAL_FETCH_DISABLED": "true",
+    "GITHUB_CLIENT_ID": "",
+    "EMAIL_FROM": "",
+    "EMAIL_ALLOWLIST": "",
+    "ADMIN_GITHUB_IDS": "",
+    "TERMS_VERSION": "2026-09-21",
+    "EMAIL_DISABLED": "true",
+    "SHOW_STAR_KARMA": "true",
+    "SHOW_HOME_DISCUSSION": "false"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "proofs-rs-local-demo",
+      "database_id": "00000000-0000-0000-0000-000000000002",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "ARCHIVE", "bucket_name": "proofs-rs-local-demo" }
+  ]
+}

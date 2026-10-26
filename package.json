@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:demo": "node --import tsx scripts/demo.ts",
+    "demo:reset": "node --import tsx scripts/demo.ts reset",
+    "test:demo": "node --import tsx --test tests/demo.test.ts",
     "build": "vite build && npm run build:book",
     "build:book": "node scripts/build-book.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.web.json",

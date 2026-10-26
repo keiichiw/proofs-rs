@@ -44,6 +44,7 @@ export async function dependencyCatalog(
       dependencies = await cached.json<DirectDependency[]>();
       if (!Array.isArray(dependencies)) return null;
     } else {
+      if (env.EXTERNAL_FETCH_DISABLED === "true") return null;
       const response = await safeFetch(
         `https://crates.io/api/v1/crates/${encodeURIComponent(crate)}/${encodeURIComponent(version)}/dependencies`,
         ["crates.io"],

@@ -8,6 +8,11 @@ A public registry for Rust formal verification results.
 - [CLI](cli/README.md)
 - [Development](docs/development.md)
 
+For local UI development, run `npm ci` once, then `npm run dev:demo` and open
+[the demo scenarios](http://127.0.0.1:8787/__demo). The demo seeds local D1/R2,
+supports switching between an author, another user and a logged-out visitor,
+and keeps edits between restarts. See [the demo guide](docs/development.md#local-ui-demo).
+
 ### Automatic Aeneas formal statements
 
 Aeneas runs can resolve specifications using committed `-emit-json` output.
