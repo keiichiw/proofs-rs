@@ -124,6 +124,48 @@ export function createViews(
     if (!c.tool_limitations) return "";
     return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
   }
+  function findingLinkLabel(link: {
+    kind: string;
+    url: string;
+    version?: string | null;
+    target_report_id?: number | null;
+    target_revision_no?: number | null;
+  }) {
+    if (
+      link.kind === "report" &&
+      link.target_report_id &&
+      link.target_revision_no
+    )
+      return `Report #${link.target_report_id} · v${link.target_revision_no}`;
+    const kind =
+      (
+        {
+          issue: "Issue",
+          pr: "PR",
+          commit: "Commit",
+          release: "Release",
+          report: "Report",
+        } as Record<string, string>
+      )[link.kind] ?? link.kind;
+    let destination = link.url;
+    try {
+      const url = new URL(link.url);
+      const github =
+        url.hostname === "github.com"
+          ? /^\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)\/?$/.exec(url.pathname)
+          : null;
+      if (
+        github &&
+        ((link.kind === "pr" && github[3] === "pull") ||
+          (link.kind === "issue" && github[3] === "issues"))
+      )
+        return `${kind} · ${github[1]}/${github[2]}#${github[4]}`;
+      destination = url.host + url.pathname;
+    } catch {
+      // Keep historical links readable even if their URL cannot be parsed.
+    }
+    return `${kind} · ${destination}${link.version ? ` · ${link.version}` : ""}`;
+  }
   function findingItem(
     f: any,
     editable = false,
@@ -140,7 +182,7 @@ export function createViews(
         compact
           ? ""
           : `
-      <ul class="finding-links">${f.links.map((l: any) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.kind)}${l.version ? ` · ${esc(l.version)}` : ""}</a>${editable ? action("delete-finding-link", { id: f.id, link_id: l.id, edit_version: f.edit_version, _back: permalink }, "Remove link") : ""}</li>`).join("")}</ul>
+      ${f.links.length ? `<div class="finding-related-links"><h4>Related links</h4><ul class="finding-links">${f.links.map((l: any) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(findingLinkLabel(l))}</a>${editable ? action("delete-finding-link", { id: f.id, link_id: l.id, edit_version: f.edit_version, _back: permalink }, "Remove link") : ""}</li>`).join("")}</ul></div>` : ""}
       <div class="markdown-body">${renderMarkdown(f.body, 3)}</div>${f.evidence_url ? `<p><a href="${esc(f.evidence_url)}" target="_blank" rel="noopener noreferrer">Evidence</a></p>` : ""}
       ${f.draft ? "" : `<details><summary>Change history</summary>${f.events ? `<ol>${f.events.map((e: any) => `<li>v${e.edit_version} · ${esc(e.action)} · ${date(e.created_at)}<pre>${esc(JSON.stringify(JSON.parse(e.payload), null, 2))}</pre></li>`).join("")}</ol>` : `<p><a href="${esc(external(`/finding/${enc(f.id)}`))}">View full history</a></p>`}</details>`}
       ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}`
