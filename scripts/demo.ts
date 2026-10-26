@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, open, readFile, rm } from "node:fs/promises";
-import { watch } from "node:fs";
-import { resolve } from "node:path";
+import { cp, mkdir, open, readdir, readFile, rm } from "node:fs/promises";
+import { existsSync, watch } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 export const persist = resolve(root, ".wrangler/demo");
 export const config = resolve(root, "wrangler.local.json");
+const assets = resolve(root, ".wrangler/demo-assets");
 const cli = resolve(root, "node_modules/wrangler/bin/wrangler.js");
 // Keep logs local, disable telemetry and dotenv loading, and never use remote bindings.
 export const localEnv = {
@@ -69,15 +70,26 @@ export async function withDemoLock<T>(path: string, task: () => Promise<T>) {
     await rm(lockPath, { force: true });
   }
 }
+// Update the asset directory in place: wrangler stops serving every asset if
+// the directory it watches is removed and recreated while it is running.
+export async function syncAssets(from = resolve(root, "public"), to = assets) {
+  await mkdir(to, { recursive: true });
+  await cp(from, to, { recursive: true, force: true });
+  const prune = async (directory: string) => {
+    for (const entry of await readdir(resolve(to, directory), {
+      withFileTypes: true,
+    })) {
+      const path = join(directory, entry.name);
+      if (!existsSync(resolve(from, path)))
+        await rm(resolve(to, path), { recursive: true, force: true });
+      else if (entry.isDirectory()) await prune(path);
+    }
+  };
+  await prune("");
+}
 export async function prepareDemo(path = persist) {
-  await rm(resolve(root, ".wrangler/demo-assets"), {
-    recursive: true,
-    force: true,
-  });
-  await mkdir(resolve(root, ".wrangler/demo-assets"), { recursive: true });
-  await cp(resolve(root, "public"), resolve(root, ".wrangler/demo-assets"), {
-    recursive: true,
-  });
+  await rm(assets, { recursive: true, force: true });
+  await syncAssets();
   await command([
     "d1",
     "migrations",
@@ -132,17 +144,7 @@ async function dev() {
     let copying = Promise.resolve();
     const watcher = watch(resolve(root, "public"), { recursive: true }, () => {
       copying = copying
-        .then(async () => {
-          await rm(resolve(root, ".wrangler/demo-assets"), {
-            recursive: true,
-            force: true,
-          });
-          await cp(
-            resolve(root, "public"),
-            resolve(root, ".wrangler/demo-assets"),
-            { recursive: true },
-          );
-        })
+        .then(() => syncAssets())
         .catch((error) => console.error("Asset copy failed:", error));
     });
     let stopping = false;

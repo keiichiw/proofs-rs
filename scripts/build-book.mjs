@@ -41,7 +41,7 @@ for (const filename of readdirSync(output).filter((name) =>
   );
   html = html.replace(
     "</head>",
-    '<script src="/theme.js"></script><link rel="stylesheet" href="/theme-header.css"><link rel="stylesheet" href="/book/csp.css">\n</head>',
+    '<script src="/theme.js"></script><link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/theme-header.css"><link rel="stylesheet" href="/book/csp.css">\n</head>',
   );
   if (/<script\b(?![^>]*\bsrc=)[^>]*>|\sstyle=/.test(html)) {
     throw new Error(

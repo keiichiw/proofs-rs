@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createServer } from "node:net";
 import { once } from "node:events";
@@ -9,6 +18,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import {
   prepareDemo,
+  syncAssets,
   withDemoLock,
   wrangler,
   root,
@@ -26,6 +36,32 @@ type Finding = {
   apis: { id: string }[];
 };
 const readJSON = <T>(response: Response) => response.json() as Promise<T>;
+
+test("asset sync updates the served directory in place", async () => {
+  const dir = await mkdtemp(resolve(tmpdir(), "demo-assets-"));
+  const from = resolve(dir, "public");
+  const to = resolve(dir, "served");
+  try {
+    await mkdir(resolve(from, "fonts"), { recursive: true });
+    await writeFile(resolve(from, "theme-a.css"), "a{}");
+    await writeFile(resolve(from, "fonts", "Face.woff2"), "font");
+    await mkdir(resolve(to, "old"), { recursive: true });
+    await writeFile(resolve(to, "stale.css"), "x{}");
+    const before = (await stat(to)).ino;
+    await syncAssets(from, to);
+    await writeFile(resolve(from, "theme-a.css"), "b{}");
+    await syncAssets(from, to);
+    assert.equal((await stat(to)).ino, before);
+    assert.deepEqual((await readdir(to)).sort(), ["fonts", "theme-a.css"]);
+    assert.equal(await readFile(resolve(to, "theme-a.css"), "utf8"), "b{}");
+    assert.equal(
+      await readFile(resolve(to, "fonts", "Face.woff2"), "utf8"),
+      "font",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("offline dependencies do not fall back to the network", async () => {
   const original = globalThis.fetch;
