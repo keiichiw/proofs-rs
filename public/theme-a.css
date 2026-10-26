@@ -11,6 +11,8 @@ html:not([data-theme="base"]) {
   --danger: #b42318;
   --radius: 4px;
   --serif: Georgia, "Times New Roman", serif;
+  --sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono:
     ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -26,6 +28,41 @@ html:not([data-theme="base"]) body {
 }
 html:not([data-theme="base"]) ::selection {
   background: #d6e4f5;
+}
+
+/* Prose stays serif; navigation, metadata and controls use the UI face. */
+html:not([data-theme="base"])
+  :is(
+    nav,
+    .breadcrumbs,
+    .meta,
+    .small,
+    .row-sub,
+    .results-summary,
+    .report-outcome,
+    .comment-top,
+    th,
+    footer,
+    .vote,
+    .badge,
+    button,
+    .button-link,
+    input,
+    select
+  ) {
+  font-family: var(--sans);
+}
+html:not([data-theme="base"])
+  :is(
+    .meta,
+    .small,
+    .row-sub,
+    .results-summary,
+    .comment-top,
+    .comment-top time
+  ) {
+  font-size: 13.5px;
+  line-height: 1.55;
 }
 
 /* Links keep underlines, drawn lighter until hovered. */
@@ -62,6 +99,7 @@ html:not([data-theme="base"]) nav {
   font-size: 14px;
 }
 html:not([data-theme="base"]) #account-nav {
+  font-family: var(--sans);
   font-size: 14px;
 }
 html:not([data-theme="base"]) .profile-menu {
@@ -154,6 +192,9 @@ html:not([data-theme="base"]) .api-name {
 html:not([data-theme="base"]) pre code {
   font-size: inherit;
 }
+html:not([data-theme="base"]) .tag {
+  font-size: 13px;
+}
 html:not([data-theme="base"]) h1.code {
   font-size: 24px;
   font-weight: 600;
@@ -196,7 +237,13 @@ html:not([data-theme="base"]) button,
 html:not([data-theme="base"]) .button-link {
   background: var(--surface);
   color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
   line-height: 1.3;
+}
+html:not([data-theme="base"]) :is(input, select) {
+  font-family: var(--sans);
+  font-size: 15px;
 }
 html:not([data-theme="base"]) button:hover,
 html:not([data-theme="base"]) .button-link:hover {
@@ -323,6 +370,79 @@ html:not([data-theme="base"]) hr {
   margin: 24px 0;
 }
 
+/* Author-reported statuses */
+html:not([data-theme="base"]) .badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: #46505b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+html:not([data-theme="base"]) .badge-good {
+  border-color: #b5d3bf;
+  background: #eff7f1;
+  color: #2c6440;
+}
+html:not([data-theme="base"]) .badge-warn {
+  border-color: #e3cc9c;
+  background: #fbf5e8;
+  color: #7a5617;
+}
+html:not([data-theme="base"]) .status-cell .badge {
+  margin: 2px 0;
+}
+html:not([data-theme="base"]) .report-outcome {
+  font-size: 15px;
+}
+
+/* Report revision history */
+html:not([data-theme="base"]) #revision-history [aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+html:not([data-theme="base"]) .revision-more {
+  display: inline;
+  margin-left: 6px;
+}
+html:not([data-theme="base"]) .revision-more summary {
+  display: inline;
+  color: var(--accent);
+}
+html:not([data-theme="base"]) .revision-more[open] {
+  display: block;
+  margin: 6px 0 0;
+}
+
+/* Lists of reports and claims: title first, metadata below. */
+html:not([data-theme="base"]) .claim-item > a:first-child {
+  font-size: 17px;
+  font-weight: 600;
+  text-decoration: none;
+}
+html:not([data-theme="base"]) .claim-item > a:first-child:hover {
+  text-decoration: underline;
+}
+html:not([data-theme="base"]) .claim-item > .meta {
+  margin: 4px 0 0;
+}
+html:not([data-theme="base"]) .claim-item {
+  padding: 14px 0;
+}
+
+/* Comfortable measure for running text. */
+html:not([data-theme="base"])
+  :is(.markdown-body, .report-section > p, .statement, .comment-content) {
+  max-width: 72ch;
+}
+
 /* Home */
 html:not([data-theme="base"]) .home-search {
   padding: 32px 0 40px;
@@ -330,8 +450,21 @@ html:not([data-theme="base"]) .home-search {
 html:not([data-theme="base"]) .home-search h1 {
   font-size: 32px;
 }
+html:not([data-theme="base"]) .vote {
+  color: var(--muted);
+  font-size: 13px;
+}
 html:not([data-theme="base"]) .vote button {
-  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  padding: 1px 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+html:not([data-theme="base"]) .vote button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
 }
 html:not([data-theme="base"]) .vote button[aria-pressed="true"] {
   color: var(--accent);

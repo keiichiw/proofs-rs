@@ -30,12 +30,18 @@ html:not([data-theme="base"])
   font-weight: bold;
   text-decoration: none;
 }
-html:not([data-theme="base"]) .proofs-site-header nav {
-  margin-left: 0;
+html:not([data-theme="base"]) .proofs-site-header :is(nav, #account-nav) {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
   font-size: 14px;
 }
-html:not([data-theme="base"]) .proofs-site-header #account-nav {
-  font-size: 14px;
+html:not([data-theme="base"]) .proofs-site-header nav {
+  margin-left: 0;
 }
 html:not([data-theme="base"]) .proofs-site-header .profile-menu {
   border: 1px solid #bbc3cc;

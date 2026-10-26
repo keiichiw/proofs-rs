@@ -204,6 +204,8 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     const {
       esc,
       date,
+      badge,
+      statusBadge,
       user,
       breadcrumbs,
       crateCrumbs,
@@ -347,16 +349,6 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       // Keep pagination pinned to the version the reader selected (including
       // when the first page used the default version).
       current.searchParams.set("version", version);
-      const statusNames: Record<string, string> = {
-        reported: "Reported",
-        confirmed: "Confirmed",
-        disputed: "Disputed",
-        reported_upstream: "Reported upstream",
-        fix_proposed: "Fix proposed",
-        fix_merged: "Fix merged",
-        released: "Released",
-        wont_fix: "Won’t fix",
-      };
       const linkNames: Record<string, string> = {
         issue: "Issue",
         pr: "PR",
@@ -366,9 +358,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       };
       const findingRows = crateFindings.items
         .map((f: any) => {
-          const validity = statusNames[f.validity] ?? f.validity;
-          const upstream = statusNames[f.upstream_status];
-          return `<tr><td><a href="/finding/${enc(f.id)}">${esc(f.title)}</a></td><td>${esc(validity)}${upstream ? `<br>${esc(upstream)}` : ""}</td><td><a href="/report/${f.report_id}?v=${f.origin_revision_no}">#${f.report_id} · v${f.origin_revision_no}</a></td><td>${f.links.map((l: any) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(linkNames[l.kind])}${l.version ? ` · ${esc(l.version)}` : ""}</a>`).join("<br>") || "—"}</td></tr>`;
+          return `<tr><td><a href="/finding/${enc(f.id)}">${esc(f.title)}</a></td><td class="status-cell">${statusBadge(f.validity)}${f.upstream_status !== "not_reported" ? `<br>${statusBadge(f.upstream_status)}` : ""}</td><td><a href="/report/${f.report_id}?v=${f.origin_revision_no}">#${f.report_id} · v${f.origin_revision_no}</a></td><td>${f.links.map((l: any) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(linkNames[l.kind])}${l.version ? ` · ${esc(l.version)}` : ""}</a>`).join("<br>") || "—"}</td></tr>`;
         })
         .join("");
       const findingSection = `<section aria-labelledby="findings"><h2 id="findings">Findings (${findingCount[0].n})</h2><p class="meta">For version ${esc(version)}. Statuses are author reported.</p>${findingRows ? `<div class="table-wrap"><table class="crate-findings" aria-label="Findings for ${esc(version)}"><thead><tr><th scope="col">Finding</th><th scope="col">Status</th><th scope="col">Report</th><th scope="col">Links</th></tr></thead><tbody>${findingRows}</tbody></table></div>` : "<p>No findings reported for this version.</p>"}${pagination(crateFindings, "findings_cursor")}</section>`;
@@ -604,9 +594,22 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           );
         form = commentForm(undefined, undefined);
       }
+      // Long histories show the newest revisions and the one being viewed.
+      const revisionLink = (h: any) =>
+        `<a href="/report/${item.id}?v=${h.revision_no}"${h.revision_no === item.revision_no ? ' aria-current="page"' : ""}>v${h.revision_no}</a>`;
+      const shownRevisions =
+        history.length > 8
+          ? history.filter(
+              (h: any, i: number) =>
+                i < 5 || h.revision_no === item.revision_no,
+            )
+          : history;
+      const olderRevisions = history.filter(
+        (h: any) => !shownRevisions.includes(h),
+      );
       return result(
         `Report #${item.id} — ${item.title}`,
-        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><p class="meta" id="revision-history">Revision ${history.map((h) => `<a href="/report/${item.id}?v=${h.revision_no}"${h.revision_no === item.revision_no ? ' aria-current="page"' : ""}>v${h.revision_no}</a>`).join(" · ")}${item.revision_no !== item.latest_revision_no ? " · <strong>Past revision</strong>" : ""}</p>${item.withdrawn_at ? "<p><strong>Withdrawn by the author.</strong></p>" : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${content}${reportAPIs(item)}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
+        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${content}${reportAPIs(item)}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
       );
     }
     if (p === "runs" && id) {

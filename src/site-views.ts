@@ -48,6 +48,31 @@ export function createViews(
     id
       ? `<a class="user-link" href="/user/${enc(id)}">${esc(name || "ghost")}</a>`
       : "ghost";
+  const statusNames: Record<string, string> = {
+    reported: "Reported",
+    confirmed: "Confirmed",
+    disputed: "Disputed",
+    invalid: "Invalid",
+    duplicate: "Duplicate",
+    reported_upstream: "Reported upstream",
+    fix_proposed: "Fix proposed",
+    fix_merged: "Fix merged",
+    released: "Released",
+    wont_fix: "Won’t fix",
+  };
+  const statusTones: Record<string, string> = {
+    confirmed: "good",
+    fix_merged: "good",
+    released: "good",
+    disputed: "warn",
+    invalid: "warn",
+    duplicate: "warn",
+    wont_fix: "warn",
+  };
+  const badge = (label: string, tone = "neutral") =>
+    `<span class="badge badge-${tone}">${esc(label)}</span>`;
+  const statusBadge = (status: string) =>
+    badge(statusNames[status] ?? status, statusTones[status]);
   function claimItem(c: any) {
     return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
   }
@@ -174,7 +199,7 @@ export function createViews(
   ) {
     const permalink = `/finding/${enc(f.id)}`;
     return `<article class="finding" id="finding-${esc(f.id)}"><h3><a href="${permalink}">${esc(f.title)}</a></h3>
-      ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${esc(f.validity)} · ${esc(f.upstream_status)} (author reported)</p>` : ""}${f.withdrawn_at ? '<p class="meta">Report withdrawn</p>' : ""}
+      ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${statusBadge(f.validity)}${f.upstream_status !== "not_reported" ? ` ${statusBadge(f.upstream_status)}` : ""} (author reported)</p>` : ""}${f.withdrawn_at ? `<p class="meta">${badge("Report withdrawn", "warn")}</p>` : ""}
       ${f.apis.length ? `<p>${f.apis.map((a: any) => (a.unverified ? `<code>${esc(a.display_path)}</code> (API unverified)` : `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`)).join(", ")}</p>` : ""}
       ${f.draft ? '<p class="meta">Local Finding draft · Not submitted</p>' : `<p class="meta">Found in <a href="${esc(external(`/report/${f.report_id}?v=${f.origin_revision_no}`))}">Report #${f.report_id} v${f.origin_revision_no}</a> · Updated ${date(f.updated_at)}</p>`}
       ${f.duplicate_of ? `<p>Duplicate of <a href="${esc(external(`/finding/${enc(f.duplicate_of)}`))}">${esc(f.duplicate_of)}</a></p>` : ""}
@@ -303,7 +328,7 @@ export function createViews(
           );
           const findings = (findingGroups.get(api.id) ?? []).map(
             (f) =>
-              `<a href="/finding/${enc(f.id)}">Finding: ${esc(f.title)}</a>${f.validity !== "reported" ? ` <span class="meta">(${esc(f.validity)})</span>` : ""}`,
+              `<a href="/finding/${enc(f.id)}">Finding: ${esc(f.title)}</a>${f.validity !== "reported" ? ` ${statusBadge(f.validity)}` : ""}`,
           );
           return `<div class="report-api-claims"><span class="claim-links">${claims.join(", ")}</span>${findings.length ? `<span class="finding-links">${claims.length ? " · " : ""}${findings.join(", ")}</span>` : ""}</div>`;
         },
@@ -363,6 +388,8 @@ export function createViews(
   return {
     esc,
     date,
+    badge,
+    statusBadge,
     user,
     breadcrumbs,
     crateCrumbs,
