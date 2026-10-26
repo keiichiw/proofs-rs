@@ -12,10 +12,15 @@ html:not([data-theme="base"]) .proofs-site-header {
 html:not([data-theme="base"]) .proofs-site-header a,
 html:not([data-theme="base"]) .proofs-site-header summary {
   color: #285da0;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
   text-underline-offset: 3px;
 }
 html:not([data-theme="base"]) .proofs-site-header a:visited {
   color: #65518a;
+}
+html:not([data-theme="base"]) .proofs-site-header :is(a, summary):hover {
+  text-decoration-color: currentColor;
 }
 html:not([data-theme="base"])
   .proofs-site-header
@@ -34,14 +39,14 @@ html:not([data-theme="base"]) .proofs-site-header #account-nav {
 }
 html:not([data-theme="base"]) .proofs-site-header .profile-menu {
   border: 1px solid #bbc3cc;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 html:not([data-theme="base"]) .proofs-site-header button {
   font: inherit;
   background: #f4f6f8;
   color: #242a32;
   border: 1px solid #bbc3cc;
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 7px 10px;
 }
 html:not([data-theme="base"])
