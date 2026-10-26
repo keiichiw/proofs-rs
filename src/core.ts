@@ -14,6 +14,7 @@ export interface Env {
     }): Promise<{ messageId: string }>;
   };
   ENVIRONMENT: string;
+  EXTERNAL_FETCH_DISABLED?: string;
   APP_ORIGIN: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET?: string;

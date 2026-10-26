@@ -27,6 +27,80 @@ are included in the initial HTML. Home shows the latest 12 entries. Recorded run
 summaries and reproduction commands are rendered with the report; complete logs
 have a separate HTML page and remain available in the SARIF download.
 
+## Local UI demo
+
+Use the real Worker, D1 and R2 locally with synthetic fixtures:
+
+```sh
+npm ci
+npm run dev:demo
+```
+
+Open <http://127.0.0.1:8787/__demo>. The scenario index links to home, crate,
+API, report, claim and finding pages, long reports with revisions and recorded
+logs, empty states and paginated lists. Switch between **Author (demo_mira)**,
+**Other user (demo_nora)** and **Logged out**. Each page has a link back to the
+scenario index; switching from that link returns to the page you were viewing.
+The normal sign-in link also opens the local user switcher.
+
+The author can edit Findings, change related APIs and add links through the
+usual forms and API. Both users can post comments. Ownership, CSRF and terms
+checks use the normal application code and actual session cookies. The Report's
+API section shows linked Claims and Findings. The API detail page retains its
+current production behavior.
+
+Restarting preserves edits. To restore all demo data, **stop the server**, then:
+
+```sh
+npm run demo:reset
+npm run dev:demo
+```
+
+The runner prevents concurrent startup/reset using a process lock. It recovers
+a lock left by a terminated process on the next invocation. All demo D1/R2
+state lives in `.wrangler/demo`; it is separate from the default `npm run dev`
+state and staging. Only that directory is deleted by reset. The dedicated
+`wrangler.local.json` uses loopback, local bindings and a separate Worker
+entrypoint. It has no queues, scheduled jobs or remote resource bindings. The
+normal staging seed and deployment commands remain separate.
+
+After dependency installation, these scenarios work without external services.
+Dependency metadata and synthetic SARIF/logs are preloaded into local R2.
+Missing dependency metadata produces the normal unavailable state without
+falling back to crates.io. External links require connectivity. GitHub OAuth,
+new crate imports, email and proof execution are not part of this demo.
+Stars/activity examples are enabled locally, independently of production flags.
+
+Changes to Worker/SSR code trigger Wrangler reloads. Changes under `public/`
+are copied to `.wrangler/demo-assets`; refresh the browser to see them. The demo
+does not require Rust, Lean or mdBook. Its Book links show a local explanation;
+use the separate Book workflow below to develop the documentation.
+
+### Maintaining scenarios
+
+- `demo/scenarios.ts` defines stable user/record IDs and scenario links.
+- `demo/seed.ts` loads the existing staging SQL/SARIF fixtures and adds local
+  Findings, trait APIs, empty states, comments and dependency references. All
+  additional evidence is labelled synthetic; no proof was run. Existing staging
+  fixture generation and upload behavior are unchanged.
+- Bump `DEMO_SEED_VERSION` when changing seed contents. The runner will request
+  `demo:reset` instead of overwriting edits. The current catalog extractor
+  version is also part of the seed version. Failed initial seeding can be
+  retried; completion is recorded only after D1/R2 loading and foreign-key checks.
+- Add new representative URLs to the scenario index. Use fixed IDs, avoid
+  external fetches, and seed any required evidence/cache objects into local R2.
+
+```sh
+npm run typecheck
+npm run test:demo
+```
+
+The integration test uses isolated temporary local D1/R2 and a real Worker with
+outbound `fetch` disabled. It checks navigation, sessions, HTML and JSON Finding
+edits, related APIs, comments, pagination, revision/log access, ownership,
+restart persistence and reset. It also checks that the production bundle excludes
+demo authentication. Temporary test data is removed when the test finishes.
+
 ## Book
 
 The mdBook sources live in `book/src/`, with chapter order in `SUMMARY.md`.
