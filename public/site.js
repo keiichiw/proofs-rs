@@ -30,4 +30,36 @@
         form.requestSubmit();
       });
   }
+  // Narrow the crate API catalogue in place; without JS every API stays listed.
+  for (const form of document.querySelectorAll("form[data-api-filter]")) {
+    const text = form.querySelector('input[type="search"]');
+    const claimed = form.querySelector('input[name="claimed"]');
+    const found = form.querySelector('input[name="found"]');
+    const status = form.querySelector('[role="status"]');
+    const rows = [...document.querySelectorAll("[data-api-path]")];
+    const groups = [
+      ...document.querySelectorAll(".api-impl, .api-family, .api-category"),
+    ];
+    const apply = () => {
+      const q = text.value.trim().toLowerCase();
+      let shown = 0;
+      for (const row of rows) {
+        row.hidden =
+          (q && !row.dataset.apiPath.toLowerCase().includes(q)) ||
+          (claimed.checked && row.dataset.claims === "0") ||
+          (found.checked && row.dataset.findings === "0");
+        if (!row.hidden) shown++;
+      }
+      const active = q || claimed.checked || found.checked;
+      for (const group of groups)
+        group.hidden =
+          active && !group.querySelector("[data-api-path]:not([hidden])");
+      status.textContent = active ? ` ${shown} of ${rows.length} shown` : "";
+    };
+    form.addEventListener("submit", (e) => e.preventDefault());
+    text.addEventListener("input", apply);
+    claimed.addEventListener("change", apply);
+    found.addEventListener("change", apply);
+    form.hidden = false;
+  }
 })();

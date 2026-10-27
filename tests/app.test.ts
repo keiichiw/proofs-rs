@@ -3077,11 +3077,89 @@ test("HTML pages render public content without JavaScript and preserve visibilit
     "/report/1?v=999",
     "/claim/missing",
     "/api/missing",
+    "/crate/serde",
   ]) {
     const r = await app.request("https://example.test" + path, {}, env);
     assert.equal(r.status, 404, path);
     assert.match(r.headers.get("content-type")!, /text\/html/);
+    // Readers see sentences, not internal error codes.
+    assert.doesNotMatch(await r.text(), /_not_found/, path);
   }
+  const unlisted = await (
+    await app.request("https://example.test/crate/serde", {}, env)
+  ).text();
+  assert.match(unlisted, /says nothing about a crate's quality/);
+  assert.match(unlisted, /href="\/book\/publish-a-report.html"/);
+  const empty = await (
+    await app.request("https://example.test/crates?q=serde", {}, env)
+  ).text();
+  assert.match(empty, /No matching crates/);
+  assert.match(empty, /says nothing about a crate's quality/);
+  const home = new JSDOM(
+    await (await app.request("https://example.test/", {}, env)).text(),
+  ).window.document;
+  assert.deepEqual(
+    [...home.querySelectorAll(".home-paths a")].map((a) =>
+      a.getAttribute("href"),
+    ),
+    ["/book/read-a-report.html", "/book/publish-a-report.html", "/contact"],
+  );
+  assert.match(
+    home.querySelector(".home-trust")!.textContent!,
+    /not certification/,
+  );
+  assert.equal(home.querySelector(".home-example"), null);
+  env.HOME_EXAMPLE_REPORT = "1";
+  const example = new JSDOM(
+    await (await app.request("https://example.test/", {}, env)).text(),
+  ).window.document;
+  assert.equal(
+    example.querySelector(".home-example a")?.getAttribute("href"),
+    "/report/1",
+  );
+  delete env.HOME_EXAMPLE_REPORT;
+  const help = new JSDOM(
+    await (await app.request("https://example.test/contact", {}, env)).text(),
+  ).window.document;
+  assert.deepEqual(
+    [...help.querySelectorAll("main h2")].map((h) => h.textContent),
+    [
+      "A question about a report",
+      "A problem or suggestion for proofs.rs",
+      "Help with using proofs.rs or a verifier",
+      "Private matters",
+    ],
+  );
+  const cratePage = new JSDOM(
+    await (
+      await app.request(
+        "https://example.test/crate/sample?version=1.0.0",
+        {},
+        env,
+      )
+    ).text(),
+  ).window.document;
+  assert.deepEqual(
+    [...cratePage.querySelectorAll("main > h2, main > section > h2")].map(
+      (h) => h.id || h.parentElement!.getAttribute("aria-labelledby"),
+    ),
+    ["reports", "findings", "apis"],
+  );
+  assert(cratePage.querySelector("form[data-api-filter][hidden]"));
+  assert(
+    cratePage.querySelector('[data-api-path="sample::safe"][data-claims="1"]'),
+  );
+  const reportPage = new JSDOM(html).window.document;
+  const outline = [...reportPage.querySelectorAll(".report-outline a")].map(
+    (a) => a.getAttribute("href")!,
+  );
+  assert.equal(outline.at(-1), "#discussion");
+  for (const href of outline)
+    assert(reportPage.querySelector(href), `${href} has no target`);
+  assert.match(
+    reportPage.querySelector(".report-provenance")!.textContent!,
+    /has not re-run/,
+  );
   const comment = await request("/reports/1/comments", "POST", {
     body: "Linked comment",
     revision_no: 1,

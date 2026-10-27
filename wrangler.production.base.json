@@ -21,7 +21,8 @@
     "TERMS_VERSION": "2026-09-21",
     "EMAIL_DISABLED": "true",
     "SHOW_STAR_KARMA": "false",
-    "SHOW_HOME_DISCUSSION": "false"
+    "SHOW_HOME_DISCUSSION": "false",
+    "HOME_EXAMPLE_REPORT": "5"
   },
   "d1_databases": [
     {

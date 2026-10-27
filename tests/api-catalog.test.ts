@@ -240,7 +240,7 @@ test("unsafe precedes fn and nonzero claim counts link to the API claims section
   assert(unsafeRow.querySelector(".unsafe"));
   assert.equal(
     d.querySelector('a[href="/api/unsafe%2Fid#claims"]')?.textContent,
-    "1 claims",
+    "1 claim",
   );
   const emptyRow = d
     .querySelector('a.api-name[href="/api/empty"]')!
