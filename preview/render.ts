@@ -133,7 +133,7 @@ export function renderPreview(
       report.id == null
         ? "New report"
         : `Draft revision of report #${esc(report.id)} (based on v${esc(report.base_revision)})`;
-    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportBody(report, run(true), report.findings ? `<section id="findings" class="report-section"><h2>Findings (${report.finding_count})</h2>${report.findings.map((f: any) => views.findingItem(f, false, [], true)).join("")}</section>` : "")}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>${views.reportAPIs(report)}`;
+    body = `${views.reportContent(report)}<p class="meta">${esc(report.crate)} ${esc(report.version)} · ${revision}</p>${views.reportOutline(report, true)}${views.reportBody(report, run(true), report.findings ? `<section id="findings" class="report-section"><h2>Findings (${report.finding_count})</h2>${report.findings.map((f: any) => views.findingItem(f, false, [], true)).join("")}</section>` : "", views.reportAPIs(report))}<p><a href="/runs/${encodeURIComponent(runId)}#logs">Open recorded run</a></p>`;
   } else if (path.startsWith("/finding/")) {
     const finding = report.findings?.find(
       (f: any) => `/finding/${encodeURIComponent(f.id)}` === path,

@@ -377,7 +377,7 @@ test("report summaries fit on one meta line", () => {
   );
   const time = d.querySelector(".meta time")!;
   assert.equal(time.getAttribute("datetime"), "2026-09-25T10:00:00.000Z");
-  assert.equal(time.getAttribute("title"), "2026-09-25 10:00:00 UTC");
+  assert.equal(time.getAttribute("title"), "2026-09-25 10:00 UTC");
   assert.equal(d.querySelector(".badge"), null);
   d = card({
     tool: "Kani",

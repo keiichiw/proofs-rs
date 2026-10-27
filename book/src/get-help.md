@@ -17,7 +17,8 @@ find the answer later; use email only for matters that should stay private.
 ## Before you write
 
 - **About a Report:** comment on the Report itself, not on GitHub or Zulip. The
-  author is notified, and later readers can see the question and its answer.
+  author is notified by email if they have notifications enabled, and later
+  readers can see the question and its answer.
 - **About the service:** include the page URL or the `cargo proofs` command, the
   CLI version (`cargo proofs --version`), and what you expected to happen.
 - **By email:** never send passwords or access tokens.

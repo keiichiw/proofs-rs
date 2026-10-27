@@ -37,6 +37,24 @@ function toolGuide(id: string) {
     ? `<p><a href="${guide.href}">Guide: ${guide.title}</a></p>`
     : "";
 }
+// Shown wherever a crate has no reports, so readers do not take its absence
+// as a verdict.
+function unlistedCrate(name = "") {
+  return `<p>${name ? `<code>${escape(name)}</code> has` : "No matching crate has"} no published reports yet. Not being listed says nothing about a crate's quality.</p><p><a href="/crates">Browse all crates</a> · <a href="/book/read-a-report.html">How reports work</a> · <a href="/book/publish-a-report.html">Publish a report</a></p>`;
+}
+// Readers see these instead of internal error codes.
+const notFoundMessages: Record<string, string> = {
+  api_not_found: "This API is not in any published catalogue.",
+  claim_not_found: "This claim does not exist or is no longer public.",
+  finding_not_found: "This finding does not exist or is no longer public.",
+  report_not_found: "This report does not exist or is no longer public.",
+  revision_not_found: "This report revision does not exist.",
+  run_not_found: "This recorded run does not exist.",
+  run_not_in_report: "This recorded run is not part of the report.",
+  tool_not_found: "This verification tool is not registered.",
+  tool_version_not_found: "This tool version is not registered.",
+  user_not_found: "This user does not exist.",
+};
 const pageNames = new Set([
   "",
   "crates",
@@ -235,6 +253,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       reportContent,
       reportBody,
       reportAPIs,
+      reportOutline,
       claimContent,
     } = v;
     const search = (q = "") =>
@@ -289,9 +308,15 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       return c.redirect("/terms-update?return_to=" + enc(back), 302);
     if (!p) {
       const data = await get("/home");
+      // An operator-chosen small report that first-time readers can learn from.
+      const example = c.env.HOME_EXAMPLE_REPORT
+        ? await get(`/reports/${enc(c.env.HOME_EXAMPLE_REPORT)}`).catch(
+            () => null,
+          )
+        : null;
       return result(
         "Rust API verification",
-        `<section class="home-search"><h1>proofs.rs</h1><p>Verification reports and discussions for Rust APIs.</p>${search()}<p><a href="https://proofs-rs.zulipchat.com/">Join our community on Zulip</a></p></section><div class="home-columns${config.show_home_discussion ? "" : " home-single-column"}"><section><h2>Recent reports</h2>${data.reports.map((item: any) => reportSummary(item)).join("") || "<p>No reports yet.</p>"}</section>${config.show_home_discussion ? `<section><h2>Latest discussion</h2>${data.discussion.map((cm: any) => `<article><a href="/report/${cm.report_id}?comment=${enc(cm.id)}#comment-${enc(cm.id)}">Report #${cm.report_id} · comment #${cm.sequence_no}</a><p>${esc(cm.body.slice(0, 200))}</p><p class="meta">${user(cm.author_id, cm.username)} · ${date(cm.created_at)}</p></article>`).join("") || "<p>No comments yet.</p>"}</section>` : ""}</div>`,
+        `<section class="home-search"><h1>proofs.rs</h1><p class="home-lede">Formal verification results for Rust crates, organized by crate, version and API. Each report states what was proved, under which assumptions, and with what evidence.</p>${search()}<p><a href="https://proofs-rs.zulipchat.com/">Join our community on Zulip</a></p></section><nav class="home-paths" aria-label="Get started"><a href="/book/read-a-report.html"><strong>Read a report</strong><span>What claims, findings and evidence tell you</span></a><a href="/book/publish-a-report.html"><strong>Publish a report</strong><span>Record Kani, Creusot or Aeneas results with <code>cargo proofs</code></span></a><a href="/contact"><strong>Ask or give feedback</strong><span>Report comments, GitHub issues and Zulip</span></a></nav>${example && !example.withdrawn_at ? `<section class="home-example"><h2>Start with an example</h2><p>A one-claim report that is quick to read end to end: the Overview says what holds, the Claim names the API, and Evidence shows how to rerun it.</p>${reportSummary({ ...example, claim_count: example.claim_count ?? example.claims?.length ?? 0 })}</section>` : ""}<div class="home-columns${config.show_home_discussion ? "" : " home-single-column"}"><section><h2>Recent reports</h2>${data.reports.map((item: any) => reportSummary(item)).join("") || "<p>No reports yet.</p>"}</section>${config.show_home_discussion ? `<section><h2>Latest discussion</h2>${data.discussion.map((cm: any) => `<article><a href="/report/${cm.report_id}?comment=${enc(cm.id)}#comment-${enc(cm.id)}">Report #${cm.report_id} · comment #${cm.sequence_no}</a><p>${esc(cm.body.slice(0, 200))}</p><p class="meta">${user(cm.author_id, cm.username)} · ${date(cm.created_at)}</p></article>`).join("") || "<p>No comments yet.</p>"}</section>` : ""}</div><p class="home-trust">Publication is not certification. Reports record the authors' own runs; proofs.rs does not re-run them. <a href="/book/">How to judge a report →</a></p>`,
       );
     }
     if (p === "crates" && id) {
@@ -322,7 +347,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         "Crates",
-        `<h1>Crates</h1>${search(q)}<p class="meta">${q ? `${data.matching_count} matching · ` : ""}${data.total_count} crates total</p><div class="table-wrap"><table class="crate-list"><thead><tr><th>Crate</th><th class="numeric" title="Distinct API paths across versions with public reports">APIs</th><th class="numeric">Reports</th><th class="numeric">Claims</th><th>Updated</th></tr></thead><tbody>${data.items.map((item: any) => `<tr><td><a href="/crate/${enc(item.name)}">${esc(item.name)}</a></td><td class="numeric">${item.api_count}</td><td class="numeric">${item.report_count}</td><td class="numeric">${item.claim_count}</td><td><time datetime="${esc(item.updated_at)}" title="${date(item.updated_at)}">${esc(item.updated_at?.slice(0, 10) || "—")}</time></td></tr>`).join("") || '<tr><td colspan="5">No matching crates.</td></tr>'}</tbody></table></div>${pagination(data)}`,
+        `<h1>Crates</h1>${search(q)}<p class="meta">${q ? `${data.matching_count} matching · ` : ""}${data.total_count} crates total</p><div class="table-wrap"><table class="crate-list"><thead><tr><th>Crate</th><th class="numeric" title="Distinct API paths across versions with public reports">APIs</th><th class="numeric">Reports</th><th class="numeric">Claims</th><th>Updated</th></tr></thead><tbody>${data.items.map((item: any) => `<tr><td><a href="/crate/${enc(item.name)}">${esc(item.name)}</a></td><td class="numeric">${item.api_count}</td><td class="numeric">${item.report_count}</td><td class="numeric">${item.claim_count}</td><td><time datetime="${esc(item.updated_at)}" title="${date(item.updated_at)}">${esc(item.updated_at?.slice(0, 10) || "—")}</time></td></tr>`).join("") || '<tr><td colspan="5">No matching crates.</td></tr>'}</tbody></table></div>${data.items.length ? "" : unlistedCrate(q)}${pagination(data)}`,
       );
     }
     if (p === "crate" && id) {
@@ -341,7 +366,12 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const releases = await get("/crates/" + enc(id) + "/releases");
       const version =
         current.searchParams.get("version") || releases.default_version;
-      if (!version) throw new Fault(404, "crate_not_found");
+      if (!version)
+        return result(
+          `${id} not found`,
+          `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)}</h1>${unlistedCrate(id)}`,
+          404,
+        );
       const canonical = new URL(`/crate/${enc(id)}`, c.env.APP_ORIGIN);
       if (version !== releases.default_version)
         canonical.searchParams.set("version", version);
@@ -349,6 +379,22 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       if (cursor) canonical.searchParams.set("cursor", cursor);
       canonicalPath = canonical.pathname + canonical.search;
       const apis = await get(`/crates/${enc(id)}/${enc(version)}/apis`);
+      const claimedAPIs = apis.items.filter(
+        (a: any) => a.claim_count > 0,
+      ).length;
+      // Same visibility and validity rules as the Findings count below.
+      const findingsByAPI = new Map(
+        (
+          await rows(
+            c.env.DB,
+            "SELECT fa.api_item_id id, COUNT(DISTINCT f.id) n FROM finding_apis fa JOIN findings f ON f.id=fa.finding_id JOIN reports p ON p.id=f.report_id JOIN releases r ON r.id=p.release_id JOIN crates c ON c.id=r.crate_id WHERE c.name=? AND r.version=? AND p.visibility='public' AND p.withdrawn_at IS NULL AND f.validity NOT IN ('invalid','duplicate') GROUP BY fa.api_item_id",
+            id,
+            version,
+          )
+        ).map((x: any) => [x.id, x.n]),
+      );
+      for (const a of apis.items)
+        a.finding_count = findingsByAPI.get(a.id) ?? 0;
       const counts = await rows(
         c.env.DB,
         "SELECT COUNT(*) AS n FROM reports p JOIN releases r ON r.id=p.release_id JOIN crates c ON c.id=r.crate_id WHERE c.name=? AND r.version=? AND p.visibility='public' AND p.withdrawn_at IS NULL",
@@ -387,7 +433,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         `${id} ${version}`,
-        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><nav class="filterbar" aria-label="Sections for version ${esc(version)}"><a href="#findings">${findingCount[0].n} finding${findingCount[0].n === 1 ? "" : "s"}</a> · <a href="#apis">${apis.items.length} API${apis.items.length === 1 ? "" : "s"}</a> · <a href="#reports">${counts[0].n} report${counts[0].n === 1 ? "" : "s"}</a></nav>${findingSection}<h2 id="apis">APIs (${apis.items.length})</h2>${renderAPICatalog(apis.items, id)}<h2 id="reports">Reports (${counts[0].n})</h2>${reports}`,
+        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><nav class="filterbar" aria-label="Sections for version ${esc(version)}"><a href="#reports">${counts[0].n} report${counts[0].n === 1 ? "" : "s"}</a> · <a href="#findings">${findingCount[0].n} finding${findingCount[0].n === 1 ? "" : "s"}</a> · <a href="#apis">${claimedAPIs} of ${apis.items.length} catalogued API${apis.items.length === 1 ? "" : "s"} with claims</a></nav><h2 id="reports">Reports (${counts[0].n})</h2>${reports}${findingSection}<h2 id="apis">APIs (${apis.items.length})</h2><p class="meta">The catalogue lists every public API of this version. ${claimedAPIs} ${claimedAPIs === 1 ? "has" : "have"} at least one claim; a count says nothing about how strong each claim is.</p><form class="api-filter" data-api-filter hidden><input type="search" aria-label="Filter APIs" placeholder="Filter APIs"><label><input type="checkbox" name="claimed"> With claims</label><label><input type="checkbox" name="found"> With findings</label><span role="status" class="meta"></span></form>${renderAPICatalog(apis.items, id)}`,
       );
     }
     if (p === "api" && id) {
@@ -466,7 +512,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         : null;
       return result(
         f.title,
-        `<h1>${esc(f.title)}</h1>${findingItem(f, editable, apis?.items ?? [])}`,
+        `${breadcrumbs([...crateCrumbs(owner, "reports"), { label: `Report #${owner.id}`, href: `/report/${owner.id}` }])}<h1>${esc(f.title)}</h1>${findingItem(f, editable, apis?.items ?? [])}<p><a href="/report/${f.report_id}#discussion">Read and join the discussion on the report →</a></p>`,
       );
     }
     if (p === "report" && id) {
@@ -542,7 +588,12 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         ? await get(`/crates/${enc(item.crate)}/${enc(item.version)}/apis`)
         : null;
       const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, false, [], true)).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
-      const content = reportBody(item, recorded.join(""), findingSection);
+      const content = reportBody(
+        item,
+        recorded.join(""),
+        findingSection,
+        reportAPIs(item),
+      );
       const commentForm = (editing: any, replying: any) =>
         `${editing ? "" : `<h3>${replying ? "Reply to #" + replying.sequence_no : "Add a comment"}</h3>`}<form method="post" action="/_actions/${editing ? "edit-comment" : "comment"}" id="${editing ? "comment-editor-form" : "comment-form"}"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_back" value="/report/${item.id}?v=${item.revision_no}#discussion"><input type="hidden" name="id" value="${esc(editing?.id || item.id)}"><input type="hidden" name="edit_version" value="${editing?.edit_version || 0}"><input type="hidden" name="reply_to_id" value="${esc(replying?.id || "")}"><input type="hidden" name="_key" value="${crypto.randomUUID()}">${editing ? "" : `<label>Report revision <select name="revision_no">${history.map((h) => `<option value="${h.revision_no}"${h.revision_no === (replying?.revision_no || item.revision_no) ? " selected" : ""}>v${h.revision_no}</option>`).join("")}</select></label>`}<textarea name="body" required maxlength="5000" aria-label="Comment">${esc(editing?.body || "")}</textarea><button>${editing ? "Save" : "Post comment"}</button>${editing || replying ? ` <a href="/report/${item.id}?v=${item.revision_no}#discussion">Cancel</a>` : ""}</form>`;
       const byParent = new Map<string | null, any[]>();
@@ -646,7 +697,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         `Report #${item.id} — ${item.title}`,
-        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${content}${reportAPIs(item)}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
+        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${reportOutline(item, true, item.comment_count)}${content}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
       );
     }
     if (p === "runs" && id) {
@@ -668,7 +719,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const tools = await get("/tools");
       return result(
         "Verification tools",
-        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p>${toolGuide(t.id)}</article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
+        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p>${toolGuide(t.id)}</article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new?template=tool.yml">Request a tool or version</a></p>`,
       );
     }
     if (p === "tool" && id) {
@@ -801,7 +852,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     if (!(error instanceof Fault)) throw error;
     return result(
       error.status === 404 ? "Page not found" : "Request failed",
-      `<h1>${error.status === 404 ? "Page not found" : "Request failed"}</h1><p role="alert">${escape(error.message)}</p><p><a href="/">Home</a></p>`,
+      `<h1>${error.status === 404 ? "Page not found" : "Request failed"}</h1><p role="alert">${escape(error.status === 404 ? (notFoundMessages[error.code] ?? "This page does not exist or is no longer public.") : error.message)}</p><p><a href="/">Home</a> · <a href="/contact">Help &amp; feedback</a></p>`,
       error.status,
     );
   }

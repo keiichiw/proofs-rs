@@ -55,13 +55,25 @@ limitations = '''
 
 [tool]
 name = "kani"
-version = "0.66.0"
+version = "0.68.0"
 ```
 
 All fields except `title` support Markdown; see
 [Configuration and Markdown](configuration.md#markdown-in-reports). Use
 [Preview a report locally](preview-a-report.md) to read the result as a reader
 would.
+
+## Claim explanations
+
+`cargo proofs` publishes each Claim with a generated title, such as
+`Verification of my_crate::parse (with Kani 0.68.0)`, and no explanation of its
+own. The Claim page then points readers to the Report's **Overview**, so make
+the Overview name each verified API and what it guarantees.
+
+A Claim can also carry its own title, explanation, trusted assumptions, and
+limitations. These can currently be set only by publishing a Report revision
+through the [HTTP API](api-documentation.md). `cargo proofs publish` keeps them
+when it later revises the Report.
 
 ## Using an AI agent
 

@@ -10,6 +10,8 @@ export interface CatalogAPI {
   method_name?: string | null;
   is_blanket?: number | null;
   claim_count: number;
+  // Valid findings that name this API; only the crate page supplies it.
+  finding_count?: number;
 }
 const esc = (value: string) =>
   value.replace(
@@ -94,11 +96,16 @@ export function renderAPICatalog(
   const unsafe = (yes: boolean) =>
     yes ? '<strong class="unsafe">unsafe</strong> ' : "";
   const claimCounts = (
-    a: Pick<CatalogAPI, "claim_count"> & { id?: string },
+    a: Pick<CatalogAPI, "claim_count" | "finding_count"> & { id?: string },
   ) => {
     if (options.hideCounts) return "";
-    const text = a.claim_count ? `${a.claim_count} claims` : "";
-    return `<span class="api-claim-count${text ? "" : " muted"}">${text && a.id && href(a.id) ? `<a href="${esc(href(a.id)!)}#claims">${text}</a>` : text || "—"}</span>`;
+    const text = a.claim_count
+      ? `${a.claim_count} claim${a.claim_count === 1 ? "" : "s"}`
+      : "";
+    const findings = a.finding_count
+      ? `<a href="#findings">${a.finding_count} finding${a.finding_count === 1 ? "" : "s"}</a>`
+      : "";
+    return `<span class="api-claim-count${text || findings ? "" : " muted"}">${text && a.id && href(a.id) ? `<a href="${esc(href(a.id)!)}#claims">${text}</a>` : text || (findings ? "" : "—")}${text && findings ? " · " : ""}${findings}</span>`;
   };
   const link = (a: CatalogAPI, text: string) =>
     href(a.id)
@@ -122,7 +129,7 @@ export function renderAPICatalog(
   const label = (a: CatalogAPI, text: string, keyword: string) =>
     `<span class="api-label">${unsafe(!!a.is_unsafe)}<span class="api-keyword">${keyword}</span>${link(a, text)}</span>`;
   const row = (a: CatalogAPI, text: string, keyword = "fn ") =>
-    `<div class="catalog-row"><span>${(keyword && declared(a, text)) || label(a, text, keyword)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
+    `<div class="catalog-row" data-api-path="${esc(a.display_path)}" data-claims="${a.claim_count}"${a.finding_count === undefined ? "" : ` data-findings="${a.finding_count}"`}><span>${(keyword && declared(a, text)) || label(a, text, keyword)}</span>${options.details ? options.details(a) : claimCounts(a)}</div>`;
   const data = apis
     .map(describe)
     .sort(
@@ -192,7 +199,7 @@ export function renderAPICatalog(
   return (
     (options.hideCounts
       ? ""
-      : '<div class="catalog-columns"><span>API</span><span>Claims</span></div>') +
+      : `<div class="catalog-columns"><span>API</span><span>${apis.some((a) => a.finding_count !== undefined) ? "Claims · findings" : "Claims"}</span></div>`) +
     section(
       "Functions",
       data

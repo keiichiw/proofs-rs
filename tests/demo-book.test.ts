@@ -47,7 +47,8 @@ test("Docs fixture shares Book assets, nested chapters and accessible persistent
     assert.equal(document.querySelectorAll("#sidebar ol.chapter").length, 1);
     assert.ok(document.querySelector("#sidebar ol.chapter > li.part-title"));
     const script = await readFile(resolve(dir, "book/demo-book.js"), "utf8");
-    Object.defineProperty(dom.window, "innerWidth", { value: 1280 });
+    // A narrow first visit starts closed; wide screens are covered below.
+    Object.defineProperty(dom.window, "innerWidth", { value: 800 });
     dom.window.eval(script);
     assert.ok(document.documentElement.classList.contains("js"));
     document.dispatchEvent(new dom.window.Event("DOMContentLoaded"));
@@ -70,19 +71,23 @@ test("Docs fixture shares Book assets, nested chapters and accessible persistent
 });
 
 // Exercise the real Book initializer as well as the standalone demo initializer.
-test("Book and demo start closed and honor saved sidebar state even without storage", async () => {
+test("Book and demo open on wide screens and honor saved sidebar state even without storage", async () => {
   const header = await readFile(resolve(root, "book/theme/header.hbs"), "utf8");
   const scripts = [
     header.match(/<script>([\s\S]*?)<\/script>/)![1],
     await readFile(resolve(root, "demo/book/demo-book.js"), "utf8"),
   ];
   for (const script of scripts) {
-    for (const saved of [null, "visible", "hidden", "invalid", "blocked"]) {
+    for (const [width, saved] of [1280, 600].flatMap((width) =>
+      [null, "visible", "hidden", "invalid", "blocked"].map(
+        (saved) => [width, saved] as const,
+      ),
+    )) {
       const dom = new JSDOM(
         '<!doctype html><html class="sidebar-visible"><body><input id="sidebar-toggle-anchor" type="checkbox" checked><nav id="sidebar"></nav><button id="sidebar-toggle"></button></body></html>',
         { url: "http://localhost/book/", runScripts: "outside-only" },
       );
-      Object.defineProperty(dom.window, "innerWidth", { value: 1280 });
+      Object.defineProperty(dom.window, "innerWidth", { value: width });
       if (saved === "blocked")
         Object.defineProperty(dom.window, "localStorage", {
           get() {
@@ -91,7 +96,9 @@ test("Book and demo start closed and honor saved sidebar state even without stor
         });
       else if (saved) dom.window.localStorage.setItem("mdbook-sidebar", saved);
       dom.window.eval(script);
-      const expected = saved === "visible";
+      const expected =
+        saved === "visible" ||
+        (saved !== "hidden" && saved !== "visible" && width >= 1080);
       assert.equal(
         dom.window.document.documentElement.classList.contains(
           "sidebar-visible",

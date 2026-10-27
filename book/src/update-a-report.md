@@ -15,8 +15,8 @@ revisions stay readable.
   Report's crate and version cannot change.
 
 Fields you omit from `proofs.toml` keep their published text; an explicitly empty
-value (`""`) clears it. Claim titles and explanations edited on the website are
-preserved. Contracts and evidence always come from the selected run.
+value (`""`) clears it. Claim titles and explanations set through the
+[HTTP API](api-documentation.md) are preserved. Contracts and evidence always come from the selected run.
 
 Use `cargo proofs publish --dry-run` to see exactly what will change before you
 publish.
