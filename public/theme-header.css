@@ -46,6 +46,13 @@ html:not([data-theme="base"]) .proofs-site-header nav a {
 html:not([data-theme="base"]) .proofs-site-header nav a:hover {
   text-decoration: underline;
 }
+/* Off-site links carry a small arrow, kept out of the hover underline. */
+html:not([data-theme="base"]) .proofs-site-header .external-mark {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 0.8em;
+  color: #5d6670;
+}
 html:not([data-theme="base"]) .proofs-site-header .profile-menu {
   border: 1px solid #e0e0e0;
   border-radius: 4px;

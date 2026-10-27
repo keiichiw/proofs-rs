@@ -31,6 +31,35 @@ test("page shells link only assets that exist in public/", () => {
   );
 });
 
+test("site and Book headers mark the same off-site links", () => {
+  const external = (html: string) =>
+    [
+      ...new JSDOM(html).window.document.querySelectorAll(
+        ".proofs-site-header nav a",
+      ),
+    ]
+      .filter((a) => /^https?:/.test(a.getAttribute("href")!))
+      .map((a) => [
+        a.textContent,
+        a.classList.contains("external") &&
+          a.querySelector(".external-mark[aria-hidden=true]") !== null,
+      ]);
+  const site = external(pageLayout("t", "", "", null));
+  assert.deepEqual(site, [
+    ["Blog↗", true],
+    ["Zulip↗", true],
+  ]);
+  assert.deepEqual(
+    external(
+      readFileSync(
+        new URL("../book/theme/header.hbs", import.meta.url),
+        "utf8",
+      ),
+    ),
+    site,
+  );
+});
+
 test("stylesheet url() references resolve to files in public/", () => {
   for (const name of readdirSync(publicDir).filter((n) => n.endsWith(".css")))
     for (const [, path] of readFileSync(new URL(name, publicDir), "utf8")
