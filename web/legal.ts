@@ -9,6 +9,6 @@ export const legal: Record<string, { title: string; body: string }> = {
   },
   contact: {
     title: "Contact",
-    body: `<p>For account deletion, privacy requests and security reports, email <a href="mailto:contact@proofs.rs">contact@proofs.rs</a>. Do not send passwords or access tokens.</p><p>For public bug reports, feedback and tool requests, use <a href="https://github.com/proofs-rs/proofs-rs/issues/new/choose">GitHub Issues</a>. The repository will become public when the service is ready. During private development, access is limited to repository collaborators.</p>`,
+    body: `<p>For account deletion, privacy requests, content or licensing concerns, and security reports, email <a href="mailto:contact@proofs.rs">contact@proofs.rs</a>. Do not send passwords or access tokens.</p><p>For public bug reports, feedback and tool requests, use <a href="https://github.com/proofs-rs/proofs-rs/issues/new/choose">GitHub Issues</a>.</p>`,
   },
 };

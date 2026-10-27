@@ -1,4 +1,4 @@
-# Concepts
+# Concepts and terminology
 
 ## Report
 
@@ -10,7 +10,7 @@ A Claim is a verification statement about a particular API. For example, it may 
 
 ## Tool
 
-A Tool represents the verification tool used. Known limitations are recorded by version and are kept separate from assumptions or limitations specific to an individual Report.
+A Tool represents the verification tool used. Known limitations are recorded by version and are kept separate from assumptions or limitations specific to an individual Report. Supported tools currently include Kani, Creusot, and Aeneas with Lean; see [Tools](/tools) for registered versions and their limitations.
 
 ## Discussion
 
@@ -35,19 +35,22 @@ is available. Report availability does not mean that the dependency was reviewed
 by this Report's author or that all of its APIs are verified. Read the linked
 Report for its scope, assumptions, and limitations.
 
-An author can declare dependency reviews. Each review pins one evidence Report
-revision and its crate version. The service checks that this package was present
-in the recorded Cargo dependency resolution; it does not independently certify
-the author's judgment or claim that every resolved package was compiled during
-verification. Reviewed links are marked in the list. Reviews that are outside
-the published direct dependency requirements remain under Other reviewed evidence.
+An author can declare dependency reviews: each pins one evidence Report revision
+for a dependency the author relied on. Reviewed links are marked in the list. A
+review is the author's declaration, not an independent certification. See
+[Declare dependency reviews](review-a-dependency.md) for how reviews are checked
+and displayed.
 
-The `n reviewed dependencies` count in Report summaries is the number of declared
-dependency reviews, not the total dependency count or a measure of crate coverage.
-A count of zero means no dependency reviews were declared.
+## Glossary
 
-Reviewed evidence does not automatically follow newer Report revisions. If an
-evidence Report is later withdrawn, its pinned link remains and shows its current
-withdrawal. Hidden evidence has no public link. If crates.io metadata cannot be
-loaded, the section shows that the dependency list is unavailable rather than
-implying that the crate has no dependencies.
+| Term | Meaning |
+| --- | --- |
+| Revision | A published version of a Report. Each `cargo proofs publish` that changes a Report creates a revision; earlier revisions stay readable at `?v=<revision>`. |
+| Withdrawn | The author has withdrawn the Report. It remains readable, with a notice, but cannot be updated or receive new Findings. Links that pinned it show its withdrawal. |
+| Hidden | Removed from public view by moderation. Links to hidden evidence show it as unavailable. |
+| Finding | Something the author learned during verification, such as a bug, a useful precondition, or a specification ambiguity. See [Add findings](findings.md). |
+| Finding validity | The author's assessment of a Finding: `reported`, `confirmed`, `disputed`, `invalid`, or `duplicate`. Invalid and duplicate Findings are excluded from normal counts but remain in history. |
+| Upstream status | How a Finding has been handled by the crate's maintainers, as reported by the author: `not_reported`, `reported_upstream`, `fix_proposed`, `fix_merged`, `released`, or `wont_fix`. proofs.rs does not synchronize it with GitHub. |
+| Reviewed | On a dependency link, the author declared that they read that evidence Report revision. It does not mean the dependency is fully verified. |
+| — (em dash) | In API and dependency lists, no matching public Report is available. |
+| What is trusted / Technical limitations | Page labels for the `trusted_assumptions` and `limitations` fields. Technical limitations also include the tool version's known limitations. |

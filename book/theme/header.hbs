@@ -2,9 +2,9 @@
 // Restore before the book controls/content are parsed. The following mdBook
 // initialization uses the same global sidebar value to set ARIA attributes.
 (() => {
-  let saved;
-  try { saved = localStorage.getItem("mdbook-sidebar"); } catch { return; }
-  if (saved !== "visible" && saved !== "hidden") return;
+  let saved = "hidden";
+  try { saved = localStorage.getItem("mdbook-sidebar"); } catch {}
+  if (saved !== "visible") saved = "hidden";
   window.sidebar = saved;
   document.getElementById("sidebar-toggle-anchor").checked = saved === "visible";
   document.documentElement.classList.remove("sidebar-visible", "sidebar-hidden");

@@ -1,6 +1,6 @@
-# Introduction
+# Why proofs.rs
 
-This section explains the motivation, position, and policy behind proofs.rs. You can skip it if you just want to learn how to use the service.
+This chapter explains the motivation, position, and policy behind proofs.rs. To start using the service, see [Start here](index.md).
 
 ## Motivation
 
@@ -36,4 +36,4 @@ proofs.rs is free to use and is not currently monetized. We do not perform behav
 
 Reports, Claims, comments, and other contributions are published under CC BY 4.0 where the contributor holds the necessary rights. Verified code and external evidence remain subject to their respective licenses. The aim is to make verification results and the discussion around them reusable public resources, rather than information controlled solely by individual contributors or by the service itself.
 
-Anyone can publish verification results, participate in review, or contribute to the development of proofs.rs itself. The source code and development discussions are public on GitHub.
+Anyone can publish verification results, participate in review, or contribute to the development of proofs.rs itself. The source code and development discussions are public on [GitHub](https://github.com/proofs-rs/proofs-rs). See [Get help and give feedback](get-help.md) for where to raise questions and issues.

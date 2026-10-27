@@ -79,7 +79,7 @@ content, including when the claims already have permanent published IDs.
 
 For an existing report, preview shows its published findings. Local
 `report.findings` is used only for initial publication; later additions and edits
-use the website or Findings API. See [Findings](findings.md).
+use the website or Findings API. See [Add findings](findings.md).
 
 New reports need no login. If saved authentication is unavailable, automatic
 report selection is unavailable too: preview explains that it is showing a new

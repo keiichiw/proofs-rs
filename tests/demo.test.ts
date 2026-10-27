@@ -26,6 +26,7 @@ import {
 } from "../scripts/demo";
 import { demoIDs as ids, demoScenarios } from "../demo/scenarios";
 import { dependencyCatalog } from "../src/dependencies";
+import { mdbookAvailable } from "../scripts/build-book.mjs";
 import type { Env } from "../src/core";
 import { app } from "../src/worker";
 
@@ -294,6 +295,24 @@ test(
         await compileOffline();
       });
       await start();
+      const docs = await request("/book/");
+      assert.equal(docs.status, 200);
+      const docsHTML = await docs.text();
+      assert.match(docsHTML, /id="sidebar"/);
+      assert.match(
+        docs.headers.get("content-security-policy") || "",
+        /script-src 'self'/,
+      );
+      assert.equal((await request("/book/css/chrome.css")).status, 200);
+      // The demo serves the real Book when the pinned mdBook is installed.
+      if (mdbookAvailable()) {
+        assert.match(docsHTML, /proofs-site-header/);
+        assert.equal((await request("/book/book.js")).status, 200);
+      } else {
+        assert.match(docsHTML, /Docs layout demo/);
+        assert.equal((await request("/book/demo-book.js")).status, 200);
+      }
+
       assert.equal((await request("/__demo")).status, 200);
       for (const [, url] of demoScenarios.filter(
         ([, url]) => !url.startsWith("/my-"),

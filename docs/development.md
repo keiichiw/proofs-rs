@@ -73,8 +73,19 @@ Stars/activity examples are enabled locally, independently of production flags.
 
 Changes to Worker/SSR code trigger Wrangler reloads. Changes under `public/`
 are copied to `.wrangler/demo-assets`; refresh the browser to see them. The demo
-does not require Rust, Lean or mdBook. Its Book links show a local explanation;
-use the separate Book workflow below to develop the documentation.
+does not require Rust, Lean or mdBook. When mdBook 0.4.45 is on `PATH`, Docs
+links serve the real Book, built with the same CSP post-processing as
+`npm run build:book`. Otherwise they open a local layout fixture: existing Book
+Markdown and SUMMARY.md are rendered into the mdBook 0.4.45 page structure using
+its vendored standard CSS and the real shared header/theme assets. The demo
+prints which one it serves at startup. Changes under `book/` and `demo/book/`
+are rebuilt in either mode; refresh the browser to see them.
+
+In the fixture, the sidebar starts closed on first visit, toggles with mouse or
+keyboard, remembers its state across chapters, and supports part titles, nested
+chapters and previous/next navigation. It is for sidebar/header/content layout
+checks and omits full-text search, syntax highlighting, the theme picker and
+sidebar resizing. Use the real build for final validation.
 
 ### Maintaining scenarios
 

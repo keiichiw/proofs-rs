@@ -29,13 +29,13 @@ Run inside the crate to verify:
 cargo proofs init --tool-version 0.66.0 --title 'Contract verification of my crate'
 cargo proofs login
 # Commit and push all verification inputs, including Cargo.lock, before run.
-cargo proofs run -- cargo kani
+cargo proofs run -- cargo kani -Z function-contracts
 cargo proofs preview # Requires Node.js 24+; stop with Ctrl+C after reviewing.
 cargo proofs publish --dry-run
 cargo proofs publish
 ```
 
-`init` can detect the installed Kani version if `--tool-version` is omitted. Check that this is the version actually used for verification. It never overwrites an existing `proofs.toml`.
+Kani function contracts are unstable, so `-Z function-contracts` is required; the CLI does not add it. `init` can detect the installed Kani version if `--tool-version` is omitted. Check that this is the version actually used for verification. It never overwrites an existing `proofs.toml`.
 
 ```toml
 [report]
@@ -290,7 +290,7 @@ Each run directory contains only `run.sarif.json`. SARIF is the canonical record
 - Kani: regular serial check output is supported. Checks are associated with the exact observed contract harness. Quiet/terse output, parallel jobs, options disabling safety checks, and unknown result formats are rejected. Unexecuted harnesses do not generate claims; unreachable checks remain labeled unreachable.
 - Creusot: a prover run must create fresh `proof.json` sessions that map unambiguously to selected APIs. Compilation alone, unchanged stale sessions, unresolved proof goals, and unsupported proof layouts do not certify an API. Free-function sessions and Creusot 0.13 method sessions are supported. Method sessions are matched by the generated Coma declaration source span and method name; ambiguous matches are rejected.
 - A failed process, changed worktree, or run without verified contracts cannot be published. Failed recordings remain local for inspection.
-- Pass compilation flags **after** `--`, as part of the actual verifier command, for example `cargo proofs run -- cargo kani --features foo`. The same flags drive contract discovery. Select the workspace package with `-p NAME` as appropriate.
+- Pass compilation flags **after** `--`, as part of the actual verifier command, for example `cargo proofs run -- cargo kani -Z function-contracts --features foo`. The same flags drive contract discovery. Select the workspace package with `-p NAME` as appropriate.
 - One run per CLI publication is supported. `publish` selects the latest recording, or use `publish --run UUID` for an explicit recording. Changes to tool configuration or crate/version require a new run.
 
 The report's collapsed **Reproduce** section contains Git clone/checkout commands for the external commit, the exact recorded command, check-to-claim links, execution metadata, the SARIF download, and embedded logs. Install the report's tool version and recorded Rust toolchain first. System dependencies are not bundled. Only `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`, and `RUSTDOCFLAGS` environment overrides are recorded.

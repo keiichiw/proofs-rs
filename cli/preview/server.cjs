@@ -1531,7 +1531,7 @@ html:not([data-theme="base"]) .proofs-site-header :is(a, summary):hover {
 }
 html:not([data-theme="base"])
   .proofs-site-header
-  :is(.brand, .proofs-site-brand) {
+  a:is(.brand, .proofs-site-brand) {
   color: #000;
   font-size: 22px;
   font-weight: 500;
