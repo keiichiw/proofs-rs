@@ -24,6 +24,19 @@ const escape = (v: unknown) =>
         c
       ]!,
   );
+// Book guides for recording with a tool. Staging fixtures ("demo-kani")
+// share the real tool's guide.
+const toolGuides: Record<string, { href: string; title: string }> = {
+  kani: { href: "/book/kani.html", title: "Record with Kani" },
+  creusot: { href: "/book/creusot.html", title: "Record with Creusot" },
+  aeneas: { href: "/book/aeneas.html", title: "Record with Aeneas and Lean" },
+};
+function toolGuide(id: string) {
+  const guide = toolGuides[id.replace(/^demo-/, "")];
+  return guide
+    ? `<p><a href="${guide.href}">Guide: ${guide.title}</a></p>`
+    : "";
+}
 const pageNames = new Set([
   "",
   "crates",
@@ -655,14 +668,14 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const tools = await get("/tools");
       return result(
         "Verification tools",
-        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p></article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
+        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p>${toolGuide(t.id)}</article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
       );
     }
     if (p === "tool" && id) {
       const t = await get("/tools/" + enc(id));
       return result(
         t.name,
-        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${t.id === "aeneas" ? '<p><a href="/book/aeneas.html">Publish Aeneas Lean proofs — setup and limitations</a></p>' : ""}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
+        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${toolGuide(t.id)}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
       );
     }
     if (p === "tool-version" && id) {
