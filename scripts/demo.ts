@@ -1,13 +1,15 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, open, readFile, rm } from "node:fs/promises";
-import { watch } from "node:fs";
-import { resolve } from "node:path";
+import { cp, mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
+import { existsSync, watch } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
+import { buildBookAssets } from "../demo/book/build";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 export const persist = resolve(root, ".wrangler/demo");
 export const config = resolve(root, "wrangler.local.json");
+const assets = resolve(root, ".wrangler/demo-assets");
 const cli = resolve(root, "node_modules/wrangler/bin/wrangler.js");
 // Keep logs local, disable telemetry and dotenv loading, and never use remote bindings.
 export const localEnv = {
@@ -69,15 +71,38 @@ export async function withDemoLock<T>(path: string, task: () => Promise<T>) {
     await rm(lockPath, { force: true });
   }
 }
+let bookMode: string | undefined;
+// Update the asset directory in place: wrangler stops serving every asset if
+// the directory it watches is removed and recreated while it is running.
+export async function syncAssets(from = resolve(root, "public"), to = assets) {
+  await mkdir(to, { recursive: true });
+  await cp(from, to, { recursive: true, force: true });
+  const prune = async (directory: string) => {
+    for (const entry of await readdir(resolve(to, directory), {
+      withFileTypes: true,
+    })) {
+      const path = join(directory, entry.name);
+      if (from === resolve(root, "public") && path === "book") continue;
+      if (!existsSync(resolve(from, path)))
+        await rm(resolve(to, path), { recursive: true, force: true });
+      else if (entry.isDirectory()) await prune(path);
+    }
+  };
+  await prune("");
+  if (from === resolve(root, "public")) {
+    const mode = await buildBookAssets(root, to);
+    if (mode !== bookMode)
+      console.log(
+        mode === "mdbook"
+          ? "Docs: serving the real mdBook build."
+          : "Docs: mdBook 0.4.45 not found; serving the layout fixture.",
+      );
+    bookMode = mode;
+  }
+}
 export async function prepareDemo(path = persist) {
-  await rm(resolve(root, ".wrangler/demo-assets"), {
-    recursive: true,
-    force: true,
-  });
-  await mkdir(resolve(root, ".wrangler/demo-assets"), { recursive: true });
-  await cp(resolve(root, "public"), resolve(root, ".wrangler/demo-assets"), {
-    recursive: true,
-  });
+  await rm(assets, { recursive: true, force: true });
+  await syncAssets();
   await command([
     "d1",
     "migrations",
@@ -116,6 +141,22 @@ export async function resetDemo() {
     await prepareDemo();
   });
 }
+// mdBook reading its additional-css/js sources fires change events on macOS
+// without modifying them; resyncing on those would rebuild the Book forever.
+async function snapshot(directories: string[]) {
+  const files: string[] = [];
+  for (const directory of directories)
+    for (const entry of await readdir(resolve(root, directory), {
+      recursive: true,
+      withFileTypes: true,
+    })) {
+      if (!entry.isFile()) continue;
+      const path = join(entry.parentPath, entry.name);
+      const { size, mtimeMs } = await stat(path);
+      files.push(`${path}:${size}:${mtimeMs}`);
+    }
+  return files.sort().join("\n");
+}
 async function dev() {
   await withDemoLock(persist, async () => {
     await prepareDemo();
@@ -130,21 +171,20 @@ async function dev() {
       "8787",
     ]);
     let copying = Promise.resolve();
-    const watcher = watch(resolve(root, "public"), { recursive: true }, () => {
-      copying = copying
-        .then(async () => {
-          await rm(resolve(root, ".wrangler/demo-assets"), {
-            recursive: true,
-            force: true,
-          });
-          await cp(
-            resolve(root, "public"),
-            resolve(root, ".wrangler/demo-assets"),
-            { recursive: true },
-          );
-        })
-        .catch((error) => console.error("Asset copy failed:", error));
-    });
+    const watched = ["public", "book", "demo/book"];
+    let synced = await snapshot(watched);
+    const watchers = watched.map((directory) =>
+      watch(resolve(root, directory), { recursive: true }, () => {
+        copying = copying
+          .then(async () => {
+            const current = await snapshot(watched);
+            if (current === synced) return;
+            synced = current;
+            await syncAssets();
+          })
+          .catch((error) => console.error("Asset copy failed:", error));
+      }),
+    );
     let stopping = false;
     const stop = () => {
       stopping = true;
@@ -158,7 +198,7 @@ async function dev() {
       if (code && !signal && !stopping)
         throw new Error(`Demo server exited (${code})`);
     } finally {
-      watcher.close();
+      for (const watcher of watchers) watcher.close();
       await copying;
       process.off("SIGINT", stop);
       process.off("SIGTERM", stop);

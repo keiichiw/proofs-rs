@@ -1,11 +1,14 @@
-# Review a dependency
+# Declare dependency reviews
+
+This guide is for Report authors. To check what has been verified about a crate
+you use, see [Find and read a report](read-a-report.md) instead.
 
 Use a dependency's verification report as evidence for your own report. This
 walkthrough reviews a `serde` dependency, pins the evidence you read, and publishes
 that declaration with your crate's verification results.
 
 Start with a crate configured for `cargo proofs`, with verification harnesses of
-its own. If you have not set that up, follow [Publish a report](publish-a-report.md)
+its own. If you have not set that up, follow [Publish your first report](publish-a-report.md)
 first. Recording your crate does not automatically run proofs for its dependencies.
 
 ## 1. Identify the package you use
@@ -29,12 +32,10 @@ chosen evidence report.
 [Search proofs.rs](/crates) for the dependency and open its crate page. Choose a
 public, non-withdrawn report for the resolved crates.io version.
 
-Read the report and the claims for the APIs your crate uses. Check the claim's
-preconditions, **What is trusted**, and **Technical limitations**, including the
-verification tool's limitations and the recorded environment. Decide whether the
-evidence applies to your use:
-a claim about one API under stated assumptions is not a guarantee for the entire
-library or your application.
+Read the report and the claims for the APIs your crate uses, following
+[Find and read a report](read-a-report.md). Decide whether the evidence applies
+to your use: a claim about one API under stated assumptions is not a guarantee
+for the entire library or your application.
 
 Open the specific report revision you reviewed and note its report number and
 revision number. A newer revision does not replace this evidence automatically.
@@ -63,7 +64,7 @@ Commit and push your source and Cargo.lock, then record the same verification
 command, features, and target you checked in step 1. For example:
 
 ```sh
-cargo proofs run -- cargo kani --target x86_64-unknown-linux-gnu
+cargo proofs run -- cargo kani -Z function-contracts --target x86_64-unknown-linux-gnu
 ```
 
 The CLI records a dependency resolution snapshot from the committed checkout,
@@ -93,6 +94,25 @@ Open the resulting report and find **Reviewed dependencies (1)**. Check the pack
 version and follow the evidence link to the exact revision you read. This is your
 declaration as the report author; proofs.rs does not independently certify your
 judgment, source equivalence, or the correctness of the combined application.
+
+## How reviews are checked and displayed
+
+An author can declare dependency reviews. Each review pins one evidence Report
+revision and its crate version. The service checks that this package was present
+in the recorded Cargo dependency resolution; it does not independently certify
+the author's judgment or claim that every resolved package was compiled during
+verification. Reviewed links are marked in the list. Reviews that are outside
+the published direct dependency requirements remain under Other reviewed evidence.
+
+The `n reviewed dependencies` count in Report summaries is the number of declared
+dependency reviews, not the total dependency count or a measure of crate coverage.
+A count of zero means no dependency reviews were declared.
+
+Reviewed evidence does not automatically follow newer Report revisions. If an
+evidence Report is later withdrawn, its pinned link remains and shows its current
+withdrawal. Hidden evidence has no public link. If crates.io metadata cannot be
+loaded, the section shows that the dependency list is unavailable rather than
+implying that the crate has no dependencies.
 
 ## Update or remove the review
 

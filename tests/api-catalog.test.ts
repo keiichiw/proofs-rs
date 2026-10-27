@@ -236,7 +236,8 @@ test("unsafe precedes fn and nonzero claim counts link to the API claims section
   const unsafeRow = d.querySelector(
     'a.api-name[href="/api/unsafe%2Fid"]',
   )!.parentElement!;
-  assert.equal(unsafeRow.textContent, "unsafe fn get_unchecked");
+  assert.equal(unsafeRow.textContent, "pub unsafe fn get_unchecked()");
+  assert(unsafeRow.querySelector(".unsafe"));
   assert.equal(
     d.querySelector('a[href="/api/unsafe%2Fid#claims"]')?.textContent,
     "1 claims",

@@ -45,20 +45,29 @@
 .sidebar {
   top: var(--proofs-header-height);
 }
-#menu-bar.sticky,
-#menu-bar-hover-placeholder:hover + #menu-bar,
-#menu-bar:hover,
-html.sidebar-visible #menu-bar,
-#menu-bar-hover-placeholder {
-  top: var(--proofs-header-height) !important;
+/* The site header is the only bar: mdBook's menu bar keeps just its sidebar
+   and search buttons, above the content, and scrolls away with it. */
+#menu-bar {
+  position: static !important;
+  border: 0;
+  background: transparent;
+}
+/* mdBook pulls the page up under its sticky menu bar. */
+.page {
+  margin-block-start: 0;
+}
+#menu-bar-hover-placeholder,
+#menu-bar .menu-title,
+#menu-bar .right-buttons,
+#theme-toggle,
+#theme-list {
+  display: none;
 }
 .nav-chapters {
   top: var(--proofs-header-height);
 }
 :target {
-  scroll-margin-top: calc(
-    var(--proofs-header-height) + var(--menu-bar-height) + 8px
-  );
+  scroll-margin-top: calc(var(--proofs-header-height) + 8px);
 }
 @media (max-width: 619px) {
   /* A transformed ancestor would move the fixed site header with the drawer. */

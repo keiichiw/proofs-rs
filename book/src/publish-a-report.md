@@ -1,10 +1,45 @@
-# Publish a report
+# Publish your first report
 
-Publish your verification reports with `cargo proofs`.
+Publish your verification results with `cargo proofs`. This page lists what you
+need before you start and the steps common to every tool. The tool pages cover
+how each verifier's results become Claims.
 
-For Aeneas and Lean, follow [Publish Aeneas Lean proofs](aeneas.md).
+## Before you start
 
-## Getting started with Kani
+Check these before writing any configuration. Each one can block publication.
+
+- [ ] **A supported tool and a registered version.** Kani, Creusot, and Aeneas
+  with Lean are supported. The exact version you used must be registered on
+  [Tools](/tools); if it is not,
+  [request it](https://github.com/proofs-rs/proofs-rs/issues/new?template=tool.yml).
+- [ ] **A crate version released on crates.io.** A Report targets one version of
+  one library crate. proofs.rs imports that version's public API catalogue from
+  crates.io and docs.rs, so the version must be published and its docs.rs build
+  must have succeeded.
+- [ ] **Source on GitHub.** The source remote must be a GitHub repository
+  (`origin` by default). Commit and push all verification inputs, including
+  Cargo.lock, before recording. The working tree must be clean.
+- [ ] **Harnesses the tool adapter can discover.** For example, Kani publishes only
+  `#[kani::proof_for_contract(...)]` harnesses, not ordinary `#[kani::proof]`
+  harnesses. See your tool's page.
+- [ ] **A plan for differences from the release.** If you verified a fork or a
+  patched copy, the CLI does not prove that it matches the crates.io release with
+  the same name and version. Explain the relationship in the Report.
+- [ ] **Within limits.** A Report can have up to 200 Claims and 128 KiB of data;
+  Kani discovery supports up to 100 APIs.
+
+You need Rust 1.91 or newer to install the CLI, and Node.js 24 or newer only for
+`cargo proofs preview`.
+
+## Choose your tool
+
+| Tool | Claims come from | Guide |
+| --- | --- | --- |
+| Kani | `#[kani::proof_for_contract(...)]` harnesses, one Claim per API | [Record with Kani](kani.md) |
+| Creusot | Public functions with `requires`/`ensures`, proved by a fresh prover run | [Record with Creusot](creusot.md) |
+| Aeneas with Lean | Lean specification theorems about the Aeneas model | [Record with Aeneas and Lean](aeneas.md) |
+
+## Common steps
 
 ### 1. Install
 
@@ -12,28 +47,22 @@ For Aeneas and Lean, follow [Publish Aeneas Lean proofs](aeneas.md).
 cargo install cargo-proofs --locked
 ```
 
-Requires Rust 1.91 or newer.
+### 2. Create proofs.toml
 
-### 2. Set up your report
-
-Run inside the crate you verified.
+Run inside the crate you verified. For a workspace, add `-p NAME` or
+`--manifest-path PATH` to `init`, `run`, `preview`, and `publish`. `login` does
+not take these options.
 
 ```sh
 cargo proofs init --tool kani
 ```
 
-Discovers `#[kani::proof_for_contract(...)]` harnesses and creates one claim per API.
+Use `--tool creusot` or `--tool aeneas` for the other tools; see the tool page
+for the options each needs. `init` creates `proofs.toml` and never overwrites an
+existing file. It can detect the installed tool version when you
+omit `--tool-version`; check that it is the version you actually used.
 
-Edit `proofs.toml` to set the report title and check the tool version used for verification. You can also add an explanation, assumptions, limitations, and environment.
-Optional `[[report.findings]]` entries contain a title and Markdown body and are
-created with the initial report. See [Findings](findings.md) for an example and
-editing after publication.
-
-For help explaining what crate users can rely on, see [Write a useful report](write-a-report.md).
-It includes a report-writing skill you can give your AI agent.
-
-<details>
-<summary>Example proofs.toml</summary>
+Then edit `proofs.toml`. Only the title and tool are required:
 
 ```toml
 [report]
@@ -48,47 +77,10 @@ name = "kani"
 version = "0.66.0" # Version used for verification
 ```
 
-</details>
-
-### Markdown in reports
-
-The report fields `explanation`, `trusted_assumptions`, `limitations`, and
-`environment` support Markdown. Claim explanations, trusted assumptions, and
-limitations support the same formatting, including inherited report context.
-Titles, preconditions, tool limitations, and comments remain plain text.
-
-Use headings, emphasis, lists, links, blockquotes, inline or fenced code, tables,
-and strikethrough. Single line breaks are preserved. Raw HTML is displayed as
-text, images are disabled, and unsafe link schemes are rejected. Code blocks
-have no syntax highlighting.
-
-Headings are relative to their container: `#` becomes a subsection (`h3`) within
-preset sections such as **Overview**, **What is trusted**, and **Technical limitations**.
-Report and claim explanations appear inside **Overview**, keeping author-written
-headings subordinate to the site's preset sections.
-Deeper headings stop at `h6`. This formatting also applies to existing revisions.
-
-Use TOML multiline literal strings to preserve Markdown and backslashes:
-
-````toml
-[report]
-title = "Contract verification of my crate"
-explanation = '''
-# Verified behavior
-
-The implementation preserves **ordering**.
-
-```rust
-assert!(result.is_sorted());
-```
-'''
-trusted_assumptions = '''
-# Allocator
-
-- Allocation succeeds.
-- Inputs satisfy the documented contract.
-'''
-````
+The optional fields are what readers use to judge your result. See
+[Write a useful report](write-a-report.md) for what to put in them, and
+[Configuration and Markdown](configuration.md) for every field and the supported
+Markdown.
 
 ### 3. Sign in
 
@@ -96,101 +88,58 @@ trusted_assumptions = '''
 cargo proofs login
 ```
 
-Authorize the CLI in your browser with your GitHub account.
+Authorize the CLI in your browser with your GitHub account. On first sign-in, or
+after the Terms change, accept the current Terms in the browser and run `login`
+again. Use `--no-browser` to print the URL instead of opening a browser.
 
-### 4. Record, preview, and publish
+### 4. Record verification
 
-Commit and push your source and Cargo.lock before recording verification.
+Commit and push first, then run your verifier through `cargo proofs run`. Pass
+the verifier's flags, such as `--features` or `--target`, after `--`; the same
+flags drive API discovery.
 
 ```sh
-cargo proofs run -- cargo kani
+cargo proofs run -- cargo kani -Z function-contracts
 ```
 
-Only SARIF results with embedded logs are uploaded. Source stays on GitHub. No additional push is needed between run and publish.
+The CLI verifies a detached checkout of the pushed commit and prints
+`Recording run <RUN_UUID> at <commit>`, then `Saved run <RUN_UUID>: <directory>`.
+Only the resulting SARIF record, with embedded logs, is uploaded later; your
+source stays on GitHub. A failed run stays local for inspection and cannot be
+published.
 
-With Node.js 24 or newer installed, review the report in your browser:
+### 5. Preview
 
 ```sh
 cargo proofs preview
 ```
 
-Click an API name or **Claim #…** to inspect its local claim page. Edit
-`proofs.toml` and reload the browser to review changes, then stop preview with
-Ctrl+C. See [Preview a report](preview-a-report.md) for package/run selection,
-existing reports, and missing metadata.
+This opens your Report in the browser exactly as readers will see it, marked
+**Local preview — not published**. Edit `proofs.toml` and reload to review
+changes; prose edits do not need another run. Stop with Ctrl+C. See
+[Preview a report locally](preview-a-report.md).
 
-When ready, inspect the publication data and publish:
+### 6. Publish
 
 ```sh
 cargo proofs publish --dry-run
 cargo proofs publish
 ```
 
-Before creating or updating a report, the CLI prepares the API catalogue. If the
-server’s catalogue extractor has changed, preparation automatically reindexes the
-stored rustdoc snapshot. Existing API IDs and claims are preserved. The CLI waits
-for this to finish; no administrator refresh is required.
+`--dry-run` prints the data that would be published and ends with
+`Dry run: no report published.` The first publication of a crate version may
+wait while the service prepares its API catalogue (`Preparing API catalogue…`),
+which can take several minutes. `publish` then prints a link to your Report.
 
-The CLI prints a link to your published report. Run `cargo proofs publish` again to update the same report.
+## After publishing
 
-Using another tool? See [Tools](/tools) for supported tools and instructions.
+- **Update the Report:** edit `proofs.toml` or record a new run, then run
+  `cargo proofs publish` again. See [Update, withdraw, and recover](update-a-report.md).
+- **Record bugs and other observations:** use **Add finding** on the Report. See
+  [Add findings](findings.md).
+- **Rely on a dependency's Report:** see
+  [Declare dependency reviews](review-a-dependency.md).
+- **Something failed:** see [Troubleshooting](troubleshooting.md).
 
-[CLI documentation →](https://github.com/proofs-rs/proofs-rs/blob/main/cli/README.md)
-
-### Field names and page labels
-
-The pages display `trusted_assumptions` as **What is trusted** and `limitations` as **Technical limitations**. The JSON and CLI configuration keys remain unchanged. Report-level and claim-level fields retain their existing scope; tool limitations are maintained separately. This is a display-name change, not a change to the meaning or contents of existing reports.
-
-### Declare dependency reviews
-
-For a walkthrough from choosing evidence to inspecting the published list, see
-[Review a dependency](review-a-dependency.md).
-
-You may add fixed evidence references to `proofs.toml`:
-
-```toml
-[dependencies]
-serde = { report = 123, revision = 2 } # Placeholder numbers: replace with your evidence
-```
-
-Use the dependency's actual Cargo package name, including when your manifest uses
-an alias. Its version comes from report 123, revision 2. It must match the same
-crates.io package in the selected run's saved Cargo metadata. Git and path forks
-are not interchangeable with crates.io releases. You can leave other dependencies
-unlisted; if several versions occur, only the referenced report's version counts.
-
-Adding a review or changing its evidence revision needs no new run. A dependency
-change needs a new run, using committed Cargo.lock and the verifier's features and
-target. `publish --dry-run` shows review changes. Omit the entire section to keep
-previous reviews when updating a report; retain an empty `[dependencies]` section
-to remove all reviews. An empty list means zero reviewed dependencies, not zero
-crate dependencies. Missing, hidden, withdrawn, or mismatched evidence blocks
-publication, including with `--force`.
-
-## Aeneas with Lean
-
-Use cargo-proofs 0.4.0 or later to publish committed Aeneas Lean proofs with
-explicit Rust API/theorem mappings. See [Publish Aeneas Lean proofs](aeneas.md)
-for the registered revision, Lake configuration, proof mappings, recording and
-publication commands, and the guarantees and limitations of the adapter.
-
-### Source repositories with submodules
-
-Recording automatically restores all submodules recursively at the Gitlink commits
-in the recorded source revision, before Cargo metadata and API discovery. This
-applies to every supported verifier; submodules are optional. Relative submodule
-URLs resolve against the selected source remote. No remote branches are followed.
-An inaccessible repository or missing commit stops recording. Git transport
-restrictions are retained; the recorder does not enable the file protocol.
-
-Submodule snapshots use an isolated temporary clone so initialization cannot alter
-the original checkout's Git configuration. Recording checks pinned HEADs and tracked
-files before and after verification, and removes the snapshot on success or failure.
-Reproduction instructions initialize submodules after checking out the source commit.
-
-## Bugs discovered during verification
-
-After publishing, use **Add finding** on your report to record a reproducible bug.
-Issue and PR links can be added later without creating a report revision. See
-[Report a finding](findings.md) for status evidence, duplicate management, and API
-publication with an optional initial findings array.
+For every command and option, see the
+[CLI documentation](https://github.com/proofs-rs/proofs-rs/blob/main/cli/README.md).

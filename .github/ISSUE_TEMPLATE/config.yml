@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Privacy, account deletion or security
+  - name: Privacy, account deletion, content or security
     url: mailto:contact@proofs.rs
-    about: Contact the operator privately once the production contact mailbox is active.
+    about: Contact the operator privately about privacy, account deletion, content concerns or security vulnerabilities.

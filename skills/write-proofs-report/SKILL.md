@@ -52,7 +52,7 @@ For remaining gaps, explain which user question is unanswered. Distinguish forma
 
 Aim for a short account understandable without opening artifacts. Give each fact one primary home. Allow concise paragraphs needed to understand the API, source adaptations, trust, and patched tools; do not force them into a fixed word budget. Keep detailed commands, revisions, solver logs, goal counts, phase histories, scratch paths, and proof-development difficulty in evidence/reproduction material.
 
-Use the destination's schema and supported format. For current proofs.rs editorial fields, use plain text and these roles:
+Use the destination's schema and supported format. For current proofs.rs editorial fields, use these roles. `report.title` is plain text; the other fields render Markdown:
 
 - `report.title`: behavior and scope; a straightforward correctness title is appropriate when the body supports it and states qualifications clearly.
 - `report.explanation`: API orientation, concrete guarantees and essential conditions; if tools were patched, their rationale, changes, and evidence-based justification.
@@ -62,7 +62,7 @@ Use the destination's schema and supported format. For current proofs.rs editori
 
 For a standalone report, use the same order, combining sections when a short scope makes them redundant, and add exact evidence links. If the user supplies a successful report as a reference, retain its useful structure and explanatory depth while checking its claims against the evidence; do not copy outdated facts or unsupported assurances.
 
-Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Do not invent fields, inflate claims, or fabricate SARIF. Current editorial fields do not render Markdown tables, headings, or links. Parse any edited TOML to check syntax. Writing a report alone does not authorize publication, proof/code changes, or rerunning verification; follow the user's actual authorized scope.
+Preserve unrelated configuration, dependency reviews, tool settings, contracts, and evidence. Do not invent fields, inflate claims, or fabricate SARIF. In Markdown fields, use headings, emphasis, lists, links, blockquotes, inline or fenced code, tables, and strikethrough only where they aid reading. Headings nest under the page's preset sections, so start at `#`. Raw HTML is shown as text and images are disabled. Use TOML multiline literal strings (`'''`) to preserve Markdown and backslashes. Parse any edited TOML to check syntax. Writing a report alone does not authorize publication, proof/code changes, or rerunning verification; follow the user's actual authorized scope.
 
 ## 5. Review as a crate user
 

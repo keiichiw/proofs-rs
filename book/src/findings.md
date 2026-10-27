@@ -1,4 +1,9 @@
-# Report a finding
+# Add findings
+
+This page is for Report authors. Only a Report's author can create or change its
+findings. If you found something while reading another author's Report, comment
+on that Report instead; see [Discuss a report](discuss-a-report.md) and
+[Get help and give feedback](get-help.md).
 
 A finding is a short account of something learned during verification: an API
 behavior, a useful precondition, a specification ambiguity, a limitation, or a bug.
@@ -34,6 +39,23 @@ When updating an existing report, the CLI leaves findings unchanged and explains
 that local `report.findings` is only used for new reports. Preview then displays
 published findings, including edits made on the website. Use the Web/API to add or
 edit findings after publication; the CLI does not synchronize or repost this array.
+
+### Associate APIs
+
+Related APIs can be specified by public Rust paths in `proofs.toml`:
+
+```toml
+[[report.findings]]
+title = "Empty input behavior"
+body = "Describe the observed behavior here."
+api_paths = ["my_crate::parse", "my_crate::Parser::parse"]
+```
+
+`api_paths` is optional (up to 50 paths). Each path must resolve uniquely in the
+report's crate and version. Publication resolves paths to API IDs and deduplicates
+aliases; an unresolved or ambiguous path prevents publication. Preview displays
+these associations and warns about unresolved paths. This applies to initial
+publication only; edit published findings through the Web/API.
 
 ## Edit published findings
 
@@ -73,8 +95,7 @@ Add a supporting link before changing the status:
 To remove the last supporting link, first change the upstream status or add
 replacement evidence. Removing a link preserves it in history.
 
-Only the report's author can create or change findings. Withdrawn reports remain
-readable but cannot receive new findings or updates. Past report revisions show
+Withdrawn reports remain readable but cannot receive new findings or updates. Past report revisions show
 current finding information, its origin revision, and update time, separately from
 the proof content of that revision. The crate page lists findings for the selected
 version only, above the API catalog. A summary links to the findings, APIs, and
@@ -82,59 +103,7 @@ reports for that version; each finding row links to its source report and suppor
 evidence. It does not infer effects on other versions. Invalid, duplicate, and
 withdrawn findings are excluded from normal counts but remain in report history.
 
-## API
-
-All paths below are relative to `/api/v1`. See the live [API reference](/api/docs)
-for schemas, authentication, and response codes. Session writes require Origin,
-CSRF, and current terms acceptance; publish tokens can also operate these APIs.
-
-| Method | Path                              | Purpose                                                                       |
-| ------ | --------------------------------- | ----------------------------------------------------------------------------- |
-| GET    | `/reports/:id/findings`           | Paginated report findings, including historical invalid and duplicate entries |
-| POST   | `/reports/:id/findings`           | Create a finding at the report's latest revision                              |
-| GET    | `/findings/:id`                   | Content, live links, APIs, and ordered event history                          |
-| PATCH  | `/findings/:id`                   | Edit content, APIs, validity, or upstream status                              |
-| POST   | `/findings/:id/links`             | Add supporting evidence                                                       |
-| DELETE | `/findings/:id/links/:link_id`    | Soft delete a link                                                            |
-| GET    | `/crates/:name/:version/findings` | Paginated active findings for exactly one version                             |
-
-Creation requests need an `Idempotency-Key` header (16–100 letters, digits, `_`, or
-`-`). Reuse the key and exact request body when retrying; a changed body returns 409. PATCH and link operations require the current `edit_version` integer. Every
-successful change, including a link operation, increments that version. A stale
-version returns 409; reload the finding before editing again. Removed links cannot
-support a status. URLs must use HTTPS without embedded credentials. The server
-does not fetch supplied URLs.
-
-A minimal creation body:
-
-```json
-{
-  "title": "Empty input panics",
-  "body": "`parse(&[])` panics, although an empty result is expected."
-}
-```
-
-Initial `POST /reports` and `/reports/validate` accept an optional `findings` array
-(up to 20 entries) of the same bodies. Report, claims, and findings commit together.
-Claims and successful recorded runs remain required. Report revisions reject
-`findings`; use the independent APIs to add or change them. Finding edits and
-link changes retain their own history without changing the report revision.
-
-Related APIs can be specified by public Rust paths in `proofs.toml`:
-
-```toml
-[[report.findings]]
-title = "Empty input behavior"
-body = "Describe the observed behavior here."
-api_paths = ["my_crate::parse", "my_crate::Parser::parse"]
-```
-
-`api_paths` is optional (up to 50 paths). Each path must resolve uniquely in the
-report's crate and version. Publication resolves paths to API IDs and deduplicates
-aliases; an unresolved or ambiguous path prevents publication. Preview displays
-these associations and warns about unresolved paths. This applies to initial
-publication only; edit published findings through the Web/API.
-
+## How findings appear
 
 Report pages show a compact Findings list with titles, statuses and related APIs.
 Open a finding's title to read its full description, reproduction, supporting links
@@ -145,3 +114,9 @@ The report's **APIs** section includes APIs referenced by either claims or findi
 Each API lists its claim links and finding links; APIs with findings but no claims
 are included. A finding does not automatically invalidate a claim: the claim's
 specific contract and the finding's circumstances must be compared.
+
+## Programmatic access
+
+Findings can also be created and edited through the HTTP API, including an
+optional `findings` array on initial report creation. See
+[API documentation](api-documentation.md#findings).

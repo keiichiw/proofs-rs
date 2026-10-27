@@ -1,10 +1,13 @@
-# Publish Aeneas Lean proofs
+# Record with Aeneas and Lean
 
 Aeneas translates Rust, through Charon, into a functional model that can be
 verified in Lean. `cargo proofs` records **committed Lean proofs of that model**,
 automatically resolving Rust APIs and specification theorems from Aeneas metadata, or using explicit mappings.
 
-Requires Rust 1.91 or later and cargo-proofs 0.4.0 or later:
+This page covers what is specific to Aeneas. The
+[common steps](publish-a-report.md#common-steps) for signing in, previewing, and
+publishing apply as well. Requires Rust 1.91 or later and cargo-proofs 0.4.0 or
+later:
 
 ```sh
 cargo install cargo-proofs --locked
@@ -37,10 +40,44 @@ rev = "be86ab0f1989d04944292b345b24c435be3ad10a"
 
 Run `lake update` in `proofs/` to resolve and write `lake-manifest.json`.
 Generate the model and write proofs using Aeneas's instructions. The example
-below assumes a proof module `proofs/Proofs/Increment.lean` containing a theorem
-named `demo.increment_spec`; replace those names with your actual proof.
+on this page uses this layout; replace the names with your actual proof:
 
-## 2. Select specification modules
+```text
+my-crate/
+├── Cargo.toml
+├── Cargo.lock
+├── proofs.toml
+├── src/lib.rs
+└── proofs/
+    ├── lean-toolchain
+    ├── lakefile.toml
+    ├── lake-manifest.json
+    ├── Generated/            # Aeneas model and translation.json
+    ├── Proofs.lean           # root module: import Proofs.Increment
+    └── Proofs/
+        └── Increment.lean    # theorem demo.increment_spec
+```
+
+Module names follow file paths: `Proofs/Increment.lean` is module
+`Proofs.Increment`. With automatic selection from the `Proofs` entry module, the
+root module `Proofs.lean` must import each proof module to be searched, for
+example `import Proofs.Increment`. Custom Lake source directories are not
+supported.
+
+## 2. Create proofs.toml
+
+From the Rust package directory (the one containing `Cargo.toml`):
+
+```sh
+cargo proofs init --tool aeneas --tool-version be86ab0f1989d04944292b345b24c435be3ad10a
+```
+
+The revision must be the full 40-character Aeneas commit in your Lake manifest.
+Review the generated report fields, then choose how specifications are selected:
+automatically from Aeneas metadata (next section), or with
+[explicit mappings](#explicit-selection-and-existing-projects).
+
+## 3. Select specifications automatically
 
 Generate the committed model and mapping together, using the pinned translator:
 
@@ -49,7 +86,7 @@ charon cargo --preset=aeneas --dest-file model.llbc -- --lib --locked
 aeneas -backend lean -emit-json -dest proofs/Generated model.llbc
 ```
 
-Enable automatic resolution by specifying local proof entry modules:
+Then edit the `[tool]` section of `proofs.toml` to name the proof entry modules:
 
 ```toml
 [tool]
@@ -71,16 +108,13 @@ If an API has several specification theorems, each becomes a separate claim with
 its own assumptions, conclusion and recorded evidence. A theorem that applies
 only to a specific argument remains separate from a universally quantified theorem.
 Zero selected specifications is an error. There is no `discover` subcommand.
+Because `proof_modules = ["Proofs"]` names the root module, every module that
+`Proofs.lean` imports, directly or transitively, is searched.
 
 ### Explicit selection and existing projects
 
-From the Rust package directory:
-
-```sh
-cargo proofs init --tool aeneas --tool-version be86ab0f1989d04944292b345b24c435be3ad10a
-```
-
-Review the report fields and edit the generated `proofs.toml` tool section:
+Instead of, or in addition to, automatic resolution, edit the `[tool]` section
+of the `proofs.toml` created in step 2 to map theorems to APIs explicitly:
 
 ```toml
 [tool]
@@ -105,17 +139,11 @@ Projects without a translation manifest can continue to use only these mappings.
 Each selected theorem maps to one public Rust callable. Multiple `[[tool.proofs]]`
 entries may name the same API with different theorems. A manual mapping overrides
 that theorem's automatic mapping; other specifications for the API are still included.
-`lean_dir` is relative to `Cargo.toml` and defaults to `"."`.
+`lean_dir` is relative to `Cargo.toml` and defaults to `"."`. For how Claim IDs
+are kept when theorems are added, removed, or renamed, see
+[Aeneas evidence details](aeneas-reference.md#claim-identity-across-revisions).
 
-When publishing revisions, the CLI matches claims by API and theorem name, so
-reordering specifications or recording a new run preserves each claim's ID and
-prose. Adding a theorem creates a claim; removing one follows the usual claim
-deletion confirmation. If an API has exactly one old and one new claim, its ID
-can also be retained across a theorem rename or migration from a legacy recording.
-With multiple claims, unmatched theorems get new IDs rather than inheriting another
-theorem's text. Locally saved publication state can restore a removed theorem's ID.
-
-## 3. Commit, record, preview, and publish
+## 4. Commit, record, preview, and publish
 
 Commit and push Rust source, `Cargo.lock`, `proofs.toml`, the generated Lean
 model and proof sources, `lakefile.toml` (or `lakefile.lean`),
@@ -135,7 +163,7 @@ cargo proofs publish --manifest-path ../Cargo.toml
 
 The preview command requires Node.js 24 or newer. Review the report and each local
 claim page, then stop the server with Ctrl+C before continuing. It reads the
-recorded run without running Lean again. See [Preview a report](preview-a-report.md)
+recorded run without running Lean again. See [Preview a report locally](preview-a-report.md)
 for editing prose, selecting another run, and interpreting warnings.
 
 Sign in with `cargo proofs login` before publishing if needed. The tool revision
@@ -148,32 +176,9 @@ The recorder builds every mapped module explicitly, then checks that each
 mapped name is a Lean theorem. The transitive axiom audit allows only `propext`,
 `Classical.choice`, and `Quot.sound`. It rejects `sorryAx`, custom axioms
 (including axiomatized external models), missing theorems, and failed builds.
-SARIF stores version 1 formal evidence on each contract: the complete
-pretty-printed `TheoremVal.type`, typed binders, conclusion, target expression
-(including specialized arguments such as `f 0`), source range, audited axioms,
-and mapping provenance. Manifest records include its SHA-256, reported translator
-versions and the matched entry. At most 100 direct definition references are
-included, with links for local definitions; bodies and recursive closures are
-not copied. Expressions over 1,000,000 UTF-8 bytes, more than 1,000 binders, or
-SARIF over 8 MiB fail explicitly instead of silently truncating statements.
-
-New Claims carry `evidence_ref: {run_id, harness}` saved with each Claim revision.
-The service checks that the reference belongs to that report revision, resolves
-exactly one audited contract, and matches the API and theorem. Invalid explicit
-references never fall back to text matching. Old records retain their old path.
-The statement is stored only in SARIF, never in editable Claim prose or the DB.
-Claim detail shows a Readable Lean view with `for all`, `assume`, `instance`,
-and `then` rows, plus an expandable/copyable full proposition. New recordings
-optionally include `type_segments` on binders and `conclusion_segments`, produced
-by Lean's tagged pretty-printer. Each segment contains `text` and optionally a
-Lean constant name in `ref`; concatenation must equal the corresponding plain
-text. At most 10,000 segments and 1,000,000 UTF-8 bytes are accepted per expression.
-Tagging failure falls back to plain text without affecting the checked statement.
-Only references with recorded local sources become commit-pinned links; external
-or unresolved definitions remain text. Older recordings use the same layout
-without inline definition links. The author-stated Preconditions remain separate
-from the extracted Lean hypotheses. Source and recorded-check links are retained. Publishing and previewing use the
-selected recording, without extracting from the current working tree. The report's reproduction commands include both build and audit.
+The recorded SARIF stores each theorem's full proposition, which Claim pages show
+as a Readable Lean view; see [Aeneas evidence details](aeneas-reference.md) for
+the recorded evidence format.
 
 The checked result is the named Lean theorem under the allowed axioms.
 Charon/Aeneas extraction is **not rerun** by the recorder. In the report,
@@ -187,26 +192,3 @@ Aeneas Git dependency. It does not support custom Lake source directories,
 local-path Aeneas dependencies, feature/target-specific extraction, or the Coq,
 F*, and HOL4 backends. See the [version's limitations](/tool-version/aeneas-be86ab0f1989d04944292b345b24c435be3ad10a)
 and [CLI documentation](https://github.com/proofs-rs/proofs-rs/tree/main/cli#aeneas-lean).
-
-## Tested adapter and implementation
-
-The adapter is tested with Lean **4.35.0** and Aeneas
-**be86ab0f1989d04944292b345b24c435be3ad10a**. Other Lean/Aeneas API versions are
-not yet verified. The generated `cli/tests/fixtures/aeneas-formal` model and
-manifest were produced using this Aeneas version and Charon **0.1.291**
-(pin **08d7c9d50144bd84848212c24701253585e90d1f**), then checked with real Lean.
-
-Resolution reuses Aeneas `Utils.normalizeLetBindings` and
-`Step.getStepSpecFunArgsExpr`; extraction uses Lean `forallTelescope`, `ppExpr`,
-`findDeclarationRanges?`, and `collectAxioms`. The probe-aeneas manifest reader
-was reviewed at `55db428974f6f0fca0cd22553d17436753d6398b`; its broader inventory
-and enrichment dependencies are unnecessary for this small JSON adapter.
-
-MachineChecked's `ProofLensProbe.lean` (`telescope`, `ppJson`, `linkRecord`,
-`declRecord`) and Python `run_simple_probe` path were reviewed at
-`9e713006b48e4b736e71e5e7fb38488f39ad60ee` (Apache-2.0). Its probe includes
-paper-link requests, definition closure, navigation segments and hashing that
-this recorder does not need. No MachineChecked code or Python runtime is
-vendored: the small adapter uses Lean's public Meta APIs directly, preserving
-the original forall prefix and leaving existentials in the conclusion. Upstream
-Lean is Apache-2.0; Aeneas is used through the project's pinned dependency.

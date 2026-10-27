@@ -3,7 +3,12 @@ import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
 import { Fault, rows, one, latest } from "./core";
 import { legal } from "../web/legal";
-import { renderAPICatalog } from "../web/api-catalog";
+import {
+  apiKindLabel,
+  itemPathHTML,
+  renderAPICatalog,
+  signatureHTML,
+} from "../web/api-catalog";
 import { renderRecordedRun } from "../web/recorded-run";
 import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
@@ -19,6 +24,19 @@ const escape = (v: unknown) =>
         c
       ]!,
   );
+// Book guides for recording with a tool. Staging fixtures ("demo-kani")
+// share the real tool's guide.
+const toolGuides: Record<string, { href: string; title: string }> = {
+  kani: { href: "/book/kani.html", title: "Record with Kani" },
+  creusot: { href: "/book/creusot.html", title: "Record with Creusot" },
+  aeneas: { href: "/book/aeneas.html", title: "Record with Aeneas and Lean" },
+};
+function toolGuide(id: string) {
+  const guide = toolGuides[id.replace(/^demo-/, "")];
+  return guide
+    ? `<p><a href="${guide.href}">Guide: ${guide.title}</a></p>`
+    : "";
+}
 const pageNames = new Set([
   "",
   "crates",
@@ -204,6 +222,8 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     const {
       esc,
       date,
+      badge,
+      statusBadge,
       user,
       breadcrumbs,
       crateCrumbs,
@@ -244,6 +264,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       path: string,
       render: (item: any) => string = reportSummary,
       cursorName = "cursor",
+      empty = "No results.",
     ) => {
       const url = new URL(path, "https://local");
       const cursor = current.searchParams.get(cursorName);
@@ -251,7 +272,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const data = await get(url.pathname + url.search);
       return (
         (data.items.map((item: any) => render(item)).join("") ||
-          "<p>No results.</p>") + pagination(data, cursorName)
+          `<p>${empty}</p>`) + pagination(data, cursorName)
       );
     };
     if (p in legal) {
@@ -347,16 +368,6 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       // Keep pagination pinned to the version the reader selected (including
       // when the first page used the default version).
       current.searchParams.set("version", version);
-      const statusNames: Record<string, string> = {
-        reported: "Reported",
-        confirmed: "Confirmed",
-        disputed: "Disputed",
-        reported_upstream: "Reported upstream",
-        fix_proposed: "Fix proposed",
-        fix_merged: "Fix merged",
-        released: "Released",
-        wont_fix: "Won’t fix",
-      };
       const linkNames: Record<string, string> = {
         issue: "Issue",
         pr: "PR",
@@ -366,9 +377,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       };
       const findingRows = crateFindings.items
         .map((f: any) => {
-          const validity = statusNames[f.validity] ?? f.validity;
-          const upstream = statusNames[f.upstream_status];
-          return `<tr><td><a href="/finding/${enc(f.id)}">${esc(f.title)}</a></td><td>${esc(validity)}${upstream ? `<br>${esc(upstream)}` : ""}</td><td><a href="/report/${f.report_id}?v=${f.origin_revision_no}">#${f.report_id} · v${f.origin_revision_no}</a></td><td>${f.links.map((l: any) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(linkNames[l.kind])}${l.version ? ` · ${esc(l.version)}` : ""}</a>`).join("<br>") || "—"}</td></tr>`;
+          return `<tr><td><a href="/finding/${enc(f.id)}">${esc(f.title)}</a></td><td class="status-cell">${statusBadge(f.validity)}${f.upstream_status !== "not_reported" ? `<br>${statusBadge(f.upstream_status)}` : ""}</td><td><a href="/report/${f.report_id}?v=${f.origin_revision_no}">#${f.report_id} · v${f.origin_revision_no}</a></td><td>${f.links.map((l: any) => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(linkNames[l.kind])}${l.version ? ` · ${esc(l.version)}` : ""}</a>`).join("<br>") || "—"}</td></tr>`;
         })
         .join("");
       const findingSection = `<section aria-labelledby="findings"><h2 id="findings">Findings (${findingCount[0].n})</h2><p class="meta">For version ${esc(version)}. Statuses are author reported.</p>${findingRows ? `<div class="table-wrap"><table class="crate-findings" aria-label="Findings for ${esc(version)}"><thead><tr><th scope="col">Finding</th><th scope="col">Status</th><th scope="col">Report</th><th scope="col">Links</th></tr></thead><tbody>${findingRows}</tbody></table></div>` : "<p>No findings reported for this version.</p>"}${pagination(crateFindings, "findings_cursor")}</section>`;
@@ -403,11 +412,29 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         a.display_path,
-        `${breadcrumbs(crateCrumbs(a, "apis"))}<h1 class="code">${esc(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${esc(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
+        `${breadcrumbs(crateCrumbs(a, "apis"))}<p class="item-kind">${esc(apiKindLabel(a))}</p><h1 class="code">${itemPathHTML(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${signatureHTML(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
       );
     }
-    if (p === "reports")
-      return result("Reports", `<h1>Reports</h1>${await list("/reports")}`);
+    if (p === "reports") {
+      const filters = new URLSearchParams();
+      for (const name of ["q", "tool", "author"]) {
+        const value = current.searchParams.get(name)?.trim();
+        if (value) filters.set(name, value);
+      }
+      const filtered = filters.size > 0;
+      const [tools, reports] = await Promise.all([
+        get("/tools"),
+        list(
+          "/reports?" + filters,
+          reportSummary,
+          "cursor",
+          filtered ? "No matching reports." : "No reports yet.",
+        ),
+      ]);
+      const value = (name: string) => esc(filters.get(name) || "");
+      const form = `<form method="get" action="/reports" class="searchbar report-filters"><input name="q" type="search" value="${value("q")}" aria-label="Title or crate" placeholder="Title or crate"><select name="tool" aria-label="Tool"><option value="">All tools</option>${tools.items.map((t: any) => `<option value="${esc(t.id)}"${t.id === filters.get("tool") ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select><input name="author" value="${value("author")}" aria-label="Author" placeholder="Author"><button>Filter</button>${filtered ? ' <a href="/reports">Clear</a>' : ""}</form>`;
+      return result("Reports", `<h1>Reports</h1>${form}${reports}`);
+    }
     if ((p === "report" || p === "claim") && id && parts[2] === "stars") {
       const item = await get(`/${p}s/${enc(id)}`);
       if (!config.show_star_karma) return c.redirect(`/${p}/${enc(id)}`, 302);
@@ -604,9 +631,22 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           );
         form = commentForm(undefined, undefined);
       }
+      // Long histories show the newest revisions and the one being viewed.
+      const revisionLink = (h: any) =>
+        `<a href="/report/${item.id}?v=${h.revision_no}"${h.revision_no === item.revision_no ? ' aria-current="page"' : ""}>v${h.revision_no}</a>`;
+      const shownRevisions =
+        history.length > 8
+          ? history.filter(
+              (h: any, i: number) =>
+                i < 5 || h.revision_no === item.revision_no,
+            )
+          : history;
+      const olderRevisions = history.filter(
+        (h: any) => !shownRevisions.includes(h),
+      );
       return result(
         `Report #${item.id} — ${item.title}`,
-        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><p class="meta" id="revision-history">Revision ${history.map((h) => `<a href="/report/${item.id}?v=${h.revision_no}"${h.revision_no === item.revision_no ? ' aria-current="page"' : ""}>v${h.revision_no}</a>`).join(" · ")}${item.revision_no !== item.latest_revision_no ? " · <strong>Past revision</strong>" : ""}</p>${item.withdrawn_at ? "<p><strong>Withdrawn by the author.</strong></p>" : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${content}${reportAPIs(item)}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
+        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${content}${reportAPIs(item)}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
       );
     }
     if (p === "runs" && id) {
@@ -628,14 +668,14 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const tools = await get("/tools");
       return result(
         "Verification tools",
-        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p></article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
+        `<h1>Verification tools</h1>${tools.items.map((t: any) => `<article><h2><a href="/tool/${enc(t.id)}">${esc(t.name)}</a></h2><p>${esc(t.description)}</p>${toolGuide(t.id)}</article>`).join("") || "<p>No tools have been registered yet.</p>"}<p><a href="https://github.com/proofs-rs/proofs-rs/issues/new">Request a tool or version</a></p>`,
       );
     }
     if (p === "tool" && id) {
       const t = await get("/tools/" + enc(id));
       return result(
         t.name,
-        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${t.id === "aeneas" ? '<p><a href="/book/aeneas.html">Publish Aeneas Lean proofs — setup and limitations</a></p>' : ""}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
+        `${breadcrumbs([{ label: "Tools", href: "/tools" }])}<h1>${esc(t.name)}</h1><p>${esc(t.description)}</p><p><a href="${esc(t.official_url)}">Tool website</a></p>${toolGuide(t.id)}<h2>Supported versions</h2><ul>${t.versions.map((r: any) => `<li><a href="/tool-version/${enc(r.id)}">${esc(r.version)}</a>${r.selectable ? "" : " (retired)"}</li>`).join("")}</ul><h2>Reports</h2>${await list(`/tools/${enc(id)}/reports`)}`,
       );
     }
     if (p === "tool-version" && id) {

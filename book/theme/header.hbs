@@ -2,9 +2,9 @@
 // Restore before the book controls/content are parsed. The following mdBook
 // initialization uses the same global sidebar value to set ARIA attributes.
 (() => {
-  let saved;
-  try { saved = localStorage.getItem("mdbook-sidebar"); } catch { return; }
-  if (saved !== "visible" && saved !== "hidden") return;
+  let saved = "hidden";
+  try { saved = localStorage.getItem("mdbook-sidebar"); } catch {}
+  if (saved !== "visible") saved = "hidden";
   window.sidebar = saved;
   document.getElementById("sidebar-toggle-anchor").checked = saved === "visible";
   document.documentElement.classList.remove("sidebar-visible", "sidebar-hidden");
@@ -17,10 +17,9 @@
     <a href="/crates">Crates</a>
     <a href="/reports">Reports</a>
     <a href="/tools">Tools</a>
-    <a href="/book/publish-a-report.html">Publish</a>
     <a href="/book/">Docs</a>
-    <a href="https://proofs-rs.hashnode.dev">Blog</a>
-    <a href="https://proofs-rs.zulipchat.com/">Community</a>
+    <a href="https://proofs-rs.hashnode.dev" class="external">Blog<span class="external-mark" aria-hidden="true">↗</span></a>
+    <a href="https://proofs-rs.zulipchat.com/" class="external">Zulip<span class="external-mark" aria-hidden="true">↗</span></a>
   </nav>
   <div class="proofs-site-account" id="account-nav"><a href="/account">Account</a></div>
 </header>

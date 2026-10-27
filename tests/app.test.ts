@@ -1458,6 +1458,78 @@ test("staging fixture is repeatable and exposes report catalogue without importe
   assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
 });
 
+test("report list filters by keyword, tool and author", async () => {
+  const { JSDOM } = await import("jsdom");
+  const { db, env, request } = await fixture();
+  db.exec(
+    readFileSync(
+      new URL("../fixtures/staging-demo.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  const ids = async (query: string) => {
+    const response = await request("/reports?" + query);
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    return response.body.items.map((r: any) => r.id);
+  };
+  // Withdrawn reports 7 and 13 stay hidden under every filter.
+  assert.deepEqual(await ids(""), [12, 11, 10, 9, 8, 6, 5, 4, 3, 2, 1]);
+  assert.deepEqual(await ids("q=with+Miri"), [3, 2]);
+  assert.deepEqual(await ids("q=report-layout"), [12, 11, 10]);
+  assert.deepEqual(await ids("q=%25"), []);
+  assert.deepEqual(await ids("q=_"), []);
+  assert.deepEqual(await ids("tool=demo-kani"), [9, 8, 5, 4, 1]);
+  assert.deepEqual(await ids("author=DEMO_MIRA"), [12, 11, 10, 9, 4, 1]);
+  assert.deepEqual(await ids("tool=demo-kani&author=demo_mira"), [9, 4, 1]);
+  assert.deepEqual(await ids("q=arrayvec&tool=demo-miri"), [2]);
+  assert.deepEqual(await ids("q=+&tool=&author="), await ids(""));
+  const cursor = Buffer.from("[5]").toString("base64url");
+  assert.deepEqual(await ids(`tool=demo-kani&cursor=${cursor}`), [4, 1]);
+
+  const page = async (path: string) =>
+    new JSDOM(
+      await (await app.request("https://example.test" + path, {}, env)).text(),
+    ).window.document;
+  let d = await page("/reports");
+  assert.equal(d.querySelectorAll("article.claim-item").length, 11);
+  assert.equal(d.querySelector(".report-filters a"), null);
+  assert.equal(d.querySelector(".report-filters option[selected]"), null);
+  d = await page(
+    `/reports?q=verification&tool=demo-kani&author=demo_mira&cursor=${cursor}`,
+  );
+  assert.deepEqual(
+    [...d.querySelectorAll("article.claim-item > a:first-child")].map(
+      (a) => a.textContent,
+    ),
+    ["#4 bytes verification with Kani", "#1 arrayvec verification with Kani"],
+  );
+  assert.equal(
+    d.querySelector<HTMLInputElement>('.report-filters [name="q"]')!.value,
+    "verification",
+  );
+  assert.equal(
+    d.querySelector(".report-filters option[selected]")?.getAttribute("value"),
+    "demo-kani",
+  );
+  assert.equal(
+    d.querySelector<HTMLInputElement>('.report-filters [name="author"]')!.value,
+    "demo_mira",
+  );
+  assert.equal(
+    d.querySelector(".report-filters a")?.getAttribute("href"),
+    "/reports",
+  );
+  assert.equal(
+    d.querySelector(".pagination a")?.getAttribute("href"),
+    "/reports?q=verification&tool=demo-kani&author=demo_mira",
+  );
+  d = await page("/reports?author=nobody");
+  assert.equal(
+    d.querySelector("main p:last-child")?.textContent,
+    "No matching reports.",
+  );
+});
+
 test("import stores normalized crate description using the existing metadata request", async (t) => {
   const { db, env } = await fixture();
   db.exec(

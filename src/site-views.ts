@@ -1,6 +1,6 @@
 import { validLeanSegments } from "../web/formal-evidence";
 import { renderMarkdown } from "./markdown";
-import { renderAPICatalog } from "../web/api-catalog";
+import { renderAPICatalog, signatureHTML } from "../web/api-catalog";
 
 export interface ViewOptions {
   external?: (path: string) => string;
@@ -48,11 +48,68 @@ export function createViews(
     id
       ? `<a class="user-link" href="/user/${enc(id)}">${esc(name || "ghost")}</a>`
       : "ghost";
+  const statusNames: Record<string, string> = {
+    reported: "Reported",
+    confirmed: "Confirmed",
+    disputed: "Disputed",
+    invalid: "Invalid",
+    duplicate: "Duplicate",
+    reported_upstream: "Reported upstream",
+    fix_proposed: "Fix proposed",
+    fix_merged: "Fix merged",
+    released: "Released",
+    wont_fix: "Won’t fix",
+  };
+  const statusTones: Record<string, string> = {
+    confirmed: "good",
+    fix_merged: "good",
+    released: "good",
+    disputed: "warn",
+    invalid: "warn",
+    duplicate: "warn",
+    wont_fix: "warn",
+  };
+  const badge = (label: string, tone = "neutral") =>
+    `<span class="badge badge-${tone}">${esc(label)}</span>`;
+  const statusBadge = (status: string) =>
+    badge(statusNames[status] ?? status, statusTones[status]);
   function claimItem(c: any) {
     return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
   }
+  const shortDate = (v: string) =>
+    v
+      ? `<time datetime="${esc(v)}" title="${date(v)}">${esc(new Date(v).toISOString().slice(0, 10))}</time>`
+      : "";
+  // Commit-hash versions (Aeneas) read like git's short hashes.
+  const shortVersion = (v: string) =>
+    /^[0-9a-f]{40}$/.test(v)
+      ? `<span title="${esc(v)}">${esc(v.slice(0, 7))}</span>`
+      : esc(v);
+  const plural = (n: number, noun: string, nouns = noun + "s") =>
+    `${n} ${n === 1 ? noun : nouns}`;
   function reportSummary(c: any, hideCrate = false) {
-    return `<article class="claim-item"><a href="/report/${c.id}">#${c.id} ${esc(c.title)}</a>${c.withdrawn_at ? " · Withdrawn" : ""}<div class="meta">${hideCrate ? "" : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a> · `}${esc(c.tool)} ${esc(c.tool_version)} · ${c.claim_count} claims · ${c.dependency_count ?? 0} reviewed dependencies</div><p class="meta">${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""} · ${c.comment_count} comments · ${date(c.created_at)}</p></article>`;
+    const meta = [
+      hideCrate
+        ? ""
+        : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a>`,
+      c.tool
+        ? `${c.tool_id ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(c.tool)}</a>` : esc(c.tool)} ${shortVersion(c.tool_version ?? "")}`
+        : "",
+      plural(c.claim_count ?? 0, "claim"),
+      c.dependency_count
+        ? plural(
+            c.dependency_count,
+            "reviewed dependency",
+            "reviewed dependencies",
+          )
+        : "",
+      c.finding_count
+        ? `<a href="/report/${c.id}#findings">${plural(c.finding_count, "finding")}</a>`
+        : "",
+      user(c.author_id, c.username),
+      shortDate(c.created_at),
+    ];
+    return `<article class="claim-item"><a href="/report/${c.id}">#${c.id} ${esc(c.title)}</a>${c.withdrawn_at ? " " + badge("Withdrawn", "warn") : ""}<div class="meta">${meta.filter(Boolean).join(" · ")}</div></article>`;
   }
   function breadcrumbs(items: Crumb[]) {
     return `<div class="breadcrumbs" role="navigation" aria-label="Breadcrumb">${items.map(({ label, href }) => `<a href="${esc(href)}">${esc(label)}</a>`).join(' <span aria-hidden="true">/</span> ')} <span aria-hidden="true">/</span></div>`;
@@ -174,7 +231,7 @@ export function createViews(
   ) {
     const permalink = `/finding/${enc(f.id)}`;
     return `<article class="finding" id="finding-${esc(f.id)}"><h3><a href="${permalink}">${esc(f.title)}</a></h3>
-      ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${esc(f.validity)} · ${esc(f.upstream_status)} (author reported)</p>` : ""}${f.withdrawn_at ? '<p class="meta">Report withdrawn</p>' : ""}
+      ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${statusBadge(f.validity)}${f.upstream_status !== "not_reported" ? ` ${statusBadge(f.upstream_status)}` : ""} (author reported)</p>` : ""}${f.withdrawn_at ? `<p class="meta">${badge("Report withdrawn", "warn")}</p>` : ""}
       ${f.apis.length ? `<p>${f.apis.map((a: any) => (a.unverified ? `<code>${esc(a.display_path)}</code> (API unverified)` : `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`)).join(", ")}</p>` : ""}
       ${f.draft ? '<p class="meta">Local Finding draft · Not submitted</p>' : `<p class="meta">Found in <a href="${esc(external(`/report/${f.report_id}?v=${f.origin_revision_no}`))}">Report #${f.report_id} v${f.origin_revision_no}</a> · Updated ${date(f.updated_at)}</p>`}
       ${f.duplicate_of ? `<p>Duplicate of <a href="${esc(external(`/finding/${enc(f.duplicate_of)}`))}">${esc(f.duplicate_of)}</a></p>` : ""}
@@ -303,7 +360,7 @@ export function createViews(
           );
           const findings = (findingGroups.get(api.id) ?? []).map(
             (f) =>
-              `<a href="/finding/${enc(f.id)}">Finding: ${esc(f.title)}</a>${f.validity !== "reported" ? ` <span class="meta">(${esc(f.validity)})</span>` : ""}`,
+              `<a href="/finding/${enc(f.id)}">Finding: ${esc(f.title)}</a>${f.validity !== "reported" ? ` ${statusBadge(f.validity)}` : ""}`,
           );
           return `<div class="report-api-claims"><span class="claim-links">${claims.join(", ")}</span>${findings.length ? `<span class="finding-links">${claims.length ? " · " : ""}${findings.join(", ")}</span>` : ""}</div>`;
         },
@@ -352,7 +409,7 @@ export function createViews(
   function claimContent(c: any, stars = false) {
     return `${stars ? titleWithStars("claim", c) : `<h1>Claim #${esc(c.claim_number)} — ${esc(c.title)}</h1>`}
     <p>${apiHref(c.api_item_id) ? `<a href="${esc(apiHref(c.api_item_id))}"><code>${esc(c.display_path)}</code></a>` : `<code>${esc(c.display_path)}</code> · API unverified`}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
-    <pre class="signature">${esc(c.signature)}</pre><p>Tool: ${toolLink(c)}</p>
+    <pre class="signature">${signatureHTML(c.signature ?? "")}</pre><p>Tool: ${toolLink(c)}</p>
     <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || (c.evidence_ref ? "See the formal statement, including input types and instances, for conditions." : "None stated"))}</p></section>
     ${c.formal_evidence ? formalStatement(c.formal_evidence) : ""}
     ${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
@@ -363,6 +420,8 @@ export function createViews(
   return {
     esc,
     date,
+    badge,
+    statusBadge,
     user,
     breadcrumbs,
     crateCrumbs,

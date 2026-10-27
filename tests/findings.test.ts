@@ -1176,5 +1176,19 @@ test("crate findings summary stays version scoped, compact, filtered and paginat
     empty.window.document.body.textContent!,
     /No findings reported for this version/,
   );
+  // Report cards count findings by the same rule as the Findings heading.
+  const cardFindings = (page: typeof dom) =>
+    page.window.document.querySelector(".claim-item a[href$='#findings']")
+      ?.textContent;
+  assert.equal(cardFindings(dom), "31 findings");
+  assert.equal(cardFindings(other), "1 finding");
+  assert.equal(cardFindings(empty), undefined);
+  const counts = Object.fromEntries(
+    (await request("/reports")).body.items.map((r: any) => [
+      r.id,
+      r.finding_count,
+    ]),
+  );
+  assert.deepEqual(counts, { [report]: 31, 100: 0 });
   for (const page of [dom, second, other, empty]) page.window.close();
 });

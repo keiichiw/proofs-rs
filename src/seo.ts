@@ -22,6 +22,15 @@ const staticPaths = [
   "/book/preview-a-report.html",
   "/book/aeneas.html",
   "/book/api-documentation.html",
+  "/book/read-a-report.html",
+  "/book/discuss-a-report.html",
+  "/book/kani.html",
+  "/book/creusot.html",
+  "/book/update-a-report.html",
+  "/book/troubleshooting.html",
+  "/book/get-help.html",
+  "/book/configuration.html",
+  "/book/aeneas-reference.html",
 ];
 // Only current claims on visible, non-withdrawn reports contribute URLs.
 // UNION deduplicates APIs and releases shared by multiple reports.

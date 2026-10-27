@@ -142,16 +142,8 @@ demo.all("/api/v1/publish/prepare", (c) =>
     503,
   ),
 );
-demo.get("/book/*", (c) =>
-  c.html(
-    pageLayout(
-      "Book",
-      '<h1>Book</h1><p>The Book is built separately with <code>npm run build:book</code>. This UI demo does not require mdBook.</p><p><a href="/__demo">Return to demo scenarios</a></p>',
-      "",
-      null,
-    ),
-  ),
-);
+demo.get("/book", (c) => c.redirect("/book/", 302));
+demo.get("/book/*", (c) => c.env.ASSETS.fetch(c.req.raw));
 demo.all("*", async (c) => {
   const response = await site.fetch(c.req.raw, c.env, c.executionCtx);
   if (!response.headers.get("content-type")?.includes("text/html"))
