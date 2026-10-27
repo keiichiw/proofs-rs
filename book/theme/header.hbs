@@ -1,10 +1,13 @@
 <script>
 // Restore before the book controls/content are parsed. The following mdBook
 // initialization uses the same global sidebar value to set ARIA attributes.
+// Without a saved choice, open on screens wide enough to keep the chapter list
+// beside the text (mdBook's own 1080px breakpoint).
 (() => {
-  let saved = "hidden";
+  let saved = null;
   try { saved = localStorage.getItem("mdbook-sidebar"); } catch {}
-  if (saved !== "visible") saved = "hidden";
+  if (saved !== "visible" && saved !== "hidden")
+    saved = window.innerWidth >= 1080 ? "visible" : "hidden";
   window.sidebar = saved;
   document.getElementById("sidebar-toggle-anchor").checked = saved === "visible";
   document.documentElement.classList.remove("sidebar-visible", "sidebar-hidden");

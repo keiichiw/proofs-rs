@@ -1,9 +1,10 @@
-// Start closed on first visit; restore the user's choice on later pages.
+// Without a saved choice, start open on wide screens (mdBook's 1080px
+// breakpoint) and closed otherwise; restore the user's choice on later pages.
 (() => {
   const root = document.documentElement;
   root.classList.add("js");
   const checkbox = document.getElementById("sidebar-toggle-anchor");
-  let visible = false;
+  let visible = window.innerWidth >= 1080;
   try {
     const saved = localStorage.getItem("mdbook-sidebar");
     if (saved === "visible" || saved === "hidden")
