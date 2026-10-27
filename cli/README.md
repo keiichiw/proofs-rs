@@ -26,7 +26,7 @@ The CLI is developed in `cli/` alongside the service. To install a checkout, run
 Run inside the crate to verify:
 
 ```sh
-cargo proofs init --tool-version 0.66.0 --title 'Contract verification of my crate'
+cargo proofs init --tool-version 0.68.0 --title 'Contract verification of my crate'
 cargo proofs login
 # Commit and push all verification inputs, including Cargo.lock, before run.
 cargo proofs run -- cargo kani -Z function-contracts
@@ -47,7 +47,7 @@ title = "Contract verification of my crate" # required
 
 [tool]
 name = "kani"
-version = "0.66.0" # must be registered/selectable on the selected service
+version = "0.68.0" # must be registered/selectable on the selected service
 
 ```
 

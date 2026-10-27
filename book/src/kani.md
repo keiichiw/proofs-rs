@@ -3,6 +3,34 @@
 This page covers what is specific to Kani. Follow
 [Publish your first report](publish-a-report.md) for the common steps.
 
+## From start to finish
+
+Run these inside the crate, with your contract harnesses already passing under
+`cargo kani -Z function-contracts`. The links after the commands explain each step.
+
+```sh
+cargo install cargo-proofs --locked                 # 1. Install
+cargo proofs init --tool kani --tool-version 0.68.0 # 2. Create proofs.toml
+git add proofs.toml Cargo.lock && git commit -m "Add proofs.rs configuration" && git push
+cargo proofs login                                  # 3. Sign in
+cargo proofs run -- cargo kani -Z function-contracts # 4. Record
+cargo proofs preview                                # 5. Preview
+cargo proofs publish --dry-run && cargo proofs publish # 6. Publish
+```
+
+Steps: [Install](publish-a-report.md#1-install),
+[Create proofs.toml](publish-a-report.md#2-create-proofstoml),
+[Sign in](publish-a-report.md#3-sign-in),
+[Record](publish-a-report.md#4-record-verification),
+[Preview](publish-a-report.md#5-preview),
+[Publish](publish-a-report.md#6-publish). Use a version listed on
+[Kani](/tool/kani) in place of `0.68.0`.
+
+For a finished example, compare [Report #5](/report/5) with its
+[source repository](https://github.com/nyuichi/even-or-odd-verification): one
+contract harness for `is_even` becomes one Claim, the `proofs.toml` prose
+becomes the Overview, and the recorded run appears under Evidence.
+
 ## Which harnesses become Claims
 
 `cargo proofs` discovers `#[kani::proof_for_contract(...)]` harnesses and
