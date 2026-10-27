@@ -9,8 +9,9 @@ how each verifier's results become Claims.
 Check these before writing any configuration. Each one can block publication.
 
 - [ ] **A supported tool and a registered version.** Kani, Creusot, and Aeneas
-  with Lean are supported. The exact version you used must be registered on
-  [Tools](/tools); if it is not,
+  with Lean are supported. The exact version you used must be listed under
+  **Supported versions** on the tool's page, such as [Kani](/tool/kani); if it
+  is not,
   [request it](https://github.com/proofs-rs/proofs-rs/issues/new?template=tool.yml).
 - [ ] **A crate version released on crates.io.** A Report targets one version of
   one library crate. proofs.rs imports that version's public API catalogue from
@@ -74,13 +75,23 @@ title = "Contract verification of my crate"
 
 [tool]
 name = "kani"
-version = "0.66.0" # Version used for verification
+version = "0.68.0" # Version used; must be listed on /tool/kani
 ```
 
 The optional fields are what readers use to judge your result. See
 [Write a useful report](write-a-report.md) for what to put in them, and
 [Configuration and Markdown](configuration.md) for every field and the supported
 Markdown.
+
+Commit `proofs.toml` with the rest of your verification inputs, including
+`Cargo.lock`, and push. `cargo proofs run` refuses to start while the working
+tree has uncommitted or untracked changes:
+
+```sh
+git add proofs.toml Cargo.lock
+git commit -m "Add proofs.rs configuration"
+git push
+```
 
 ### 3. Sign in
 
@@ -119,6 +130,15 @@ This opens your Report in the browser exactly as readers will see it, marked
 changes; prose edits do not need another run. Stop with Ctrl+C. See
 [Preview a report locally](preview-a-report.md).
 
+Before publishing, check in the preview that:
+
+- [ ] the number of Claims and the APIs they name match what you meant to verify;
+- [ ] **Overview** says what holds and under which conditions, in words a Rust
+  user can follow without reading the proofs;
+- [ ] **What is trusted** and **Technical limitations** name what was not
+  verified;
+- [ ] the recorded logs contain nothing you would not publish (see below).
+
 ### 6. Publish
 
 ```sh
@@ -130,6 +150,21 @@ cargo proofs publish
 `Dry run: no report published.` The first publication of a crate version may
 wait while the service prepares its API catalogue (`Preparing API catalogue…`),
 which can take several minutes. `publish` then prints a link to your Report.
+
+## What gets published
+
+Everything in a Report is public, under the license in the
+[Terms](/terms):
+
+- your GitHub username, shown as the author;
+- the text from `proofs.toml`;
+- the recorded run: the SARIF record with the complete stdout and stderr of the
+  verifier, the command line, timing, and the tool version;
+- the GitHub repository URL and commit of the recorded source.
+
+Review the logs before publishing; they can contain local paths, environment
+details, or anything else your build printed. You can withdraw a Report later,
+but its history stays public. See [Update, withdraw, and recover](update-a-report.md).
 
 ## After publishing
 

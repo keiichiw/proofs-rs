@@ -235,6 +235,10 @@ See [the full workflow and recovery procedure](dependency-migration.md).
 
 ## UI visibility flags
 
+`HOME_EXAMPLE_REPORT` is the ID of a public report the home page shows under
+"Start with an example". Pick a small report with a written Overview. When the
+variable is unset, or the report is missing or withdrawn, the section is hidden.
+
 `SHOW_STAR_KARMA` and `SHOW_HOME_DISCUSSION` are independent Worker variables,
 exposed by `/api/v1/config` as `show_star_karma` and `show_home_discussion`. Only
 the string `"true"` enables a flag; missing values default off. Both deployment

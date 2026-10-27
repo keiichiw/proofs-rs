@@ -40,10 +40,9 @@ export function createViews(
           "'": "&#39;",
         })[ch]!,
     );
+  // Plain text, since some callers place it in attributes. Minutes are enough.
   const date = (v: string) =>
-    v
-      ? new Date(v).toISOString().replace("T", " ").replace(".000Z", " UTC")
-      : "";
+    v ? new Date(v).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "";
   const user = (id: string, name: string) =>
     id
       ? `<a class="user-link" href="/user/${enc(id)}">${esc(name || "ghost")}</a>`
@@ -74,7 +73,7 @@ export function createViews(
   const statusBadge = (status: string) =>
     badge(statusNames[status] ?? status, statusTones[status]);
   function claimItem(c: any) {
-    return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
+    return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${plural(c.report_comment_count ?? 0, "comment")}</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
   }
   const shortDate = (v: string) =>
     v
@@ -263,7 +262,34 @@ export function createViews(
     return `<form method="post" action="/_actions/finding-link" class="finding-form"><input type="hidden" name="_csrf" value="${esc(me.csrf)}"><input type="hidden" name="_key" value="${crypto.randomUUID()}"><input type="hidden" name="id" value="${esc(f.id)}"><input type="hidden" name="edit_version" value="${f.edit_version}"><input type="hidden" name="_back" value="/report/${f.report_id}#finding-${esc(f.id)}"><label>Kind<select name="kind">${["issue", "pr", "commit", "release", "report"].map((k) => `<option>${k}</option>`).join("")}</select></label><label>HTTPS URL<input name="url" type="url" required maxlength="2000"></label><label>Fixed version (required for release)<input name="version" maxlength="100"></label><label>Revalidation Report ID (report links only)<input name="target_report_id" type="number" min="1"></label><label>Report revision (report links only)<input name="target_revision_no" type="number" min="1"></label><button>Add link</button></form>`;
   }
   function reportContent(c: any, stars = false) {
-    return `${stars ? titleWithStars("report", c) : `<h1>${esc(c.title)}</h1>`}<p class="report-tool">${toolLink(c)}</p>${c.findings ? `<p class="report-outcome">${c.claim_count ?? c.claims?.length ?? 0} verified claims · ${c.finding_count ?? 0} findings</p>` : ""}`;
+    return `${stars ? titleWithStars("report", c) : `<h1>${esc(c.title)}</h1>`}<p class="report-tool">${toolLink(c)}</p>${c.findings ? `<p class="report-outcome">${plural(c.claim_count ?? c.claims?.length ?? 0, "verified claim")} · ${plural(c.finding_count ?? 0, "finding")}</p>` : ""}${c.run_ids?.length ? `<p class="report-provenance meta">Recorded by the author; proofs.rs has not re-run it. <a href="${esc(external("/book/read-a-report.html"))}">How to read a report</a></p>` : ""}`;
+  }
+  // In-page links to the sections reportBody and the page actually render.
+  function reportOutline(c: any, apis = false, comments?: number) {
+    const links: [string, string][] = [
+      ...(c.explanation ? [["overview", "Overview"] as [string, string]] : []),
+      ...(c.findings ? [["findings", "Findings"] as [string, string]] : []),
+      ...(apis ? [["apis", "APIs"] as [string, string]] : []),
+      ...(c.evidence_url || c.run_ids?.length || c.environment
+        ? [["evidence", "Evidence"] as [string, string]]
+        : []),
+      ...(c.trusted_assumptions
+        ? [["trusted", "What is trusted"] as [string, string]]
+        : []),
+      ...(c.limitations || c.tool_limitations
+        ? [["limitations", "Limitations"] as [string, string]]
+        : []),
+      ["dependencies", "Dependencies"],
+      ...(comments === undefined
+        ? []
+        : [
+            ["discussion", `Discussion · ${plural(comments, "comment")}`] as [
+              string,
+              string,
+            ],
+          ]),
+    ];
+    return `<nav class="report-outline" aria-label="On this page">${links.map(([id, label]) => `<a href="#${id}">${esc(label)}</a>`).join(" · ")}</nav>`;
   }
   function reproduceSection(
     runIds: string[],
@@ -274,12 +300,13 @@ export function createViews(
       ? `<details class="reproduce" id="reproduce"><summary>Reproduce</summary><div class="reproduce-body">${recorded}</div>${environment ? `<details class="report-environment"><summary>Environment</summary><div class="markdown-body">${renderMarkdown(environment, 2)}</div></details>` : ""}</details>`
       : "";
   }
-  function reportBody(c: any, recorded = "", findingsHTML = "") {
-    return `${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
+  function reportBody(c: any, recorded = "", findingsHTML = "", apisHTML = "") {
+    return `${c.explanation ? `<section class="report-section report-explanation" id="overview"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
     ${findingsHTML}
-    ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment, recorded)}</section>` : ""}
-    ${c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2><div class="markdown-body">${renderMarkdown(c.trusted_assumptions, 2)}</div></section>` : ""}
-    ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${c.limitations ? `<div class="markdown-body">${renderMarkdown(c.limitations, 2)}</div>` : ""}${toolLimitations(c)}</section>` : ""}
+    ${apisHTML}
+    ${c.evidence_url || c.run_ids?.length || c.environment ? `<section class="report-section report-evidence" id="evidence"><h2>Evidence</h2>${c.evidence_url ? `<p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p>` : ""}${reproduceSection(c.run_ids, c.environment, recorded)}</section>` : ""}
+    ${c.trusted_assumptions ? `<section class="report-section" id="trusted"><h2>What is trusted</h2><div class="markdown-body">${renderMarkdown(c.trusted_assumptions, 2)}</div></section>` : ""}
+    ${c.limitations || c.tool_limitations ? `<section class="report-section report-limitations" id="limitations"><h2>Technical limitations</h2>${c.limitations ? `<div class="markdown-body">${renderMarkdown(c.limitations, 2)}</div>` : ""}${toolLimitations(c)}</section>` : ""}
     ${reportDependencies(c)}
     `;
   }
@@ -307,7 +334,7 @@ export function createViews(
           ),
         ),
     );
-    return `<section class="report-section report-dependencies"><h2>Dependencies${dependencies == null ? "" : ` (${dependencies.length})`}</h2>${catalog}${otherReviews.length ? `<details class="dependency-reviews"><summary>Other reviewed evidence (${otherReviews.length})</summary><ul>${otherReviews.map((r: any) => `<li><code>${esc(r.crate)} ${esc(r.version)}</code> · ${reportLink(r)}</li>`).join("")}</ul></details>` : ""}</section>`;
+    return `<section class="report-section report-dependencies" id="dependencies"><h2>Dependencies${dependencies == null ? "" : ` (${dependencies.length})`}</h2>${catalog}${otherReviews.length ? `<details class="dependency-reviews"><summary>Other reviewed evidence (${otherReviews.length})</summary><ul>${otherReviews.map((r: any) => `<li><code>${esc(r.crate)} ${esc(r.version)}</code> · ${reportLink(r)}</li>`).join("")}</ul></details>` : ""}</section>`;
   }
   function reportAPIs(c: any) {
     const groups = new Map<string, any[]>();
@@ -337,7 +364,7 @@ export function createViews(
       kind:
         api.kind || (api.signature?.startsWith("impl") ? "method" : "function"),
     }));
-    return `<section class="report-apis"><h2>APIs (${apis.length})</h2>${renderAPICatalog(
+    return `<section class="report-apis" id="apis"><h2>APIs (${apis.length})</h2>${renderAPICatalog(
       apis,
       c.crate,
       {
@@ -410,9 +437,9 @@ export function createViews(
     return `${stars ? titleWithStars("claim", c) : `<h1>Claim #${esc(c.claim_number)} — ${esc(c.title)}</h1>`}
     <p>${apiHref(c.api_item_id) ? `<a href="${esc(apiHref(c.api_item_id))}"><code>${esc(c.display_path)}</code></a>` : `<code>${esc(c.display_path)}</code> · API unverified`}${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}</p>
     <pre class="signature">${signatureHTML(c.signature ?? "")}</pre><p>Tool: ${toolLink(c)}</p>
+    ${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : options.preview ? '<p class="claim-explanation-missing" role="note"><strong>No claim explanation.</strong> Readers will rely on the report Overview to learn what this claim guarantees, under which conditions, and what it leaves unverified.</p>' : `<p class="claim-explanation-missing meta">This claim has no explanation of its own. ${c.report_id ? `Read the <a href="${esc(external(`/report/${enc(String(c.report_id))}#overview`))}">report Overview</a>, and treat` : "Treat"} the ${c.formal_evidence ? "formal statement" : "preconditions and evidence"} below as authoritative. See <a href="${esc(external("/book/concepts.html"))}">Concepts and terminology</a>.</p>`}
     <section class="report-section"><h2>Preconditions</h2><p class="plain-text code">${esc(c.precondition || (c.evidence_ref ? "See the formal statement, including input types and instances, for conditions." : "None stated"))}</p></section>
     ${c.formal_evidence ? formalStatement(c.formal_evidence) : ""}
-    ${c.explanation ? `<section class="report-section report-explanation"><h2>Overview</h2><div class="markdown-body">${renderMarkdown(c.explanation, 2)}</div></section>` : ""}
     ${c.evidence_url ? `<section class="report-section"><h2>Evidence</h2><p><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener noreferrer">${esc(c.evidence_url)}</a></p></section>` : ""}
     ${c.shared_trusted_assumptions || c.trusted_assumptions ? `<section class="report-section"><h2>What is trusted</h2>${claimScope(c.shared_trusted_assumptions, c.trusted_assumptions)}</section>` : ""}
     ${c.shared_limitations || c.limitations || c.tool_limitations ? `<section class="report-section report-limitations"><h2>Technical limitations</h2>${claimScope(c.shared_limitations, c.limitations)}${toolLimitations(c)}</section>` : ""}`;
@@ -433,6 +460,7 @@ export function createViews(
     reportContent,
     reportBody,
     reportAPIs,
+    reportOutline,
     reportDependencies,
     claimContent,
     toolLimitations,

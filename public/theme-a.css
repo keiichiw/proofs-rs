@@ -567,6 +567,15 @@ html:not([data-theme="base"]) .home-search {
 html:not([data-theme="base"]) .home-search h1 {
   font-size: 34px;
 }
+html:not([data-theme="base"]) .home-paths a {
+  border-color: var(--line);
+}
+html:not([data-theme="base"]) .home-paths a:hover {
+  background: var(--surface-hover);
+}
+html:not([data-theme="base"]) :is(.home-paths span, .home-trust) {
+  color: var(--muted);
+}
 html:not([data-theme="base"]) .vote {
   color: var(--muted);
   font-size: 13px;

@@ -463,7 +463,7 @@ test("Report and crate pages render findings, owner forms, safe links and curren
   );
   assert.match(
     d.querySelector(".report-outcome")!.textContent!,
-    /1 verified claims · 1 findings/,
+    /1 verified claim · 1 finding\b/,
   );
   assert.equal(
     d.querySelector(`#finding-${id} h3`)!.textContent,
@@ -503,6 +503,12 @@ test("Report and crate pages render findings, owner forms, safe links and curren
     dom.window.document.querySelector("#findings")!.textContent,
     "Findings (1)",
   );
+  // The catalogue marks the API the finding names, for the "With findings" filter.
+  const row = dom.window.document.querySelector(
+    '[data-api-path="sample::safe"]',
+  )!;
+  assert.equal(row.getAttribute("data-findings"), "1");
+  assert.match(row.textContent!, /1 finding\b/);
   dom.window.close();
 });
 

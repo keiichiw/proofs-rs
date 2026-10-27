@@ -26,6 +26,7 @@ export interface Env {
   TERMS_VERSION: string;
   SHOW_STAR_KARMA?: string;
   SHOW_HOME_DISCUSSION?: string;
+  HOME_EXAMPLE_REPORT?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_D1_TOKEN?: string;
   DB_ID?: string;

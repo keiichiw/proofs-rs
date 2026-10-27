@@ -298,7 +298,7 @@ test("Finding drafts appear after Overview, remain separate from successful chec
   );
   assert.match(
     d.querySelector(".report-outcome")!.textContent!,
-    /1 verified claims · 1 findings/,
+    /1 verified claim · 1 finding\b/,
   );
   assert.match(
     d.querySelector("#findings")!.textContent!,
@@ -380,7 +380,7 @@ test("existing report preview renders published Markdown and remote history with
   const dom = new JSDOM(renderPreview(snapshot, "/report").html),
     d = dom.window.document;
   assert.equal(d.querySelector("#finding-published .markdown-body"), null);
-  assert.match(d.querySelector(".report-outcome")!.textContent!, /1 findings/);
+  assert.match(d.querySelector(".report-outcome")!.textContent!, /1 finding\b/);
   assert.equal(d.querySelectorAll(".finding").length, 2);
   assert.doesNotMatch(
     d.querySelector("#findings")!.textContent!,

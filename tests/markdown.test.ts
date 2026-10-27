@@ -144,9 +144,10 @@ test("Overview separates author headings from preset sections and is omitted whe
       overview.querySelector(".markdown-body h1, .markdown-body h2"),
       null,
     );
+    // A claim leads with its explanation, before the preset sections.
     assert.equal(
       overview.nextElementSibling?.querySelector("h2")?.textContent,
-      "Evidence",
+      render === views.claimContent ? "Preconditions" : "Evidence",
     );
     for (const explanation of [undefined, ""]) {
       assert.equal(

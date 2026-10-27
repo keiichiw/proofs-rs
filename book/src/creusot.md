@@ -1,7 +1,10 @@
 # Record with Creusot
 
 This page covers what is specific to Creusot. Follow
-[Publish your first report](publish-a-report.md) for the common steps.
+[Publish your first report](publish-a-report.md) for the common steps; in
+short: install, `init` as below, commit and push `proofs.toml` and `Cargo.lock`,
+`login`, `run` as below, `preview`, then `publish`. Unlike Kani, `init` needs
+`--tool-target`.
 
 ## Set up and record
 
