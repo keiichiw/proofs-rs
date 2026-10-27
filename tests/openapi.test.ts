@@ -36,6 +36,13 @@ test("generated OpenAPI is valid and describes request media, statuses and param
     { session: [], csrf: [] },
     { bearer: [] },
   ]);
+  assert.deepEqual(
+    spec.paths["/api/v1/reports"].get.parameters
+      .filter((p: any) => p.in === "query")
+      .map((p: any) => p.name)
+      .sort(),
+    ["author", "cursor", "q", "tool"],
+  );
   const revision = spec.paths["/api/v1/reports/{id}/revisions/{n}"].get;
   assert.deepEqual(
     revision.parameters

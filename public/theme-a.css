@@ -533,6 +533,33 @@ html:not([data-theme="base"])
   max-width: 72ch;
 }
 
+/* Report filters */
+html:not([data-theme="base"]) .report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+html:not([data-theme="base"]) .report-filters :is(input, select) {
+  width: auto;
+  max-width: 100%;
+  font-size: 14px;
+}
+html:not([data-theme="base"]) .report-filters input[name="q"] {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+html:not([data-theme="base"]) .report-filters input[name="author"] {
+  flex: 0 1 160px;
+}
+html:not([data-theme="base"]) .report-filters button {
+  margin-left: 0;
+}
+html:not([data-theme="base"]) .report-filters a {
+  font-family: var(--sans);
+  font-size: 14px;
+}
+
 /* Home */
 html:not([data-theme="base"]) .home-search {
   padding: 32px 0 40px;
@@ -584,6 +611,10 @@ html:not([data-theme="base"]) .vote button:focus-visible {
   }
   html:not([data-theme="base"]) .home-search {
     padding: 20px 0 28px;
+  }
+  html:not([data-theme="base"]) .report-filters :is(input, select) {
+    flex: 1 1 100%;
+    max-width: none;
   }
   html:not([data-theme="base"]) .report-context,
   html:not([data-theme="base"]) .finding {

@@ -251,6 +251,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       path: string,
       render: (item: any) => string = reportSummary,
       cursorName = "cursor",
+      empty = "No results.",
     ) => {
       const url = new URL(path, "https://local");
       const cursor = current.searchParams.get(cursorName);
@@ -258,7 +259,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const data = await get(url.pathname + url.search);
       return (
         (data.items.map((item: any) => render(item)).join("") ||
-          "<p>No results.</p>") + pagination(data, cursorName)
+          `<p>${empty}</p>`) + pagination(data, cursorName)
       );
     };
     if (p in legal) {
@@ -401,8 +402,26 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         `${breadcrumbs(crateCrumbs(a, "apis"))}<p class="item-kind">${esc(apiKindLabel(a))}</p><h1 class="code">${itemPathHTML(a.display_path)}</h1>${a.is_unsafe ? "<p><strong>unsafe API — callers must uphold its safety requirements.</strong></p>" : ""}<pre class="signature">${signatureHTML(a.signature)}</pre><p><a href="${esc(a.upstream_url)}" target="_blank" rel="noopener noreferrer">Documentation on docs.rs</a></p><h2 id="claims">Claims (${counts[0].n})</h2>${await list("/apis/" + enc(id) + "/claims", claimItem)}`,
       );
     }
-    if (p === "reports")
-      return result("Reports", `<h1>Reports</h1>${await list("/reports")}`);
+    if (p === "reports") {
+      const filters = new URLSearchParams();
+      for (const name of ["q", "tool", "author"]) {
+        const value = current.searchParams.get(name)?.trim();
+        if (value) filters.set(name, value);
+      }
+      const filtered = filters.size > 0;
+      const [tools, reports] = await Promise.all([
+        get("/tools"),
+        list(
+          "/reports?" + filters,
+          reportSummary,
+          "cursor",
+          filtered ? "No matching reports." : "No reports yet.",
+        ),
+      ]);
+      const value = (name: string) => esc(filters.get(name) || "");
+      const form = `<form method="get" action="/reports" class="searchbar report-filters"><input name="q" type="search" value="${value("q")}" aria-label="Title or crate" placeholder="Title or crate"><select name="tool" aria-label="Tool"><option value="">All tools</option>${tools.items.map((t: any) => `<option value="${esc(t.id)}"${t.id === filters.get("tool") ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select><input name="author" value="${value("author")}" aria-label="Author" placeholder="Author"><button>Filter</button>${filtered ? ' <a href="/reports">Clear</a>' : ""}</form>`;
+      return result("Reports", `<h1>Reports</h1>${form}${reports}`);
+    }
     if ((p === "report" || p === "claim") && id && parts[2] === "stars") {
       const item = await get(`/${p}s/${enc(id)}`);
       if (!config.show_star_karma) return c.redirect(`/${p}/${enc(id)}`, 302);

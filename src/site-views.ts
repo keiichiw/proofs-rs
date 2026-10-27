@@ -76,8 +76,40 @@ export function createViews(
   function claimItem(c: any) {
     return `<article class="claim-item"><a href="/claim/${enc(c.id)}?report_revision=${c.report_revision}">Claim #${esc(c.claim_number)} — ${esc(c.title)}</a><div class="meta"><code>${esc(c.display_path)}</code>${c.is_unsafe ? " · <strong>unsafe</strong>" : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""}</div><p class="meta"><a href="/report/${c.report_id}?v=${c.report_revision}">${esc(c.report_title)} · v${c.report_revision}</a>${config.show_star_karma ? ` · ${c.report_star_count} stars` : ""} · <a href="/report/${c.report_id}#discussion">${c.report_comment_count} comments</a> · ${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${!c.in_current_report ? " · Removed from current report" : ""}${c.withdrawn_at ? " · Withdrawn" : ""}</p></article>`;
   }
+  const shortDate = (v: string) =>
+    v
+      ? `<time datetime="${esc(v)}" title="${date(v)}">${esc(new Date(v).toISOString().slice(0, 10))}</time>`
+      : "";
+  // Commit-hash versions (Aeneas) read like git's short hashes.
+  const shortVersion = (v: string) =>
+    /^[0-9a-f]{40}$/.test(v)
+      ? `<span title="${esc(v)}">${esc(v.slice(0, 7))}</span>`
+      : esc(v);
+  const plural = (n: number, noun: string, nouns = noun + "s") =>
+    `${n} ${n === 1 ? noun : nouns}`;
   function reportSummary(c: any, hideCrate = false) {
-    return `<article class="claim-item"><a href="/report/${c.id}">#${c.id} ${esc(c.title)}</a>${c.withdrawn_at ? " · Withdrawn" : ""}<div class="meta">${hideCrate ? "" : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a> · `}${esc(c.tool)} ${esc(c.tool_version)} · ${c.claim_count} claims · ${c.dependency_count ?? 0} reviewed dependencies</div><p class="meta">${user(c.author_id, c.username)}${config.show_star_karma ? ` · ${c.author_karma} karma` : ""}${config.show_star_karma ? ` · ${c.star_count} stars` : ""} · ${c.comment_count} comments · ${date(c.created_at)}</p></article>`;
+    const meta = [
+      hideCrate
+        ? ""
+        : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a>`,
+      c.tool
+        ? `${c.tool_id ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(c.tool)}</a>` : esc(c.tool)} ${shortVersion(c.tool_version ?? "")}`
+        : "",
+      plural(c.claim_count ?? 0, "claim"),
+      c.dependency_count
+        ? plural(
+            c.dependency_count,
+            "reviewed dependency",
+            "reviewed dependencies",
+          )
+        : "",
+      c.finding_count
+        ? `<a href="/report/${c.id}#findings">${plural(c.finding_count, "finding")}</a>`
+        : "",
+      user(c.author_id, c.username),
+      shortDate(c.created_at),
+    ];
+    return `<article class="claim-item"><a href="/report/${c.id}">#${c.id} ${esc(c.title)}</a>${c.withdrawn_at ? " " + badge("Withdrawn", "warn") : ""}<div class="meta">${meta.filter(Boolean).join(" · ")}</div></article>`;
   }
   function breadcrumbs(items: Crumb[]) {
     return `<div class="breadcrumbs" role="navigation" aria-label="Breadcrumb">${items.map(({ label, href }) => `<a href="${esc(href)}">${esc(label)}</a>`).join(' <span aria-hidden="true">/</span> ')} <span aria-hidden="true">/</span></div>`;

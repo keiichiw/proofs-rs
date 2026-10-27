@@ -333,6 +333,67 @@ test("crate report summaries show the reviewed count without a denominator", () 
   dom.window.close();
 });
 
+test("report summaries fit on one meta line", () => {
+  const { reportSummary } = createViews(
+    { user: null },
+    { show_star_karma: true },
+    () => "",
+  );
+  const card = (report: object) =>
+    new JSDOM(
+      reportSummary({
+        id: 1,
+        title: "Report",
+        crate: "sample",
+        version: "1.0.0",
+        tool_id: "aeneas",
+        tool: "Aeneas",
+        tool_version: "be86ab0f1989d04944292b345b24c435be3ad10a",
+        claim_count: 1,
+        dependency_count: 0,
+        finding_count: 0,
+        author_id: "alice",
+        username: "alice",
+        author_karma: 7,
+        star_count: 4,
+        comment_count: 5,
+        created_at: "2026-09-25T10:00:00.000Z",
+        ...report,
+      }),
+    ).window.document;
+  let d = card({});
+  assert.equal(d.querySelectorAll(".claim-item > .meta").length, 1);
+  assert.equal(
+    d.querySelector(".meta")!.textContent,
+    "sample 1.0.0 · Aeneas be86ab0 · 1 claim · alice · 2026-09-25",
+  );
+  assert.equal(
+    d.querySelector(".meta span[title]")!.getAttribute("title"),
+    "be86ab0f1989d04944292b345b24c435be3ad10a",
+  );
+  assert.equal(
+    d.querySelector('.meta a[href="/reports?tool=aeneas"]')?.textContent,
+    "Aeneas",
+  );
+  const time = d.querySelector(".meta time")!;
+  assert.equal(time.getAttribute("datetime"), "2026-09-25T10:00:00.000Z");
+  assert.equal(time.getAttribute("title"), "2026-09-25 10:00:00 UTC");
+  assert.equal(d.querySelector(".badge"), null);
+  d = card({
+    tool: "Kani",
+    tool_version: "0.68.0",
+    claim_count: 2,
+    dependency_count: 1,
+    finding_count: 2,
+    withdrawn_at: "2026-09-26T00:00:00.000Z",
+  });
+  assert.equal(
+    d.querySelector(".meta")!.textContent,
+    "sample 1.0.0 · Kani 0.68.0 · 2 claims · 1 reviewed dependency · 2 findings · alice · 2026-09-25",
+  );
+  assert.equal(d.querySelector(".badge-warn")!.textContent, "Withdrawn");
+});
+
 test("report APIs include finding-only APIs and combine associations without duplicates", () => {
   const views = createViews({ user: null }, {}, () => "");
   const api = {

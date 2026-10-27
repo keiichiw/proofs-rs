@@ -30,6 +30,13 @@ export const pagination = z.object({
     ),
 });
 export const search = pagination.extend({ q: string.optional() });
+export const reportFilters = search.extend({
+  q: string.optional().describe("Substring of the report title or crate name."),
+  tool: string.optional().describe("Tool slug, as listed by /tools."),
+  author: string
+    .optional()
+    .describe("Author username; matched case-insensitively."),
+});
 export const list = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), next_cursor: string.nullable() });
 export const token = z.object({
@@ -154,6 +161,7 @@ export const report = z
     version: string,
     yanked: flag,
     username: nullableString,
+    tool_id: string.describe("Tool slug, usable as the tool filter."),
     tool: string,
     tool_version: string,
     tool_limitations: string.describe("Displayed as Technical limitations."),
@@ -164,6 +172,9 @@ export const report = z
     author_karma: integer,
     claim_count: integer,
     dependency_count: integer,
+    finding_count: integer.describe(
+      "Findings other than invalid or duplicate; 0 once withdrawn.",
+    ),
   })
   .meta({ id: "Report" });
 export const evidenceRef = z.strictObject({

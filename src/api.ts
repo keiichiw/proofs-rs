@@ -245,6 +245,9 @@ api.post(
   },
 );
 const activeReport = "p.visibility='public' AND p.withdrawn_at IS NULL";
+// LIKE pattern matching `text` anywhere, with wildcards in it taken literally.
+const likeContains = (text: string) =>
+  "%" + text.replace(/[\\%_]/g, "\\$&") + "%";
 api.get(
   "/home",
   ...operation(
@@ -275,17 +278,36 @@ api.get(
   ...operation("List public reports", S.list(S.report), {
     tags: ["Reports"],
     auth: "optional",
-    query: S.pagination,
+    query: S.reportFilters,
   }),
-  async (c) =>
-    c.json(
+  async (c) => {
+    let filters = "";
+    const bindings: string[] = [];
+    const q = c.req.query("q")?.trim();
+    if (q) {
+      filters +=
+        " AND (rr.title LIKE ? ESCAPE '\\' OR cr.name LIKE ? ESCAPE '\\')";
+      bindings.push(likeContains(q), likeContains(q));
+    }
+    const tool = c.req.query("tool")?.trim();
+    if (tool) {
+      filters += " AND t.id=?";
+      bindings.push(tool);
+    }
+    const author = c.req.query("author")?.trim();
+    if (author) {
+      filters += " AND u.username=? COLLATE NOCASE";
+      bindings.push(author);
+    }
+    return c.json(
       await listing(
         c,
-        publicReport + ` WHERE ${activeReport} AND ${reportLatest}`,
-        [],
+        publicReport + ` WHERE ${activeReport} AND ${reportLatest}${filters}`,
+        bindings,
         [{ sql: "p.id", key: "id", desc: true }],
       ),
-    ),
+    );
+  },
 );
 api.get(
   "/crates",
@@ -300,8 +322,7 @@ api.get(
   async (c) => {
     const published = `EXISTS(SELECT 1 FROM releases rel JOIN reports p ON p.release_id=rel.id WHERE rel.crate_id=cr.id AND ${activeReport})`;
     const filter = "cr.name LIKE ? ESCAPE '\\'";
-    const query =
-      "%" + (c.req.query("q") || "").replace(/[\\%_]/g, "\\$&") + "%";
+    const query = likeContains(c.req.query("q") || "");
     let counts: any;
     const data = await listing(
       c,
