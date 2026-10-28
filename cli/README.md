@@ -64,7 +64,28 @@ You may set `PROOFS_SERVER` instead. The default is `https://proofs.rs`. Tokens 
 
 ## Local report preview
 
-Install Node.js 24 or newer, then preview a successful recorded run before publishing:
+Install Node.js 24 or newer. To review local report text before committing,
+pushing or recording verification:
+
+```sh
+cargo proofs preview --draft
+cargo proofs preview --draft --manifest-path path/to/crate/Cargo.toml \
+  --proofs-config aeneas/profiles/stage2/proofs.toml
+```
+
+Draft mode requires no Git repository, recorded run, login or service connection.
+It displays report prose and Finding drafts; Aeneas configurations also show the
+configured API, module, theorem and precondition. Every page is marked
+**Unverified draft**. No verification is performed and no run, logs, SARIF,
+source links or evidence are generated. The mode makes no service requests and
+does not access credentials, recorded runs or publication state. Save and reload
+to see changes, including changes to mappings.
+
+`--proofs-config` is relative to the selected package directory, must stay inside
+it, and requires `--draft`. `--draft` conflicts with `--run` and `--report`.
+The normal recording and publication requirements are unchanged.
+
+To preview a successful recorded run before publishing:
 
 ```sh
 cargo proofs preview

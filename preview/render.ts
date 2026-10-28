@@ -8,13 +8,23 @@ import { createViews } from "../src/site-views";
 import { pageLayout } from "../web/page-layout";
 import { claimTitle } from "../web/claim-title";
 import { renderRecordedRun } from "../web/recorded-run";
+import { renderDraftPreview } from "./draft";
 
-export interface Snapshot {
+interface RecordedSnapshot {
+  mode?: "recorded";
   report: any;
   sarif: any;
   warnings: string[];
   server: string;
 }
+export interface DraftSnapshot {
+  mode: "draft";
+  report: any;
+  sarif: null;
+  warnings: string[];
+  server: string;
+}
+export type Snapshot = RecordedSnapshot | DraftSnapshot;
 const esc = (value: unknown) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -37,6 +47,13 @@ export function renderPreview(
   snapshot: Snapshot,
   path: string,
 ): { status: number; html: string } {
+  if (snapshot.mode === "draft") {
+    const page = renderDraftPreview(snapshot, path);
+    return {
+      status: page.status,
+      html: previewPage(page.title, page.body, snapshot.server),
+    };
+  }
   // Enrich a copy: a later request must not inherit changes to a prior snapshot.
   const report = structuredClone(snapshot.report);
   const localOnly = snapshot.sarif.runs[0].properties.proofs.localOnly === true;

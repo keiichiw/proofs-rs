@@ -292,9 +292,13 @@ impl Project {
         self.manifest.with_file_name("proofs.toml")
     }
     pub fn config(&self) -> Result<Config> {
+        Config::read(&self.config_path())
+    }
+}
+impl Config {
+    pub fn read(path: &Path) -> Result<Self> {
         let config: Config = toml::from_str(
-            &fs::read_to_string(self.config_path())
-                .context("Read proofs.toml; run cargo proofs init first")?,
+            &fs::read_to_string(path).with_context(|| format!("Read {}", path.display()))?,
         )?;
         config.report.validate()?;
         config.tool.validate()?;

@@ -83,10 +83,16 @@ enum Commands {
         #[arg(last=true, required=true, num_args=2..)]
         command: Vec<String>,
     },
-    /// Preview a recorded report locally (requires Node.js 24+; never uploads).
+    /// Preview a recorded report or an unverified draft locally (requires Node.js 24+).
     Preview {
         #[command(flatten)]
         project: ProjectArgs,
+        /// Preview local report text and configured mappings without recorded evidence or service access.
+        #[arg(long, conflicts_with_all = ["run", "report"])]
+        draft: bool,
+        /// Draft configuration, relative to the selected package directory.
+        #[arg(long, requires = "draft")]
+        proofs_config: Option<PathBuf>,
         /// Select a recorded run (defaults to the latest run at startup).
         #[arg(long)]
         run: Option<String>,
@@ -144,6 +150,8 @@ fn run() -> Result<()> {
         Commands::Run { project, command } => record::run(&project, command),
         Commands::Preview {
             project,
+            draft,
+            proofs_config,
             run,
             report,
             port,
@@ -152,6 +160,8 @@ fn run() -> Result<()> {
             &server,
             &project,
             preview::Options {
+                draft,
+                proofs_config,
                 run,
                 report,
                 port,
