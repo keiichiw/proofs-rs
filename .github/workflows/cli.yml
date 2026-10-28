@@ -80,10 +80,11 @@ jobs:
     if: needs.lean-audit-changes.outputs.required == 'true'
     env:
       LEAN_TOOLCHAIN: leanprover/lean4:v4.35.0
-      PROOFS_TEST_AENEAS_CACHE: ${{ runner.temp }}/proofs-aeneas-cache
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Set shared Aeneas cache path
+        run: echo "PROOFS_TEST_AENEAS_CACHE=$RUNNER_TEMP/proofs-aeneas-cache" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
