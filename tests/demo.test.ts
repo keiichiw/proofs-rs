@@ -347,6 +347,20 @@ test(
       }
       const findingPath = `/api/v1/findings/${ids.openFinding}`;
       const initial = await readJSON<Finding>(await request(findingPath));
+      const issuePage = await request(
+        `/finding/${ids.openFinding}/github-issue`,
+      );
+      assert.equal(issuePage.status, 200);
+      const issueDocument = new JSDOM(await issuePage.text()).window.document;
+      assert.match(
+        issueDocument.body.textContent!,
+        /Synthetic demo repository/,
+      );
+      assert.ok(
+        issueDocument.querySelector(
+          'a[href^="https://github.com/example/findings-demo/issues/new"]',
+        ),
+      );
       const edited = await request(findingPath, "PATCH", {
         edit_version: initial.edit_version,
         title: "Edited locally",

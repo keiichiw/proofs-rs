@@ -62,4 +62,20 @@
     found.addEventListener("change", apply);
     form.hidden = false;
   }
+  for (const button of document.querySelectorAll("button[data-copy-issue]")) {
+    button.addEventListener("click", async () => {
+      const field = document.getElementById(button.dataset.copyIssue);
+      const status = button
+        .closest("[data-issue-draft]")
+        .querySelector("[data-copy-status]");
+      try {
+        await navigator.clipboard.writeText(field.value);
+        status.textContent = "Copied";
+      } catch {
+        field.focus();
+        field.select();
+        status.textContent = "Selected — use your browser’s Copy command";
+      }
+    });
+  }
 })();

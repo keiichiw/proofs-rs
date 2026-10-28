@@ -13,6 +13,11 @@ import { renderRecordedRun } from "../web/recorded-run";
 import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
 import { dependencyCatalog } from "./dependencies";
+import {
+  githubIssueDraft,
+  githubIssueURL,
+  upstreamRepository,
+} from "./github-issue";
 
 export type SiteFetch = (request: Request) => Promise<Response>;
 const enc = encodeURIComponent;
@@ -236,7 +241,10 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         .join("")}<button ${buttonAttributes}>${escape(label)}</button></form>`;
     const confirmation = (message: string, submit: string, cancel: string) =>
       `<dialog open class="confirmation-dialog"><p>${escape(message)}</p><div class="form-actions">${submit}<a class="button-link" href="${escape(cancel)}">Cancel</a></div></dialog>`;
-    const v = createViews(me, config, action);
+    const v = createViews(me, config, action, {
+      addIssue:
+        p === "finding" && current.searchParams.get("add_issue") === "1",
+    });
     const {
       esc,
       date,
@@ -507,6 +515,29 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const f = await get(`/findings/${enc(id)}`);
       const owner = await get(`/reports/${f.report_id}`);
       const editable = me.user?.id === owner.author_id && !f.withdrawn_at;
+      if (parts.length === 3 && parts[2] === "github-issue") {
+        if (!me.user) return login();
+        if (me.user.id !== owner.author_id) throw new Fault(403, "not_author");
+        if (f.withdrawn_at) throw new Fault(409, "report_withdrawn");
+        const upstream = await upstreamRepository(c.env, f.crate);
+        const draft = githubIssueDraft(f, c.env.APP_ORIGIN);
+        const issue = upstream.repository
+          ? githubIssueURL(upstream.repository, draft)
+          : null;
+        const unavailable = {
+          missing: "This crate has no upstream repository listed on crates.io.",
+          unsupported:
+            "The upstream repository listed on crates.io is not a supported HTTPS GitHub repository.",
+          unavailable:
+            "Unable to load the upstream repository from crates.io. Please try again.",
+        };
+        const unavailableReason =
+          upstream.repository === null ? unavailable[upstream.reason] : "";
+        return result(
+          "Create GitHub issue",
+          `<h1>Create GitHub issue</h1><p>Review the destination and draft below, then confirm and submit on GitHub. No issue is created by proofs.rs.</p>${c.env.ENVIRONMENT === "local-demo" ? "<p>Synthetic demo repository. These fixtures are not verification results.</p>" : ""}${upstream.repository ? `<p>Upstream repository from crates.io: <a href="${esc(upstream.repository)}" target="_blank" rel="noopener noreferrer">${esc(upstream.repository)}</a></p>` : `<p role="alert">${esc(unavailableReason)}</p><p><a href="${esc(current.pathname)}">Retry repository lookup</a></p>`}<section class="finding-form" data-issue-draft><label>Issue title<input id="issue-title" readonly value="${esc(draft.title)}"></label><button type="button" data-copy-issue="issue-title">Copy title</button><label>Issue body (Markdown)<textarea id="issue-body" readonly rows="18">\n${esc(draft.body)}</textarea></label><button type="button" data-copy-issue="issue-body">Copy body</button><p data-copy-status role="status" aria-live="polite"></p>${issue ? `${issue.prefill === "all" ? "" : `<p>${issue.prefill === "title" ? "The body is too long to prefill in a URL. Copy the complete body and paste it into GitHub." : "The title and body are too long to prefill in a URL. Copy both fields and paste them into GitHub."}</p>`}<p><a href="${esc(issue.url)}" target="_blank" rel="noopener noreferrer">Continue on GitHub</a></p>` : ""}</section><p>After posting, return to the Finding and use “Add issue or PR link” to register the Issue URL. Opening GitHub does not change the Finding’s links or upstream status.</p><p><a href="/finding/${enc(f.id)}">Return to Finding</a></p>`,
+        );
+      }
       const apis = editable
         ? await get(`/crates/${enc(f.crate)}/${enc(f.version)}/apis`)
         : null;
@@ -587,7 +618,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const findingAPIs = editableFindings
         ? await get(`/crates/${enc(item.crate)}/${enc(item.version)}/apis`)
         : null;
-      const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, false, [], true)).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
+      const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, false, [], true, editableFindings)).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
       const content = reportBody(
         item,
         recorded.join(""),

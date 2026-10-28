@@ -194,6 +194,29 @@ Zero reviews does not mean the crate has zero dependencies.
 
 For existing installations, see [the migration procedure](dependency-migration.md).
 
+## Finding to GitHub Issue
+
+Report authors can choose **Create GitHub issue** on a saved Finding or its Report.
+Findings without an Issue link also offer **Add issue URL**, which opens the link
+registration form directly. Both prompts disappear once an Issue link is registered;
+PR links alone do not hide them, and removing the Issue link restores the prompts.
+The preparation page uses the crate's current `repository` metadata from crates.io,
+not the recorded verification repository (which may be a fork). Successful metadata
+lookups are cached in R2 for five minutes. Only HTTPS GitHub repository URLs are
+supported; missing or unavailable metadata offers a retry without guessing a target.
+
+The GitHub creation page is prefilled with the Finding title and complete Markdown
+body, followed by one short sentence about formal verification with a visible URL
+to the origin Report revision. Metadata is not appended separately. If the
+encoded URL exceeds 8 KiB, copy the body from the preparation page and paste it into
+GitHub; unusually long titles also fall back to copying. The page works without
+JavaScript through text selection; copy buttons additionally use the Clipboard API.
+No GitHub write permission is requested and no issue is posted by the service.
+After posting on GitHub, return to **Add issue or PR link** to register its URL and
+edit the upstream status as appropriate. Opening the preparation page does not
+change Finding state. CLI previews do not expose this action. The local demo uses
+synthetic repository fixtures and never fetches crates.io for this feature.
+
 ## Local CLI preview development
 
 `preview/server.ts` runs in Node.js 24+ and uses the same page shell, report/claim
