@@ -29,6 +29,9 @@ pub struct Proof {
 pub fn configuration(tool: &Tool) -> Result<Value> {
     let mut value = json!({"backend":"lean", "lean_dir": tool.lean_dir, "proofs": tool.proofs,
         "audit_command":["lake", "env", "lean", "--stdin"], "audit_source":audit_source(tool)});
+    if tool.expand_api {
+        value["api_discovery"] = json!({"mode":"compiler_expansion", "command":["cargo","rustc","--locked","--lib","--no-default-features","--features","<selected features>","--","-Zunpretty=expanded"], "environment":{"RUSTC_BOOTSTRAP":"1"}});
+    }
     if !tool.proof_modules.is_empty() {
         value["proof_modules"] = json!(tool.proof_modules);
     }
@@ -144,6 +147,48 @@ pub fn pinned_version(dir: &Path, version: &str) -> Result<()> {
     Ok(())
 }
 
+fn public_apis(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
+    if !tool.expand_api {
+        return scan::public_contracts(project, false, CreusotTarget::All);
+    }
+    let temp = tempfile::tempdir()?;
+    let mut command = Command::new("cargo");
+    command
+        .args(["rustc", "--locked", "--lib", "--manifest-path"])
+        .arg(&project.manifest)
+        .arg("--no-default-features");
+    if !project.features.is_empty() {
+        command.arg("--features").arg(
+            project
+                .features
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    // Explicit opt-in: this unstable compiler output is used only to enumerate
+    // APIs. It is not extraction or proof evidence, and never changes the parent environment.
+    let out = command
+        .args(["--", "-Zunpretty=expanded"])
+        .env("RUSTC_BOOTSTRAP", "1")
+        .env("CARGO_TARGET_DIR", temp.path().join("target"))
+        .current_dir(project.manifest.parent().unwrap())
+        .output()?;
+    ensure!(
+        out.status.success(),
+        "Rust API expansion failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    ensure!(
+        out.stdout.len() <= 8 * 1024 * 1024,
+        "Expanded API source exceeds 8 MiB"
+    );
+    let source = temp.path().join("expanded.rs");
+    fs::write(&source, out.stdout)?;
+    scan::expanded_public_contracts(project, &source)
+}
+
 pub fn discover(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
     validate(tool)?;
     ensure!(
@@ -153,7 +198,7 @@ pub fn discover(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
     // No Creusot attributes or Kani harnesses are inferred for Aeneas.
-    let public = scan::public_contracts(project, false, CreusotTarget::All)?;
+    let public = public_apis(project, tool)?;
     tool.proofs
         .iter()
         .map(|proof| {
@@ -503,7 +548,7 @@ pub fn extract(
         output.status.success(),
         "Lean formal extraction failed:\n{stdout}\n{stderr}"
     );
-    let public = scan::public_contracts(project, false, CreusotTarget::All)?;
+    let public = public_apis(project, tool)?;
     let mut candidates = std::collections::BTreeMap::<String, Vec<crate::record::Contract>>::new();
     let mut observed = BTreeSet::new();
     for line in stdout
@@ -1596,5 +1641,83 @@ mod patch_tests {
         )
         .unwrap();
         assert!(dependency(&lean, &tool).is_err());
+    }
+}
+
+#[cfg(test)]
+mod expanded_api_tests {
+    use super::*;
+    #[test]
+    fn compiler_expansion_discovers_generated_public_apis_and_default_arguments() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("src")).unwrap();
+        fs::write(
+            temp.path().join("Cargo.toml"),
+            "[package]\nname='expanded_fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("src/lib.rs"),
+            r#"
+mod hidden {
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)] pub struct Range;
+    #[derive(Clone)] struct Private;
+    pub trait Op<Rhs=Self> { fn op(self, rhs: Rhs); }
+    macro_rules! op { ($rhs:ty) => { impl Op<$rhs> for Range { fn op(self, _: $rhs) {} } }; }
+    op!(Range); op!(u32);
+}
+pub use hidden::{Range, Op};
+"#,
+        )
+        .unwrap();
+        let status = Command::new("cargo")
+            .args(["generate-lockfile", "--offline"])
+            .current_dir(temp.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(temp.path().join("Cargo.toml")),
+            ..Default::default()
+        })
+        .unwrap();
+        let tool = Tool {
+            name: "aeneas".into(),
+            version: "a".repeat(40),
+            expand_api: true,
+            ..Default::default()
+        };
+        let apis = public_apis(&project, &tool).unwrap();
+        let paths = apis
+            .iter()
+            .flat_map(|c| c.api_paths.iter())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert!(paths.contains("<expanded_fixture::Range as Clone>::clone"));
+        assert!(paths.contains("<expanded_fixture::Range as Ord>::cmp"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op>::op"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op<u32>>::op"));
+        assert!(paths
+            .iter()
+            .all(|p| !p.contains("Private") && !p.contains("clone_from")));
+        // Same public owner/method, separate concrete trait implementations.
+        assert_eq!(
+            apis.iter()
+                .filter(|c| c.api_paths.iter().any(|p| p.ends_with("::op")))
+                .count(),
+            2
+        );
+        let before = configuration(&Tool {
+            expand_api: false,
+            ..tool
+        })
+        .unwrap();
+        let after = configuration(&Tool {
+            expand_api: true,
+            ..Tool::default()
+        })
+        .unwrap();
+        assert!(before.get("api_discovery").is_none());
+        assert_eq!(after["api_discovery"]["mode"], "compiler_expansion");
     }
 }

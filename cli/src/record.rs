@@ -184,6 +184,9 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         if config.tool.patch.is_some() {
             crate::aeneas::input_fingerprint(&project, &config.tool)?;
         }
+        if !config.tool.proofs.is_empty() {
+            crate::aeneas::discover(&project, &config.tool)?;
+        }
     } else {
         let version = output(Command::new("cargo").args([
             config.tool.name.as_str(),

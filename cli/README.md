@@ -524,3 +524,20 @@ script/patch bodies are embedded in SARIF. Standard Lake output, CLI audit code 
 results, input/configuration/tool hashes, source origins, Rust target/features/cfg
 and maintained Lean digests are recorded. Preparation success alone cannot establish
 proof success. Existing committed/pushed-source and publication conditions remain.
+
+### Macro-generated Rust APIs
+
+Aeneas reports that map derive or macro-generated implementations may set
+`[tool].expand_api = true`. The recorder then enumerates public APIs using the
+selected native Rust compiler with `cargo rustc --locked --lib`, the selected
+features, and `-Zunpretty=expanded`. Only that subprocess receives
+`RUSTC_BOOTSTRAP=1`; its temporary build output is discarded. This is an explicit
+opt-in to unstable compiler output, not Rust-to-Lean extraction or proof evidence.
+The compiler identity remains in the Run's `rustc` metadata and the discovery mode
+is part of the recorded Aeneas configuration. Creusot and Kani do not use this mode.
+
+Use public callable paths in `[[tool.proofs]]`, including qualified trait methods.
+Specializations or enum branches of one Rust callable may map separate theorems to
+the same API; express their scope in the theorem and precondition. Private module
+paths and descriptive labels such as `contains<&Addr>` or `hosts(V4)` are not API
+paths. Explicit mappings are checked before rebuilding Lean.

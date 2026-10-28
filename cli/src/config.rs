@@ -75,6 +75,9 @@ impl Report {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
+    /// Expand Rust macros for public API discovery using the selected native compiler.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub expand_api: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patch: Option<PathBuf>,
     pub name: String,
@@ -117,7 +120,8 @@ impl Tool {
                 || (self.lean_dir.is_none()
                     && self.proofs.is_empty()
                     && self.proof_modules.is_empty()
-                    && self.translation_manifest.is_none()),
+                    && self.translation_manifest.is_none()
+                    && !self.expand_api),
             "lean_dir and proofs apply only to Aeneas"
         );
         ensure!(
