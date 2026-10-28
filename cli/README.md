@@ -96,6 +96,8 @@ cargo proofs preview --port 8080 --no-browser
 The command opens a local web server on `127.0.0.1` using an available port by
 default. It displays the report, individual claims, reproduction instructions,
 execution logs, and a SARIF download using the UI bundled with this CLI release.
+The production fonts and their SIL OFL licenses are bundled and served locally;
+font loading requires no network connection.
 No repository checkout or npm installation is needed to use an installed CLI
 that includes `preview`. Stop it with Ctrl+C.
 

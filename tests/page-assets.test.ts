@@ -22,13 +22,8 @@ test("page shells link only assets that exist in public/", () => {
   assert(site.includes("/fonts.css"));
   for (const path of site)
     assert(existsSync(new URL("." + path, publicDir)), `${path} is missing`);
-  // The CLI preview CSP has no font-src and the bundle embeds no fonts.
   const preview = linked(pageLayout("t", "", "", null, undefined, true));
-  assert(!preview.includes("/fonts.css"));
-  assert.deepEqual(
-    preview,
-    site.filter((path) => path !== "/fonts.css"),
-  );
+  assert.deepEqual(preview, site);
 });
 
 test("site and Book headers mark the same off-site links", () => {

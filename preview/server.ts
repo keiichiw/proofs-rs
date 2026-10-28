@@ -3,7 +3,10 @@ import { createInterface } from "node:readline";
 import { previewPage, renderPreview, type Snapshot } from "./render";
 import { draftBanner } from "./draft";
 
-declare const PREVIEW_ASSETS: Record<string, { type: string; content: string }>;
+declare const PREVIEW_ASSETS: Record<
+  string,
+  { type: string; content: string; encoding?: "base64" }
+>;
 const version = 1;
 const draftMode = process.argv[3] === "draft";
 const send = (message: object) =>
@@ -57,13 +60,13 @@ const server = createServer(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   const reply = (
     status: number,
-    content: string,
+    content: string | Buffer,
     type = "text/html; charset=utf-8",
   ) => {
     res.writeHead(status, { "Content-Type": type });
@@ -92,7 +95,13 @@ const server = createServer(async (req, res) => {
       ? PREVIEW_ASSETS[path]
       : undefined;
     if (asset) {
-      reply(200, asset.content, asset.type);
+      reply(
+        200,
+        asset.encoding === "base64"
+          ? Buffer.from(asset.content, "base64")
+          : asset.content,
+        asset.type,
+      );
       return;
     }
     if (!(
