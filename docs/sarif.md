@@ -97,3 +97,11 @@ committed Lean module. A pass means Lean accepted that theorem with only
 `propext`, `Classical.choice`, and `Quot.sound` as transitive axioms. The author
 supplies API correspondence and input assumptions; the recorder does not rerun
 Charon/Aeneas extraction or establish correspondence with the Rust source.
+
+### Charon patch provenance
+
+The Charon component may use `git_patch` with its official pinned base, a
+repository-relative patch path and SHA-256, and `materialized.git_tree`. An
+unpatched Charon keeps the existing `git` representation without a materialized
+tree. Aeneas may likewise use `git` when only Charon is patched. Extraction roles
+remain `not_run`; declaration/restoration does not attest model generation.

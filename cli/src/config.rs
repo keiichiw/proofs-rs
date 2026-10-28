@@ -76,6 +76,11 @@ impl Report {
 #[serde(deny_unknown_fields)]
 pub struct Tool {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charon_patch: Option<PathBuf>,
+    /// Expand Rust macros for public API discovery using the selected native compiler.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub expand_api: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patch: Option<PathBuf>,
     pub name: String,
     pub version: String,
@@ -97,6 +102,9 @@ pub enum CreusotTarget {
     All,
 }
 impl Tool {
+    pub fn has_patches(&self) -> bool {
+        self.patch.is_some() || self.charon_patch.is_some()
+    }
     pub fn is_aeneas(&self) -> bool {
         self.name.eq_ignore_ascii_case("aeneas")
     }
@@ -117,11 +125,12 @@ impl Tool {
                 || (self.lean_dir.is_none()
                     && self.proofs.is_empty()
                     && self.proof_modules.is_empty()
-                    && self.translation_manifest.is_none()),
+                    && self.translation_manifest.is_none()
+                    && !self.expand_api),
             "lean_dir and proofs apply only to Aeneas"
         );
         ensure!(
-            self.patch.is_none() || self.is_aeneas(),
+            (self.patch.is_none() && self.charon_patch.is_none()) || self.is_aeneas(),
             "[tool].patch is currently supported only for Aeneas"
         );
         if self.is_aeneas() {
@@ -163,6 +172,7 @@ pub struct Config {
     pub git: Option<Git>,
 }
 pub struct Project {
+    pub config_override: Option<PathBuf>,
     pub name: String,
     pub version: String,
     pub lib_name: String,
@@ -173,6 +183,15 @@ pub struct Project {
 }
 impl Project {
     pub fn load(args: &ProjectArgs) -> Result<Self> {
+        if let Some(path) = &args.proofs_config {
+            ensure!(
+                !path.is_absolute()
+                    && path
+                        .components()
+                        .all(|c| matches!(c, std::path::Component::Normal(_))),
+                "--proofs-config must stay within the package"
+            );
+        }
         let mut command = Command::new("cargo");
         command.args(["metadata", "--format-version", "1", "--no-deps"]);
         if let Some(path) = &args.manifest_path {
@@ -276,6 +295,7 @@ impl Project {
             .map(String::from)
             .collect();
         Ok(Self {
+            config_override: args.proofs_config.clone(),
             name: p["name"].as_str().context("Missing crate name")?.into(),
             version: p["version"].as_str().context("Missing version")?.into(),
             lib_name: target["name"]
@@ -295,7 +315,10 @@ impl Project {
         })
     }
     pub fn config_path(&self) -> PathBuf {
-        self.manifest.with_file_name("proofs.toml")
+        self.config_override
+            .as_ref()
+            .map(|p| self.manifest.parent().unwrap().join(p))
+            .unwrap_or_else(|| self.manifest.with_file_name("proofs.toml"))
     }
     pub fn config(&self) -> Result<Config> {
         Config::read(&self.config_path())

@@ -478,3 +478,44 @@ publishes only to a temporary localhost service fixture, checks changed-input
 rejection even with `--force`, and verifies public and preview HTML. Ordinary
 `cargo test` and `npm test` cover local restoration, descriptor validation,
 source comparison, revision history and legacy flows.
+
+### Report profiles and independently patched Charon
+
+Use `--proofs-config aeneas/profiles/default/proofs.toml` to select a package-relative
+report for run, prepare, preview (including drafts), and publish. Overrides have
+separate local recording and publication state.
+
+`[tool].patch` remains the cumulative Aeneas patch. Optional
+`[tool].charon_patch = "patches/charon.patch"` restores Charon using the official
+Aeneas base's unchanged charon-pin, with an independent patch hash and resulting
+Git tree. Either patch can be used alone. Run `cargo proofs prepare` and configure
+Lake to use `.proofs-toolchain/aeneas/backends/lean` when either patch is present.
+Prepare restores source trees; it does not build or execute extraction tools.
+
+Recording builds maintained Lean models and proofs from an isolated checkout.
+Rust sources and proof inputs must be available from that checkout without custom
+setup hooks. Repository-specific preparation files are not supported. Recorded
+provenance distinguishes the resolved Aeneas Lean library and executed Lean checker
+from the Aeneas translator and Charon frontend, both marked not_run. Declaring their
+patches does not establish that they generated the saved models.
+
+### Macro-generated Rust APIs
+
+Aeneas reports that map derive or macro-generated implementations may set
+`[tool].expand_api = true`. The recorder then enumerates public APIs using the
+selected native Rust compiler with `cargo rustc --locked --lib`, the selected
+features, and `-Zunpretty=expanded`. Only that subprocess receives
+`RUSTC_BOOTSTRAP=1`; its temporary build output is discarded. This is an explicit
+opt-in to unstable compiler output, not Rust-to-Lean extraction or proof evidence.
+The compiler identity remains in the Run's `rustc` metadata and the discovery mode
+is part of the recorded Aeneas configuration. Creusot and Kani do not use this mode.
+
+Use public callable paths in `[[tool.proofs]]`, including qualified trait methods.
+Specializations or enum branches of one Rust callable may map separate theorems to
+the same API; express their scope in the theorem and precondition. Private module
+paths and descriptive labels such as `contains<&Addr>` or `hosts(V4)` are not API
+paths. Explicit mappings are checked before rebuilding Lean.
+
+Compiler expansion also enumerates inherited defaults from active traits defined
+in the selected crate. Explicit implementations replace defaults; private traits
+and unknown external defaults are excluded. This supplies callable paths only.

@@ -494,3 +494,21 @@ test("patched reproduction prepares the recorded nested package before building 
   assert.ok(prepare < html.indexOf("lake build"));
   assert.ok(html.includes(toolchainLabel(fixture())));
 });
+
+ test("patched Charon is recorded without claiming extraction", () => {
+ const s = sarif(); const t = s.runs[0].properties.proofs.toolchain;
+ t.components.charon.source = {kind:"git_patch",repository:"https://github.com/AeneasVerif/charon",base_commit:base,patch:{path:"patches/charon.patch",sha256:"a".repeat(64)}};
+ t.components.charon.materialized = {git_tree:base};
+ assert.equal(readRecord(s).toolchain!.components.charon.source.kind,"git_patch");
+ delete t.components.charon.materialized;
+ assert.throws(() => readRecord(s));
+ });
+
+test("Charon-only patch preserves unpatched Aeneas identity", () => {
+ const s = sarif(); const t = s.runs[0].properties.proofs.toolchain;
+ t.components.aeneas.source = {kind:"git",repository:"https://github.com/AeneasVerif/aeneas",commit:base};
+ t.components.charon.source = {kind:"git_patch",repository:"https://github.com/AeneasVerif/charon",base_commit:base,patch:{path:"patches/charon.patch",sha256:"a".repeat(64)}};
+ t.components.charon.materialized = {git_tree:base};
+ s.runs[0].tool.driver.fullName = `Aeneas ${base.slice(0,12)}`;
+ assert.equal(readRecord(s).toolchain!.components.aeneas.source.kind,"git");
+});

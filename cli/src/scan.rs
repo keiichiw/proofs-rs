@@ -56,8 +56,12 @@ struct Import {
 struct Scanner<'a> {
     project: &'a Project,
     creusot: bool,
+    expanded: bool,
     public_items: BTreeSet<String>,
     traits: BTreeSet<String>,
+    self_default_traits: BTreeSet<String>,
+    default_methods: std::collections::BTreeMap<String, Vec<(syn::TraitItemFn, PathBuf)>>,
+    trait_impls: Vec<(CallableContext, Vec<String>, BTreeSet<String>)>,
     types: BTreeSet<String>,
     functions: Vec<Function>,
     imports: Vec<Import>,
@@ -80,6 +84,18 @@ fn external_trait_paths(path: &str) -> Vec<String> {
             | "std::fmt::Display"
             | "core::str::FromStr"
             | "std::str::FromStr"
+            | "core::convert::From"
+            | "std::convert::From"
+            | "core::cmp::Ord"
+            | "std::cmp::Ord"
+            | "core::cmp::PartialOrd"
+            | "std::cmp::PartialOrd"
+            | "core::cmp::PartialEq"
+            | "std::cmp::PartialEq"
+            | "core::iter::Iterator"
+            | "std::iter::Iterator"
+            | "core::iter::DoubleEndedIterator"
+            | "std::iter::DoubleEndedIterator"
     ) {
         paths.push(path.rsplit("::").next().unwrap().to_owned());
     }
@@ -338,8 +354,59 @@ pub(crate) fn public_contracts(
     creusot: bool,
     target: CreusotTarget,
 ) -> Result<Vec<Contract>> {
+    public_contracts_from(project, creusot, target, &project.root_source, false)
+}
+
+pub(crate) fn expanded_public_contracts(project: &Project, source: &Path) -> Result<Vec<Contract>> {
+    public_contracts_from(project, false, CreusotTarget::All, source, true)
+}
+
+fn public_contracts_from(
+    project: &Project,
+    creusot: bool,
+    target: CreusotTarget,
+    source: &Path,
+    expanded: bool,
+) -> Result<Vec<Contract>> {
     let mut s = scanner(project, creusot);
-    s.file(&project.root_source, &[], true)?;
+    s.expanded = expanded;
+    s.file(source, &[], true)?;
+    if expanded {
+        // Enumerate inherited defaults only from locally observed active traits.
+        // Explicit implementations replace defaults; external trait bodies are unknown.
+        for (context, module, overrides) in s.trait_impls.clone() {
+            let CallableContext::TraitImpl { trait_path, .. } = &context else {
+                continue;
+            };
+            let resolved = s.resolve(
+                &trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect::<Vec<_>>(),
+                &module,
+                0,
+            )?;
+            for (method, file) in s
+                .default_methods
+                .get(&resolved)
+                .cloned()
+                .unwrap_or_default()
+            {
+                if !overrides.contains(&method.sig.ident.to_string()) {
+                    s.function(
+                        &method.attrs,
+                        &method.sig,
+                        &syn::Visibility::Inherited,
+                        method.span(),
+                        &file,
+                        &module,
+                        context.clone(),
+                    )?;
+                }
+            }
+        }
+    }
     let mut result = vec![];
     let mut seen = BTreeSet::new();
     for f in &s.functions {
@@ -481,6 +548,15 @@ impl Scanner<'_> {
                 "Box" | "std::boxed::Box" => "alloc::boxed::Box".into(),
                 "Option" | "std::option::Option" => "core::option::Option".into(),
                 "Result" | "std::result::Result" => "core::result::Result".into(),
+                "std::net::Ipv4Addr" | "core::net::Ipv4Addr" if self.expanded => {
+                    "core::net::ip_addr::Ipv4Addr".into()
+                }
+                "std::net::Ipv6Addr" | "core::net::Ipv6Addr" if self.expanded => {
+                    "core::net::ip_addr::Ipv6Addr".into()
+                }
+                "std::net::IpAddr" | "core::net::IpAddr" if self.expanded => {
+                    "core::net::ip_addr::IpAddr".into()
+                }
                 _ => name,
             };
         }
@@ -671,6 +747,33 @@ impl Scanner<'_> {
                     generics,
                     !legacy,
                 )?;
+                let mut suffixes = vec![suffix];
+                // Rustdoc's type-driven catalogue preserves written simple type
+                // arguments, while structural self types use canonical paths.
+                if self.expanded && legacy {
+                    let args = &trait_path.segments.last().unwrap().arguments;
+                    if let syn::PathArguments::AngleBracketed(a) = args {
+                        if a.args.iter().all(|arg| matches!(arg, syn::GenericArgument::Type(syn::Type::Path(p)) if p.qself.is_none() && p.path.segments.iter().all(|s| matches!(s.arguments, syn::PathArguments::None)))) {
+                            let written = args.to_token_stream().to_string().chars().filter(|c| !c.is_whitespace()).collect::<String>();
+                            if !suffixes.contains(&written) { suffixes.push(written); }
+                        }
+                    }
+                }
+                if self.expanded && local_trait && self.self_default_traits.contains(&tr) {
+                    if let syn::PathArguments::AngleBracketed(args) =
+                        &trait_path.segments.last().unwrap().arguments
+                    {
+                        if args.args.len() == 1 {
+                            if let Some(syn::GenericArgument::Type(rhs)) = args.args.first() {
+                                if self.render_type_in(rhs, module, generics, true)?
+                                    == self.render_type_in(self_ty, module, generics, true)?
+                                {
+                                    suffixes.push(String::new());
+                                }
+                            }
+                        }
+                    }
+                }
                 let traits = if local_trait {
                     self.creusot_public_paths(&tr)?
                 } else {
@@ -678,22 +781,20 @@ impl Scanner<'_> {
                     // can retain a private module prefix for imported extern paths.
                     external_trait_paths(&self.render_path(&bare_trait, module, generics)?)
                 };
-                Ok(types
-                    .iter()
-                    .flat_map(|ty| {
-                        let suffix = &suffix;
-                        traits.iter().map(move |tr| {
-                            let tr = if local_trait {
-                                format!("{}::{tr}", self.project.lib_name)
-                            } else {
-                                tr.clone()
-                            };
-                            format!("<{ty} as {tr}{suffix}>::{name}")
-                        })
-                    })
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect())
+                let mut paths = BTreeSet::new();
+                for ty in &types {
+                    for tr in &traits {
+                        let tr = if local_trait {
+                            format!("{}::{tr}", self.project.lib_name)
+                        } else {
+                            tr.clone()
+                        };
+                        for suffix in &suffixes {
+                            paths.insert(format!("<{ty} as {tr}{suffix}>::{name}"));
+                        }
+                    }
+                }
+                Ok(paths.into_iter().collect())
             }
         }
     }
@@ -756,7 +857,7 @@ impl Scanner<'_> {
         );
         let source = fs::read_to_string(&file)?;
         // Pearlite bodies need not be valid Rust. Only declarations are relevant.
-        let parsed = if self.creusot {
+        let mut parsed = if self.creusot {
             syn::parse2(declarations(syn::parse_str(&source)?))
         } else {
             syn::parse_file(&source)
@@ -770,6 +871,25 @@ impl Scanner<'_> {
         } else {
             file.parent().unwrap().join(file.file_stem().unwrap())
         };
+        if self.expanded {
+            // Compiler expansion emits absolute extern paths and an injected
+            // prelude glob. Normalize those only for compiler-produced input.
+            struct Normalize;
+            impl syn::visit_mut::VisitMut for Normalize {
+                fn visit_path_mut(&mut self, path: &mut syn::Path) {
+                    path.leading_colon = None;
+                    syn::visit_mut::visit_path_mut(self, path);
+                }
+                fn visit_item_mod_mut(&mut self, item: &mut syn::ItemMod) {
+                    if let Some((_, items)) = &mut item.content {
+                        items.retain(|i| !matches!(i, Item::Use(u) if u.attrs.iter().any(|a| a.path().is_ident("prelude_import"))));
+                    }
+                    syn::visit_mut::visit_item_mod_mut(self, item);
+                }
+            }
+            parsed.items.retain(|i| !matches!(i, Item::Use(u) if u.attrs.iter().any(|a| a.path().is_ident("prelude_import"))));
+            syn::visit_mut::VisitMut::visit_file_mut(&mut Normalize, &mut parsed);
+        }
         self.items(&parsed.items, &file, &module_dir, module, public)
     }
     fn items(
@@ -877,6 +997,25 @@ impl Scanner<'_> {
                     if attrs(&i.attrs, self.project)?.is_some() {
                         let path = item_path(module, &i.ident.to_string());
                         self.traits.insert(path.clone());
+                        if self.expanded {
+                            let methods = i
+                                .items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    syn::TraitItem::Fn(f) if f.default.is_some() => {
+                                        Some((f.clone(), file.to_owned()))
+                                    }
+                                    _ => None,
+                                })
+                                .collect();
+                            self.default_methods.insert(path.clone(), methods);
+                        }
+                        if i.generics.params.len() == 1
+                            && matches!(i.generics.params.first(), Some(syn::GenericParam::Type(p)) if matches!(&p.default, Some(syn::Type::Path(t)) if t.qself.is_none() && t.path.is_ident("Self")))
+                        {
+                            self.self_default_traits.insert(path.clone());
+                        }
+
                         if matches!(i.vis, syn::Visibility::Public(_)) {
                             self.public_items.insert(path);
                         }
@@ -915,6 +1054,19 @@ impl Scanner<'_> {
                             self_ty: (*i.self_ty).clone(),
                         }
                     };
+                    if self.expanded && matches!(context, CallableContext::TraitImpl { .. }) {
+                        self.trait_impls.push((
+                            context.clone(),
+                            module.to_vec(),
+                            i.items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    syn::ImplItem::Fn(f) => Some(f.sig.ident.to_string()),
+                                    _ => None,
+                                })
+                                .collect(),
+                        ));
+                    }
                     for method in &i.items {
                         if let syn::ImplItem::Fn(f) = method {
                             self.function(
@@ -1121,8 +1273,12 @@ fn scanner(project: &Project, creusot: bool) -> Scanner<'_> {
     Scanner {
         project,
         creusot,
+        expanded: false,
         public_items: BTreeSet::new(),
         traits: BTreeSet::new(),
+        self_default_traits: BTreeSet::new(),
+        default_methods: Default::default(),
+        trait_impls: vec![],
         types: BTreeSet::new(),
         functions: vec![],
         imports: vec![],
@@ -1261,6 +1417,7 @@ mod tests {
         let root = d.path().join("lib.rs");
         fs::write(&root, source).unwrap();
         let p = Project {
+            config_override: None,
             name: "demo".into(),
             lib_name: "demo".into(),
             version: "1.0.0".into(),

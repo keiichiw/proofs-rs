@@ -313,8 +313,10 @@ pub fn prepare(
             &base,
         ],
     )?;
-    apply(dir, patch, true)?;
-    apply(dir, patch, false)?;
+    if !patch.is_empty() {
+        apply(dir, patch, true)?;
+        apply(dir, patch, false)?;
+    }
     // Inspect the resulting index, not patch headers (binary patches and quoted paths included).
     let changed = git(
         dir,

@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix='proofs-draft-') as temp:
         assert 'No recorded run' in failure()
         assert '--run' in failure('--draft', '--run', '11111111-1111-4111-8111-111111111111')
         assert '--report' in failure('--draft', '--report', '1')
-        assert '--draft' in failure('--proofs-config', 'profiles/stage2.toml')
+        assert 'No recorded run' in failure('--proofs-config', 'profiles/stage2.toml')
         assert 'Read ' in failure('--draft', '--proofs-config', 'missing.toml')
         assert 'within' in failure('--draft', '--proofs-config', '../outside.toml')
         assert 'within' in failure('--draft', '--proofs-config', str(profile))

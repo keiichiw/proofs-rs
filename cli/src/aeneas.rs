@@ -29,6 +29,9 @@ pub struct Proof {
 pub fn configuration(tool: &Tool) -> Result<Value> {
     let mut value = json!({"backend":"lean", "lean_dir": tool.lean_dir, "proofs": tool.proofs,
         "audit_command":["lake", "env", "lean", "--stdin"], "audit_source":audit_source(tool)});
+    if tool.expand_api {
+        value["api_discovery"] = json!({"mode":"compiler_expansion", "command":["cargo","rustc","--locked","--lib","--no-default-features","--features","<selected features>","--","-Zunpretty=expanded"], "environment":{"RUSTC_BOOTSTRAP":"1"}});
+    }
     if !tool.proof_modules.is_empty() {
         value["proof_modules"] = json!(tool.proof_modules);
     }
@@ -67,6 +70,9 @@ pub fn validate(tool: &Tool) -> Result<()> {
         "Aeneas version must be a full 40-character Git revision matching lake-manifest.json"
     );
     if let Some(path) = &tool.patch {
+        crate::toolchain::relative(path)?;
+    }
+    if let Some(path) = &tool.charon_patch {
         crate::toolchain::relative(path)?;
     }
     if let Some(dir) = &tool.lean_dir {
@@ -134,14 +140,56 @@ pub fn pinned_version(dir: &Path, version: &str) -> Result<()> {
         "Expected one pinned Aeneas Lake dependency"
     );
     let p = aeneas[0];
-    ensure!(p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
+    ensure!((p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
         && matches!(p["url"].as_str(), Some("https://github.com/AeneasVerif/aeneas" | "https://github.com/AeneasVerif/aeneas.git"))
-        && p["subDir"] == "backends/lean", "Aeneas Lake dependency must use the official repository, backends/lean, and [tool].version revision");
+        && p["subDir"] == "backends/lean"), "Aeneas Lake dependency must use the official repository, backends/lean, and [tool].version revision");
     ensure!(
         dir.join("lean-toolchain").is_file(),
         "Commit lean-toolchain for reproducibility"
     );
     Ok(())
+}
+
+fn public_apis(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
+    if !tool.expand_api {
+        return scan::public_contracts(project, false, CreusotTarget::All);
+    }
+    let temp = tempfile::tempdir()?;
+    let mut command = Command::new("cargo");
+    command
+        .args(["rustc", "--locked", "--lib", "--manifest-path"])
+        .arg(&project.manifest)
+        .arg("--no-default-features");
+    if !project.features.is_empty() {
+        command.arg("--features").arg(
+            project
+                .features
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    // Explicit opt-in: this unstable compiler output is used only to enumerate
+    // APIs. It is not extraction or proof evidence, and never changes the parent environment.
+    let out = command
+        .args(["--", "-Zunpretty=expanded"])
+        .env("RUSTC_BOOTSTRAP", "1")
+        .env("CARGO_TARGET_DIR", temp.path().join("target"))
+        .current_dir(project.manifest.parent().unwrap())
+        .output()?;
+    ensure!(
+        out.status.success(),
+        "Rust API expansion failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    ensure!(
+        out.stdout.len() <= 8 * 1024 * 1024,
+        "Expanded API source exceeds 8 MiB"
+    );
+    let source = temp.path().join("expanded.rs");
+    fs::write(&source, out.stdout)?;
+    scan::expanded_public_contracts(project, &source)
 }
 
 pub fn discover(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
@@ -153,7 +201,7 @@ pub fn discover(project: &Project, tool: &Tool) -> Result<Vec<scan::Contract>> {
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
     // No Creusot attributes or Kani harnesses are inferred for Aeneas.
-    let public = scan::public_contracts(project, false, CreusotTarget::All)?;
+    let public = public_apis(project, tool)?;
     tool.proofs
         .iter()
         .map(|proof| {
@@ -292,31 +340,82 @@ fn safe_relative(path: &Path) -> bool {
         })
         && !path.to_string_lossy().contains(['\\', ':'])
 }
+fn source_roots(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut roots = vec![dir.canonicalize()?];
+    let config = dir.join("lakefile.toml");
+    if config.is_file() {
+        let config: toml::Value = toml::from_str(&fs::read_to_string(config)?)?;
+        if let Some(libs) = config.get("lean_lib").and_then(|v| v.as_array()) {
+            for lib in libs {
+                if let Some(path) = lib.get("srcDir").and_then(|v| v.as_str()) {
+                    ensure!(
+                        safe_relative(Path::new(path)),
+                        "Invalid Lean source directory"
+                    );
+                    let root = dir.join(path).canonicalize()?;
+                    ensure!(
+                        root.starts_with(dir.canonicalize()?),
+                        "Lean source directory escapes package"
+                    );
+                    if !roots.contains(&root) {
+                        roots.push(root);
+                    }
+                }
+            }
+        }
+    }
+    Ok(roots)
+}
 fn local_source(dir: &Path, relative: &Path) -> Result<PathBuf> {
     ensure!(
-        safe_relative(relative),
+        safe_relative(relative) && !relative.components().any(|p| p.as_os_str() == ".lake"),
         "Invalid package-relative source path"
     );
-    let file = dir.join(relative).canonicalize()?;
+    let roots = if relative.extension().is_some_and(|s| s == "lean") {
+        source_roots(dir)?
+    } else {
+        vec![dir.canonicalize()?]
+    };
+    let mut matches = BTreeSet::new();
+    for root in roots {
+        if let Ok(file) = root.join(relative).canonicalize() {
+            ensure!(
+                file.starts_with(dir.canonicalize()?),
+                "Source escapes the Lake package"
+            );
+            if file.is_file() {
+                matches.insert(file);
+            }
+        }
+    }
     ensure!(
-        file.starts_with(dir.canonicalize()?)
-            && !relative.components().any(|p| p.as_os_str() == ".lake"),
-        "Source escapes the Lake package"
+        matches.len() == 1,
+        "Source must resolve to exactly one maintained file: {}",
+        relative.display()
     );
-    Ok(file)
+    Ok(matches.into_iter().next().unwrap())
 }
 fn local_modules(dir: &Path) -> Result<BTreeSet<String>> {
     let mut modules = BTreeSet::new();
-    for entry in ignore::WalkBuilder::new(dir).hidden(true).build() {
-        let entry = entry?;
-        if entry.path().extension().is_some_and(|x| x == "lean") {
-            let relative = entry.path().strip_prefix(dir)?;
-            let name = relative
-                .with_extension("")
-                .to_string_lossy()
-                .replace('/', ".");
-            if lean_name(&name) && local_source(dir, relative).is_ok() {
-                modules.insert(name);
+    for root in source_roots(dir)? {
+        for entry in ignore::WalkBuilder::new(&root)
+            .hidden(true)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .filter_entry(|e| e.file_name() != ".lake" && e.file_name() != ".git")
+            .build()
+        {
+            let entry = entry?;
+            if entry.path().extension().is_some_and(|x| x == "lean") {
+                let relative = entry.path().strip_prefix(&root)?;
+                let name = relative
+                    .with_extension("")
+                    .to_string_lossy()
+                    .replace('/', ".");
+                if lean_name(&name) && local_source(dir, relative).is_ok() {
+                    modules.insert(name);
+                }
             }
         }
     }
@@ -452,7 +551,7 @@ pub fn extract(
         output.status.success(),
         "Lean formal extraction failed:\n{stdout}\n{stderr}"
     );
-    let public = scan::public_contracts(project, false, CreusotTarget::All)?;
+    let public = public_apis(project, tool)?;
     let mut candidates = std::collections::BTreeMap::<String, Vec<crate::record::Contract>>::new();
     let mut observed = BTreeSet::new();
     for line in stdout
@@ -659,6 +758,25 @@ pub fn extract(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn target_specific_generated_sources() {
+        let d = tempfile::tempdir().unwrap();
+        fs::create_dir_all(d.path().join("Generated/aarch64-apple-darwin")).unwrap();
+        fs::write(d.path().join("lakefile.toml"), "name='demo'\n[[lean_lib]]\nname='GeneratedModel'\nsrcDir='Generated/aarch64-apple-darwin'\n").unwrap();
+        fs::write(
+            d.path()
+                .join("Generated/aarch64-apple-darwin/GeneratedModel.lean"),
+            "def x := 1\n",
+        )
+        .unwrap();
+        assert!(local_modules(d.path()).unwrap().contains("GeneratedModel"));
+        assert!(local_source(d.path(), Path::new("GeneratedModel.lean"))
+            .unwrap()
+            .ends_with("Generated/aarch64-apple-darwin/GeneratedModel.lean"));
+        fs::write(d.path().join("GeneratedModel.lean"), "def x := 2\n").unwrap();
+        assert!(local_source(d.path(), Path::new("GeneratedModel.lean")).is_err());
+    }
+
     fn tool() -> Tool {
         toml::from_str(&format!("name='aeneas'\nversion='{}'\n[[proofs]]\napi='f'\nmodule='Proofs.F'\ntheorem='demo.f_spec'\nprecondition='x > 0'", "a".repeat(40))).unwrap()
     }
@@ -763,6 +881,7 @@ mod tests {
         fs::write(d.path().join("lean-toolchain"), "leanprover/lean4:v4.35.0").unwrap();
         fs::write(d.path().join("lake-manifest.json"), json!({"packages":[{"name":"aeneas","type":"git","url":"https://github.com/AeneasVerif/aeneas","rev":"a".repeat(40),"subDir":"backends/lean"}]}).to_string()).unwrap();
         let project = Project {
+            config_override: None,
             name: "demo".into(),
             version: "1".into(),
             lib_name: "demo".into(),
@@ -819,6 +938,7 @@ mod tests {
             }
         }
         let project = Project {
+            config_override: None,
             name: "formal_fixture".into(),
             version: "0.1.0".into(),
             lib_name: "formal_fixture".into(),
@@ -1095,7 +1215,7 @@ const MANAGED: &str = ".proofs-toolchain/aeneas";
 
 /// Static validation must also work before prepare (and after deleting managed sources).
 pub fn dependency(dir: &Path, tool: &Tool) -> Result<()> {
-    if tool.patch.is_none() {
+    if !tool.has_patches() {
         return pinned_version(dir, &tool.version);
     }
     let manifest: Value = serde_json::from_slice(&fs::read(dir.join("lake-manifest.json"))?)?;
@@ -1116,11 +1236,17 @@ pub fn dependency(dir: &Path, tool: &Tool) -> Result<()> {
 pub fn input_fingerprint(project: &Project, tool: &Tool) -> Result<Value> {
     let package = project.manifest.parent().context("Missing package")?;
     let root = PathBuf::from(crate::git::run(package, &["rev-parse", "--show-toplevel"])?);
-    let (path, bytes) = crate::toolchain::patch_bytes(
-        package,
-        tool.patch.as_deref().context("Missing patch")?,
-        &root,
-    )?;
+    let (path, bytes) = match &tool.patch {
+        Some(path) => crate::toolchain::patch_bytes(package, path, &root)?,
+        None => (String::new(), Vec::new()),
+    };
+    let charon_patch = match &tool.charon_patch {
+        Some(path) => {
+            let (path, bytes) = crate::toolchain::patch_bytes(package, path, &root)?;
+            Some(json!({"path":path,"sha256":crate::toolchain::digest(&bytes)}))
+        }
+        None => None,
+    };
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
     let mut inputs = std::collections::BTreeMap::new();
@@ -1193,18 +1319,20 @@ pub fn input_fingerprint(project: &Project, tool: &Tool) -> Result<Value> {
         Ok(())
     }
     lean_sources(&root, &dir, &mut source_inputs)?;
-    Ok(
-        json!({"base_commit":tool.version.to_ascii_lowercase(), "patch_path":path,
+    let mut value = json!({"base_commit":tool.version.to_ascii_lowercase(), "patch_path":path,
         "patch_sha256":crate::toolchain::digest(&bytes), "configuration":configuration(tool)?,
-        "manifest_path":project.manifest.strip_prefix(root)?.to_string_lossy(), "inputs":inputs, "sources":source_inputs}),
-    )
+        "manifest_path":project.manifest.strip_prefix(root)?.to_string_lossy(), "inputs":inputs, "sources":source_inputs});
+    if let Some(patch) = charon_patch {
+        value["charon_patch"] = patch;
+    }
+    Ok(value)
 }
 
 pub fn prepare_project(args: &crate::ProjectArgs) -> Result<()> {
     let project = Project::load(args)?;
     let config = project.config()?;
     ensure!(
-        config.tool.is_aeneas() && config.tool.patch.is_some(),
+        config.tool.is_aeneas() && config.tool.has_patches(),
         "prepare requires [tool].name = aeneas and [tool].patch"
     );
     let prepared = prepare_source(&project, &config.tool)?;
@@ -1215,17 +1343,44 @@ pub fn prepare_project(args: &crate::ProjectArgs) -> Result<()> {
         prepared.path.display(),
         prepared.tree
     );
+    if let Some(charon) = &prepared.charon {
+        println!(
+            "Prepared Charon {} + patch {} at {} (tree {})",
+            &charon.base_commit[..12],
+            &charon.patch_sha256[..12],
+            charon.path.display(),
+            charon.tree
+        );
+    }
     Ok(())
 }
 
-pub fn prepare_source(project: &Project, tool: &Tool) -> Result<crate::toolchain::PreparedSource> {
+pub struct PreparedToolchain {
+    pub aeneas: crate::toolchain::PreparedSource,
+    pub charon: Option<crate::toolchain::PreparedSource>,
+}
+impl std::ops::Deref for PreparedToolchain {
+    type Target = crate::toolchain::PreparedSource;
+    fn deref(&self) -> &Self::Target {
+        &self.aeneas
+    }
+}
+impl PreparedToolchain {
+    pub fn unchanged(&self) -> Result<()> {
+        self.aeneas.unchanged()?;
+        if let Some(charon) = &self.charon {
+            charon.unchanged()?;
+        }
+        Ok(())
+    }
+}
+pub fn prepare_source(project: &Project, tool: &Tool) -> Result<PreparedToolchain> {
     let package = project.manifest.parent().context("Missing package")?;
     let root = PathBuf::from(crate::git::run(package, &["rev-parse", "--show-toplevel"])?);
-    let (_, bytes) = crate::toolchain::patch_bytes(
-        package,
-        tool.patch.as_deref().context("Missing patch")?,
-        &root,
-    )?;
+    let bytes = match &tool.patch {
+        Some(path) => crate::toolchain::patch_bytes(package, path, &root)?.1,
+        None => Vec::new(),
+    };
     let dir = directory(project, tool)?;
     let destination = dir.join(MANAGED);
     // Refuse tracked managed checkouts, including before the destination exists.
@@ -1254,7 +1409,28 @@ pub fn prepare_source(project: &Project, tool: &Tool) -> Result<crate::toolchain
     // Capture official pins before restoration applies a patch, using Git object contents afterward.
     let prepared = crate::toolchain::prepare(REPOSITORY, &tool.version, &bytes, &destination)?;
     validate_source_pins(&prepared, &dir, tool)?;
-    Ok(prepared)
+    let charon = if let Some(path) = &tool.charon_patch {
+        let pin = fs::read_to_string(prepared.path.join("charon-pin"))?;
+        let pins: Vec<_> = pin
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.starts_with('#'))
+            .collect();
+        ensure!(pins.len() == 1, "Expected one official Charon pin");
+        let bytes = crate::toolchain::patch_bytes(package, path, &root)?.1;
+        Some(crate::toolchain::prepare(
+            "https://github.com/AeneasVerif/charon.git",
+            &crate::toolchain::sha(pins[0])?,
+            &bytes,
+            &dir.join(".proofs-toolchain/charon"),
+        )?)
+    } else {
+        None
+    };
+    Ok(PreparedToolchain {
+        aeneas: prepared,
+        charon,
+    })
 }
 
 fn validate_source_pins(
@@ -1297,7 +1473,7 @@ fn validate_source_pins(
 pub fn observed_toolchain(
     project: &Project,
     tool: &Tool,
-    prepared: &crate::toolchain::PreparedSource,
+    prepared: &PreparedToolchain,
 ) -> Result<Value> {
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
@@ -1374,14 +1550,31 @@ pub fn observed_toolchain(
         "Lake did not resolve the prepared Aeneas Lean library"
     );
     let fp = input_fingerprint(project, tool)?;
-    Ok(json!({"schema_version":1,"components":{
+    let mut value = json!({"schema_version":1,"components":{
         "aeneas":{"tool":"aeneas","source":{"kind":"git_patch","repository":REPOSITORY,"base_commit":prepared.base_commit,"patch":{"path":fp["patch_path"],"sha256":prepared.patch_sha256}},"materialized":{"git_tree":prepared.tree}},
         "charon":{"tool":"charon","source":{"kind":"git","repository":"https://github.com/AeneasVerif/charon","commit":charon}},
         "lean":{"tool":"lean","source":{"kind":"release","release_id":release}}},
         "uses":[{"component":"aeneas","role":"lean_library","observation":{"kind":"dependency_resolved","dependency_name":"aeneas","subdirectory":"backends/lean"}},
         {"component":"aeneas","role":"translator","observation":{"kind":"not_run"}},
         {"component":"charon","role":"rust_frontend","observation":{"kind":"not_run"}},
-        {"component":"lean","role":"proof_checker","observation":{"kind":"process_executed","reported_version":reported}}]}))
+        {"component":"lean","role":"proof_checker","observation":{"kind":"process_executed","reported_version":reported}}]});
+    if let Some(charon) = &prepared.charon {
+        let path = crate::toolchain::patch_bytes(
+            project.manifest.parent().unwrap(),
+            tool.charon_patch.as_ref().unwrap(),
+            &PathBuf::from(crate::git::run(
+                project.manifest.parent().unwrap(),
+                &["rev-parse", "--show-toplevel"],
+            )?),
+        )?
+        .0;
+        value["components"]["charon"] = json!({"tool":"charon","source":{"kind":"git_patch","repository":"https://github.com/AeneasVerif/charon","base_commit":charon.base_commit,"patch":{"path":path,"sha256":charon.patch_sha256}},"materialized":{"git_tree":charon.tree}});
+    }
+    if tool.patch.is_none() {
+        value["components"]["aeneas"]["source"] =
+            json!({"kind":"git","repository":REPOSITORY,"commit":tool.version});
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -1513,7 +1706,22 @@ mod patch_tests {
         assert_eq!(initial["manifest_path"], "nested/member/Cargo.toml");
         assert!(!lean.join(MANAGED).exists());
         assert_eq!(initial, input_fingerprint(&project, &tool).unwrap());
+        let charon_tool = Tool {
+            charon_patch: Some("proofs/a.patch".into()),
+            patch: None,
+            lean_dir: Some("proofs".into()),
+            ..Default::default()
+        };
+        let charon_initial = input_fingerprint(&project, &charon_tool).unwrap();
+        assert_eq!(
+            charon_initial["charon_patch"]["path"],
+            "nested/member/proofs/a.patch"
+        );
         fs::write(lean.join("a.patch"), "second bytes").unwrap();
+        assert_ne!(
+            charon_initial,
+            input_fingerprint(&project, &charon_tool).unwrap()
+        );
         assert_ne!(initial, input_fingerprint(&project, &tool).unwrap());
         fs::write(
             lean.join("lake-manifest.json"),
@@ -1521,5 +1729,157 @@ mod patch_tests {
         )
         .unwrap();
         assert!(dependency(&lean, &tool).is_err());
+    }
+}
+
+#[cfg(test)]
+mod expanded_api_tests {
+    use super::*;
+    #[test]
+    fn compiler_expansion_discovers_generated_public_apis_and_default_arguments() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("src")).unwrap();
+        fs::write(
+            temp.path().join("Cargo.toml"),
+            "[package]\nname='expanded_fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("src/lib.rs"),
+            r#"
+mod hidden {
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)] pub struct Range;
+    #[derive(Clone)] struct Private;
+    pub trait Op<Rhs=Self> { fn op(self, rhs: Rhs); fn inherited(&self) {} }
+    macro_rules! op { ($rhs:ty) => { impl Op<$rhs> for Range { fn op(self, _: $rhs) {} } }; }
+    op!(Range);
+    impl Op<u32> for Range { fn op(self, _: u32) {} fn inherited(&self) {} }
+    trait Secret { fn secret(&self) {} }
+    impl Secret for Range {}
+}
+pub use hidden::{Range, Op};
+"#,
+        )
+        .unwrap();
+        let status = Command::new("cargo")
+            .args(["generate-lockfile", "--offline"])
+            .current_dir(temp.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(temp.path().join("Cargo.toml")),
+            ..Default::default()
+        })
+        .unwrap();
+        let tool = Tool {
+            name: "aeneas".into(),
+            version: "a".repeat(40),
+            expand_api: true,
+            ..Default::default()
+        };
+        let apis = public_apis(&project, &tool).unwrap();
+        let paths = apis
+            .iter()
+            .flat_map(|c| c.api_paths.iter())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op>::inherited"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op<u32>>::inherited"));
+        assert_eq!(
+            apis.iter()
+                .filter(|c| c.api_paths.iter().any(|p| p.ends_with("::inherited")))
+                .count(),
+            2
+        );
+        assert!(paths.iter().all(|p| !p.contains("secret")));
+        assert!(paths.contains("<expanded_fixture::Range as Clone>::clone"));
+        assert!(paths.contains("<expanded_fixture::Range as Ord>::cmp"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op>::op"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op<u32>>::op"));
+        assert!(paths
+            .iter()
+            .all(|p| !p.contains("Private") && !p.contains("clone_from")));
+        // Same public owner/method, separate concrete trait implementations.
+        assert_eq!(
+            apis.iter()
+                .filter(|c| c.api_paths.iter().any(|p| p.ends_with("::op")))
+                .count(),
+            2
+        );
+        let before = configuration(&Tool {
+            expand_api: false,
+            ..tool
+        })
+        .unwrap();
+        let after = configuration(&Tool {
+            expand_api: true,
+            ..Tool::default()
+        })
+        .unwrap();
+        assert!(before.get("api_discovery").is_none());
+        assert_eq!(after["api_discovery"]["mode"], "compiler_expansion");
+    }
+}
+
+#[cfg(test)]
+mod prepared_toolchain_integration {
+    use super::*;
+    #[test]
+    #[ignore = "requires an explicitly supplied prepared Aeneas project and native tools"]
+    fn observes_patched_charon_without_running_extraction() {
+        let manifest = std::env::var("PROOFS_TEST_MANIFEST").unwrap();
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(manifest.into()),
+            proofs_config: Some("aeneas/profiles/default/proofs.toml".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let config = project.config().unwrap();
+        let prepared = prepare_source(&project, &config.tool).unwrap();
+        let before = input_fingerprint(&project, &config.tool).unwrap();
+        let observed = observed_toolchain(&project, &config.tool, &prepared).unwrap();
+        assert_eq!(
+            observed["components"]["charon"]["source"]["kind"],
+            "git_patch"
+        );
+        assert_eq!(observed["uses"][2]["observation"]["kind"], "not_run");
+        let apis = discover(&project, &config.tool).unwrap();
+        assert_eq!(apis.len(), 160);
+        prepared.unchanged().unwrap();
+        assert_eq!(before, input_fingerprint(&project, &config.tool).unwrap());
+        if let Ok(path) = std::env::var("PROOFS_TEST_TOOLCHAIN_OUTPUT") {
+            fs::write(path, serde_json::to_vec_pretty(&observed).unwrap()).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod unpatched_project_integration {
+    use super::*;
+    #[test]
+    #[ignore = "requires an explicit unpatched Aeneas project"]
+    fn discovers_unpatched_project_mappings() {
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(std::env::var("PROOFS_TEST_MANIFEST").unwrap().into()),
+            proofs_config: Some("aeneas/profiles/default/proofs.toml".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let config = project.config().unwrap();
+        assert!(!config.tool.has_patches());
+        let public = public_apis(&project, &config.tool).unwrap();
+        if let Ok(path) = std::env::var("PROOFS_TEST_API_OUTPUT") {
+            fs::write(
+                path,
+                serde_json::to_vec_pretty(&public.iter().map(|c| &c.api_paths).collect::<Vec<_>>())
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            discover(&project, &config.tool).unwrap().len(),
+            config.tool.proofs.len()
+        );
     }
 }

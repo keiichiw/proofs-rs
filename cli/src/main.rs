@@ -37,6 +37,9 @@ struct Cli {
 }
 #[derive(Args, Clone, Default)]
 pub struct ProjectArgs {
+    /// Profile-specific proofs.toml, relative to the selected package directory.
+    #[arg(long, global = true)]
+    proofs_config: Option<PathBuf>,
     #[arg(long, global = true)]
     manifest_path: Option<PathBuf>,
     /// Select a workspace package.
@@ -96,9 +99,6 @@ enum Commands {
         /// Preview local report text and configured mappings without recorded evidence or service access.
         #[arg(long, conflicts_with_all = ["run", "report"])]
         draft: bool,
-        /// Draft configuration, relative to the selected package directory.
-        #[arg(long, requires = "draft")]
-        proofs_config: Option<PathBuf>,
         /// Select a recorded run (defaults to the latest run at startup).
         #[arg(long)]
         run: Option<String>,
@@ -158,7 +158,6 @@ fn run() -> Result<()> {
         Commands::Preview {
             project,
             draft,
-            proofs_config,
             run,
             report,
             port,
@@ -168,7 +167,6 @@ fn run() -> Result<()> {
             &project,
             preview::Options {
                 draft,
-                proofs_config,
                 run,
                 report,
                 port,
@@ -201,5 +199,51 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error:#}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn report_profiles_work_for_recorded_and_draft_commands() {
+        for command in [
+            vec![
+                "run",
+                "--proofs-config",
+                "profiles/default/proofs.toml",
+                "--",
+                "lake",
+                "build",
+            ],
+            vec!["preview", "--proofs-config", "profiles/default/proofs.toml"],
+            vec![
+                "preview",
+                "--draft",
+                "--proofs-config",
+                "profiles/default/proofs.toml",
+            ],
+            vec![
+                "publish",
+                "--dry-run",
+                "--proofs-config",
+                "profiles/default/proofs.toml",
+            ],
+        ] {
+            let args = std::iter::once("cargo-proofs").chain(command);
+            let parsed = Cli::try_parse_from(args).unwrap();
+            let project = match parsed.command {
+                Commands::Run { project, .. }
+                | Commands::Preview { project, .. }
+                | Commands::Publish { project, .. } => project,
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                project.proofs_config,
+                Some("profiles/default/proofs.toml".into())
+            );
+        }
+        assert!(Cli::try_parse_from(["cargo-proofs", "preview", "--draft", "--run", "a"]).is_err());
     }
 }
