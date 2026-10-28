@@ -1,3 +1,4 @@
+import { renderToolchain } from "./toolchain-view";
 import { resolveContract, checkAnchor } from "./formal-evidence";
 const esc = (s: unknown) =>
   String(s ?? "").replace(
@@ -64,6 +65,7 @@ export function renderRecordedRun(
     `git clone -- ${quote(run.source.repository)} ${quote(dir)}`,
     `git -C ${quote(dir)} checkout --detach ${quote(run.source.commit)}`,
     `git -C ${quote(dir)} submodule update --init --recursive --checkout`,
+    ...(proofs.toolchain ? [`cargo proofs prepare --manifest-path ${quote(dir + "/" + proofs.toolchain_input.manifest_path)}`] : []),
     `cd ${quote(cwd)}`,
     "",
     command,
@@ -116,7 +118,7 @@ export function renderRecordedRun(
     .join("");
   const item = (label: string, value: any) =>
     `<dt>${esc(label)}</dt><dd class="plain-text">${esc(value)}</dd>`;
-  return `<article class="recorded-run">${report.run_ids.length > 1 ? `<h3>Run ${index + 1}</h3>` : ""}<h3>Run locally</h3><pre><code>${esc(script)}</code></pre><p class="meta">${proofs.localOnly ? "Uses an unpublished local source commit. This Run cannot be uploaded or published. Install the pinned tool version and run the package setup before verification." : "Checks out the recorded source commit from GitHub. Install the report’s tool version before running."}</p><p class="run-downloads">${proofs.localOnly ? "" : `<a href="${esc(sourceURL)}">Source on GitHub</a> · `}<a href="${esc(links.sarif ?? `${base}/sarif`)}">SARIF with logs (.json)</a></p><h3>Recorded run</h3><p>${run.execution_successful ? "Completed" : "Unsuccessful"} · ${passed} checks passed · ${failed} failed${other ? ` · ${other} other` : ""}</p><p class="meta">${esc(run.started_at)} · ${(run.duration_ms / 1000).toFixed(1)} seconds · Exit code ${esc(run.exit_code ?? "unavailable")}</p><p class="meta">Recorded on the author’s machine.</p><table><thead><tr><th>Check</th><th>Result</th><th>Claim</th></tr></thead><tbody>${rows}</tbody></table><details><summary>Execution details</summary><dl>${item("Started", run.started_at)}${item("Finished", run.finished_at)}${item("Platform", run.platform)}${item("Rust compiler", run.rustc)}${item("Working directory", run.working_directory)}${item(
+  return `<article class="recorded-run">${renderToolchain(proofs.toolchain, run.source.repository, run.source.commit)}${report.run_ids.length > 1 ? `<h3>Run ${index + 1}</h3>` : ""}<h3>Run locally</h3><pre><code>${esc(script)}</code></pre><p class="meta">${proofs.localOnly ? "Uses an unpublished local source commit. This Run cannot be uploaded or published. Install the pinned tool version and run the package setup before verification." : "Checks out the recorded source commit from GitHub. Install the report’s tool version before running."}</p><p class="run-downloads">${proofs.localOnly ? "" : `<a href="${esc(sourceURL)}">Source on GitHub</a> · `}<a href="${esc(links.sarif ?? `${base}/sarif`)}">SARIF with logs (.json)</a></p><h3>Recorded run</h3><p>${run.execution_successful ? "Completed" : "Unsuccessful"} · ${passed} checks passed · ${failed} failed${other ? ` · ${other} other` : ""}</p><p class="meta">${esc(run.started_at)} · ${(run.duration_ms / 1000).toFixed(1)} seconds · Exit code ${esc(run.exit_code ?? "unavailable")}</p><p class="meta">Recorded on the author’s machine.</p><table><thead><tr><th>Check</th><th>Result</th><th>Claim</th></tr></thead><tbody>${rows}</tbody></table><details><summary>Execution details</summary><dl>${item("Started", run.started_at)}${item("Finished", run.finished_at)}${item("Platform", run.platform)}${item("Rust compiler", run.rustc)}${item("Working directory", run.working_directory)}${item(
     "Environment overrides",
     Object.entries(run.environment || {})
       .map(([k, v]) => k + "=" + v)

@@ -65,3 +65,23 @@ this recorder does not need. No MachineChecked code or Python runtime is
 vendored: the small adapter uses Lean's public Meta APIs directly, preserving
 the original forall prefix and leaving existentials in the conclusion. Upstream
 Lean is Apache-2.0; Aeneas is used through the project's pinned dependency.
+
+## Patched source records
+
+`[tool].patch` opts into the single cumulative Aeneas patch workflow described in
+[the guide](aeneas.md#use-a-cumulative-aeneas-patch). `version` and SARIF driver
+version remain the registered official 40-character base. The driver full name
+and UI identify `Aeneas <base12> + patch <sha256-prefix12>`.
+
+`properties.proofs.toolchain` is a strict version-1 descriptor. Sources are tagged
+`git {repository, commit}`, `git_patch {repository, base_commit, patch: {path,
+sha256}}`, or `release {release_id}`. Materialized Git sources additionally record
+`materialized.git_tree`. SHA values are full-length; patch paths are normalized
+relative to the proof repository root, unlike package-relative config paths.
+
+The current adapter requires exactly Aeneas, Charon and Lean components and four
+uses: Aeneas `lean_library/dependency_resolved`, Aeneas `translator/not_run`, Charon
+`rust_frontend/not_run`, Lean `proof_checker/process_executed`. Missing uses are
+not inferred. Invalid descriptors never fall back to legacy handling. Generic
+source types allow later adapters without implementing a generic build executor;
+patching Charon, Lean or other tools is currently rejected.

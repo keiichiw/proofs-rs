@@ -56,6 +56,9 @@ export function renderPreview(
   }
   // Enrich a copy: a later request must not inherit changes to a prior snapshot.
   const report = structuredClone(snapshot.report);
+  report.toolchains_json = JSON.stringify([
+    snapshot.sarif.runs[0].properties.proofs.toolchain ?? null,
+  ]);
   const localOnly = snapshot.sarif.runs[0].properties.proofs.localOnly === true;
   if (localOnly) {
     report.evidence_url = "";
@@ -84,6 +87,13 @@ export function renderPreview(
       report.tool,
       report.tool_version,
     ),
+    toolchain_json:
+      claim.evidence_ref?.run_id ===
+      snapshot.sarif.runs[0].automationDetails?.guid
+        ? JSON.stringify(
+            snapshot.sarif.runs[0].properties.proofs.toolchain ?? null,
+          )
+        : null,
     tool: report.tool,
     tool_version: report.tool_version,
     tool_version_id: report.tool_version_id,

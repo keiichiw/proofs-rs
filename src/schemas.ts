@@ -164,6 +164,7 @@ export const report = z
     tool_id: string.describe("Tool slug, usable as the tool filter."),
     tool: string,
     tool_version: string,
+    toolchains_json: nullableString.optional(),
     tool_limitations: string.describe("Displayed as Technical limitations."),
     tool_limitations_updated_at: nullableString,
     latest_revision_no: integer,
@@ -312,6 +313,7 @@ export const claim = z
     tool_limitations: string.describe("Displayed as Technical limitations."),
     tool_limitations_updated_at: nullableString,
     latest_report_revision: integer,
+    toolchain_json: nullableString.optional(),
     star_count: integer,
     report_star_count: integer,
     report_comment_count: integer,
@@ -577,6 +579,112 @@ const relativePath = string
     "Relative path without '..', backslashes, colons or control characters.",
   );
 const logLocation = z.looseObject({ index: integer.nonnegative() });
+const toolchainSha = string.regex(/^[a-f0-9]{40}$/i);
+const toolchainDigest = string.regex(/^[a-f0-9]{64}$/i);
+const toolchainPath = string
+  .min(1)
+  .max(1000)
+  .refine(
+    (path) =>
+      !/[\\\x00-\x1f\x7f:]/.test(path) &&
+      path
+        .split("/")
+        .every((part) => part !== "" && part !== "." && part !== ".."),
+    "Expected a normalized repository-relative path",
+  );
+const toolchainRepository = string
+  .max(1000)
+  .regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/i);
+// Only the reproduction location is public; fingerprint internals may evolve.
+export const toolchainInput = z.looseObject({
+  manifest_path: toolchainPath.refine(
+    (path) => path.split("/").at(-1) === "Cargo.toml",
+    "Expected the recorded package Cargo.toml path",
+  ),
+});
+export const toolchainSource = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("git"),
+    repository: toolchainRepository,
+    commit: toolchainSha,
+  }),
+  z.strictObject({
+    kind: z.literal("git_patch"),
+    repository: toolchainRepository,
+    base_commit: toolchainSha,
+    patch: z.strictObject({ path: toolchainPath, sha256: toolchainDigest }),
+  }),
+  z.strictObject({
+    kind: z.literal("release"),
+    release_id: string
+      .min(1)
+      .max(300)
+      .regex(/^[^\s\x00-\x1f\x7f]+$/),
+  }),
+]);
+export const toolchainObservation = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("dependency_resolved"),
+    dependency_name: string.min(1).max(100),
+    subdirectory: toolchainPath,
+  }),
+  z.strictObject({
+    kind: z.literal("process_executed"),
+    reported_version: string.trim().min(1).max(4000),
+  }),
+  z.strictObject({ kind: z.literal("not_run") }),
+]);
+export const toolchain = z
+  .strictObject({
+    schema_version: z.literal(1),
+    components: z
+      .record(
+        string.regex(/^[A-Za-z][A-Za-z0-9_-]{0,99}$/),
+        z.strictObject({
+          tool: string.min(1).max(100),
+          source: toolchainSource,
+          materialized: z.strictObject({ git_tree: toolchainSha }).optional(),
+        }),
+      )
+      .refine(
+        (components) =>
+          Object.keys(components).length > 0 &&
+          Object.keys(components).length <= 100,
+      ),
+    uses: z
+      .array(
+        z.strictObject({
+          component: string.min(1).max(100),
+          role: string.min(1).max(100),
+          observation: toolchainObservation,
+        }),
+      )
+      .min(1)
+      .max(200),
+  })
+  .superRefine((descriptor, ctx) => {
+    const seen = new Set<string>();
+    for (const use of descriptor.uses) {
+      const key = JSON.stringify([use.component, use.role]);
+      if (!Object.hasOwn(descriptor.components, use.component) || seen.has(key))
+        ctx.addIssue({
+          code: "custom",
+          message: "Unknown component or duplicate component/role",
+        });
+      seen.add(key);
+    }
+    for (const component of Object.values(descriptor.components)) {
+      if (
+        component.source.kind === "release" &&
+        component.materialized !== undefined
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Only Git sources can have materialized trees",
+        });
+    }
+  });
+
 export const sarif = z
   .looseObject({
     version: z.literal("2.1.0"),
@@ -645,6 +753,8 @@ export const sarif = z
           properties: z.looseObject({
             proofs: z.looseObject({
               schemaVersion: z.literal(2),
+              toolchain: toolchain.optional(),
+              toolchain_input: toolchainInput.optional(),
               dependencies: z.array(runDependency).max(10000),
               crate: required(100),
               version: required(100),
