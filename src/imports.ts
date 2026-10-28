@@ -22,7 +22,7 @@ import {
 // Format 60 is still served by docs.rs for releases such as hex 0.4.3.
 export const FORMATS = [60, 61];
 // Bump when extraction or metadata changes require replaying archived rustdoc.
-export const CATALOG_EXTRACTOR_VERSION = 1;
+export const CATALOG_EXTRACTOR_VERSION = 2;
 
 function markCatalogCurrent(db: D1Database, releaseId: number) {
   return stmt(
@@ -366,6 +366,33 @@ export function extractAPIs(
     }
     if (output.size > 20000) throw new Fault(422, "api_catalog_too_large");
   }
+  function implMethods(imp: any): any[] {
+    const methods = (imp.items || []).map((id: any) => {
+      const method = index[id];
+      if (!method) throw new Fault(422, "invalid_rustdoc_impl_item");
+      return method;
+    });
+    const declared = index[imp.trait?.id];
+    const localCrate = index[doc.root].crate_id;
+    if (
+      !declared?.inner?.trait ||
+      imp.is_negative ||
+      (localCrate !== undefined && declared.crate_id !== localCrate)
+    )
+      return methods;
+    const overridden = new Set(methods.map((m: any) => m.name));
+    const provided = new Set(imp.provided_trait_methods || []);
+    for (const id of declared.inner.trait.items || []) {
+      const method = index[id];
+      if (
+        method?.inner?.function?.has_body === true &&
+        provided.has(method.name) &&
+        !overridden.has(method.name)
+      )
+        methods.push(method);
+    }
+    return methods;
+  }
   function walk(
     id: any,
     path: string[],
@@ -439,8 +466,7 @@ export function extractAPIs(
           if (imp.is_synthetic) continue;
           typeImpls.add(String(implID));
           const trait = imp.trait && resolveEmptyPaths(imp.trait, doc.paths);
-          for (const methodID of imp.items || []) {
-            const method = index[methodID];
+          for (const method of implMethods(imp)) {
             if (!method?.inner?.function) continue;
             const owner = {
               kind,
@@ -516,9 +542,7 @@ export function extractAPIs(
         continue;
       const imp = resolveEmptyPaths(raw, doc.paths);
       const selfType = typ(canonicalPaths(imp.for));
-      for (const methodID of imp.items || []) {
-        const method = index[methodID];
-        if (!method) throw new Fault(422, "invalid_rustdoc_impl_item");
+      for (const method of implMethods(imp)) {
         if (!method.inner?.function) continue;
         const declared = (declaration.inner.trait.items || [])
           .map((id: any) => index[id])

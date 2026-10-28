@@ -4922,3 +4922,59 @@ test("patched revisions and Claim references retain their own source labels", as
     409,
   );
 });
+
+test("catalogue includes provided local trait defaults for primitive and nominal impls", () => {
+  for (const nominal of [false, true]) {
+    const doc = traitImplFixture(
+      nominal ? { resolved_path: { path: "S", id: 5 } } : { primitive: "u8" },
+    );
+    if (nominal) {
+      doc.index[0].inner.module.items.push(5);
+      doc.index[5] = {
+        crate_id: 0,
+        name: "S",
+        visibility: "public",
+        inner: { struct: { impls: [3] } },
+      };
+    }
+    doc.index[1].inner.trait.items.push(8);
+    doc.index[8] = {
+      name: "inherited",
+      inner: {
+        function: {
+          ...structuredClone(doc.index[2].inner.function),
+          has_body: true,
+        },
+      },
+    };
+    doc.index[3].inner.impl.provided_trait_methods = ["inherited"];
+    const key = `<${nominal ? "sample::S" : "u8"} as sample::T>::inherited`;
+    assert.equal(
+      extractAPIs(doc, "sample", "1.0.0").filter((a) => a.canonical_key === key)
+        .length,
+      1,
+    );
+    doc.index[9] = {
+      name: "inherited",
+      inner: {
+        function: {
+          ...structuredClone(doc.index[8].inner.function),
+          header: { is_unsafe: true, abi: "Rust" },
+        },
+      },
+    };
+    doc.index[3].inner.impl.items.push(9);
+    const overridden = extractAPIs(doc, "sample", "1.0.0").filter(
+      (a) => a.canonical_key === key,
+    );
+    assert.equal(overridden.length, 1);
+    assert.equal(overridden[0].is_unsafe, 1);
+    doc.index[3].inner.impl.items.pop();
+    doc.index[3].inner.impl.provided_trait_methods = [];
+    assert.equal(
+      extractAPIs(doc, "sample", "1.0.0").filter((a) => a.canonical_key === key)
+        .length,
+      0,
+    );
+  }
+});
