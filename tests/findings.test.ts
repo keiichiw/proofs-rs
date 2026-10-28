@@ -905,6 +905,8 @@ test("body migration preserves origin, links, APIs and immutable history without
     200,
   );
   assert.equal((await request("/findings/legacy")).body.body, f.body);
+  // The running application expects the current Run projection schema too.
+  db.exec(readFileSync(new URL("../migrations/0014_run_toolchain.sql", import.meta.url), "utf8"));
   // Submit the actual rendered form, including unchanged migrated prose.
   const page = await app.request(
     `https://example.test/finding/legacy`,

@@ -4154,17 +4154,22 @@ test(
     const record = JSON.parse(
       readFileSync(process.env.PROOFS_REAL_AENEAS_RECORD!, "utf8"),
     );
+    const selectedRun = record.run_id ? ["--run", record.run_id] : [];
     const sarif = JSON.parse(readFileSync(record.sarif, "utf8"));
-    const contracts = sarif.runs[0].properties.proofs.contracts;
+    const proofMetadata = sarif.runs[0].properties.proofs;
+    const isPatched = !!proofMetadata.toolchain;
+    const contracts = proofMetadata.contracts;
     const { env, db, request } = await fixture();
-    db.exec(
-      "UPDATE crates SET name='formal_fixture' WHERE id=1; UPDATE releases SET version='0.1.0' WHERE id=1; DELETE FROM api_items;",
+    db.prepare("UPDATE crates SET name=? WHERE id=1").run(proofMetadata.crate);
+    db.prepare("UPDATE releases SET version=? WHERE id=1").run(
+      proofMetadata.version,
     );
+    db.exec("DELETE FROM api_items");
     const apiPaths = [
       ...new Set<string>(contracts.map((c: any) => c.api_paths[0])),
     ];
     assert.ok(
-      contracts.length > apiPaths.length,
+      isPatched ? contracts.length > 0 : contracts.length > apiPaths.length,
       "fixture has multiple theorems for one API",
     );
     for (const [i, path] of apiPaths.entries())
@@ -4182,8 +4187,8 @@ test(
       "INSERT INTO catalog_versions(release_id,extractor_version) VALUES(1,?)",
     ).run(CATALOG_EXTRACTOR_VERSION);
     const prepared = await request("/publish/prepare", "POST", {
-      crate: "formal_fixture",
-      version: "0.1.0",
+      crate: proofMetadata.crate,
+      version: proofMetadata.version,
     });
     assert.equal(prepared.status, 200);
     assert.equal(prepared.body.status, "ready");
@@ -4249,9 +4254,72 @@ test(
         proofPath,
         "This working-tree file is deliberately not valid Lean.\n",
       );
+      if (isPatched) {
+        await assert.rejects(
+          promisify(execFile)(
+            record.binary,
+            [
+              "proofs",
+              "--server",
+              env.APP_ORIGIN,
+              "publish",
+              "--yes",
+              "--force",
+              ...selectedRun,
+            ],
+            {
+              cwd: record.project,
+              env: { ...process.env, PROOFS_CONFIG_DIR: config },
+              timeout: 60000,
+            },
+          ),
+          /Toolchain inputs changed/,
+        );
+        await writeFile(proofPath, committedProof);
+        const patchPath = join(
+          record.project,
+          proofMetadata.toolchain.components.aeneas.source.patch.path,
+        );
+        const committedPatch = readFileSync(patchPath);
+        try {
+          await writeFile(
+            patchPath,
+            Buffer.concat([committedPatch, Buffer.from("\n")]),
+          );
+          await assert.rejects(
+            promisify(execFile)(
+              record.binary,
+              [
+                "proofs",
+                "--server",
+                env.APP_ORIGIN,
+                "publish",
+                "--yes",
+                "--force",
+                ...selectedRun,
+              ],
+              {
+                cwd: record.project,
+                env: { ...process.env, PROOFS_CONFIG_DIR: config },
+                timeout: 60000,
+              },
+            ),
+            /Toolchain inputs changed/,
+          );
+        } finally {
+          await writeFile(patchPath, committedPatch);
+        }
+      }
       const result = await promisify(execFile)(
         record.binary,
-        ["proofs", "--server", env.APP_ORIGIN, "publish", "--yes"],
+        [
+          "proofs",
+          "--server",
+          env.APP_ORIGIN,
+          "publish",
+          "--yes",
+          ...selectedRun,
+        ],
         {
           cwd: record.project,
           env: { ...process.env, PROOFS_CONFIG_DIR: config },
@@ -4269,7 +4337,11 @@ test(
         .get()!;
       const detail = (await request(`/claims/${claim.id}`)).body;
       assert.ok(detail.formal_evidence.statement);
-      assert.equal(detail.precondition, "");
+      assert.equal(
+        detail.precondition,
+        contracts.find((c: any) => c.harness === detail.evidence_ref.harness)
+          .precondition,
+      );
       assert.ok(
         contracts.some(
           (c: any) => c.formal.statement === detail.formal_evidence.statement,
@@ -4278,6 +4350,28 @@ test(
       const html = await (
         await app.request(env.APP_ORIGIN + `/claim/${claim.id}`, {}, env)
       ).text();
+      if (isPatched) {
+        const { toolchainLabel } = await import("../web/toolchain");
+        const label = toolchainLabel(proofMetadata.toolchain);
+        assert.ok(html.includes(label));
+        const publishedReport = db
+          .prepare("SELECT id FROM reports ORDER BY id DESC LIMIT 1")
+          .get()!;
+        for (const path of ["/reports", `/report/${publishedReport.id}`]) {
+          const response = await app.request(env.APP_ORIGIN + path, {}, env);
+          assert.equal(response.status, 200);
+          assert.ok((await response.text()).includes(label));
+        }
+        const page = await (
+          await app.request(
+            env.APP_ORIGIN + `/report/${publishedReport.id}`,
+            {},
+            env,
+          )
+        ).text();
+        assert.ok(page.includes("cargo proofs prepare"));
+        assert.ok(page.includes("Materialized tree"));
+      }
       assert.match(html, /Formal statement/);
       assert.doesNotMatch(html, /None stated/);
       await writeFile(join(dirname(record.sarif), "claim.html"), html);
@@ -4309,7 +4403,14 @@ test(
       // A no-op republish preserves the reference and Claim IDs despite working-tree edits.
       const again = await promisify(execFile)(
         record.binary,
-        ["proofs", "--server", env.APP_ORIGIN, "publish", "--yes"],
+        [
+          "proofs",
+          "--server",
+          env.APP_ORIGIN,
+          "publish",
+          "--yes",
+          ...selectedRun,
+        ],
         {
           cwd: record.project,
           env: { ...process.env, PROOFS_CONFIG_DIR: config },
@@ -4324,7 +4425,14 @@ test(
       // The packaged preview resolves each claim's theorem even when API IDs repeat.
       const preview = spawn(
         record.binary,
-        ["proofs", "--server", env.APP_ORIGIN, "preview", "--no-browser"],
+        [
+          "proofs",
+          "--server",
+          env.APP_ORIGIN,
+          "preview",
+          "--no-browser",
+          ...selectedRun,
+        ],
         {
           cwd: record.project,
           env: { ...process.env, PROOFS_CONFIG_DIR: config },
@@ -4625,5 +4733,192 @@ test("failed catalog refresh stays stale and retries from the archived snapshot"
       })
     ).status,
     200,
+  );
+});
+
+test("patched revisions and Claim references retain their own source labels", async () => {
+  const { toolchainLabel } = await import("../web/toolchain");
+  const { env, db, request } = await fixture();
+  const objects = new Map<string, any>();
+  env.ARCHIVE = {
+    put: async (key: string, bytes: ArrayBuffer) =>
+      objects.set(key, JSON.parse(new TextDecoder().decode(bytes))),
+    get: async (key: string) =>
+      objects.has(key)
+        ? {
+            json: async () => structuredClone(objects.get(key)),
+            body: new Response(JSON.stringify(objects.get(key))).body,
+          }
+        : null,
+  } as any;
+  const tv = db
+    .prepare("SELECT id,version FROM tool_versions WHERE tool_id='aeneas'")
+    .get()!;
+  const ids = [
+    "55555555-5555-4555-8555-555555555555",
+    "66666666-6666-4666-8666-666666666666",
+  ];
+  const records: any[] = [];
+  for (const [i, id] of ids.entries()) {
+    const sarif = recordedSarif(id, ["lake", "--no-cache", "build"]);
+    const r: any = sarif.runs[0],
+      p = r.properties.proofs;
+    const descriptor: any = {
+      schema_version: 1,
+      components: {
+        aeneas: {
+          tool: "aeneas",
+          source: {
+            kind: "git_patch",
+            repository: "https://github.com/AeneasVerif/aeneas",
+            base_commit: tv.version,
+            patch: {
+              path: "proofs/aeneas.patch",
+              sha256: (i ? "f" : "b").repeat(64),
+            },
+          },
+          materialized: { git_tree: (i ? "e" : "c").repeat(40) },
+        },
+        charon: {
+          tool: "charon",
+          source: {
+            kind: "git",
+            repository: "https://github.com/AeneasVerif/charon",
+            commit: "d".repeat(40),
+          },
+        },
+        lean: {
+          tool: "lean",
+          source: { kind: "release", release_id: "leanprover/lean4:v4.35.0" },
+        },
+      },
+      uses: [
+        {
+          component: "aeneas",
+          role: "lean_library",
+          observation: {
+            kind: "dependency_resolved",
+            dependency_name: "aeneas",
+            subdirectory: "backends/lean",
+          },
+        },
+        {
+          component: "aeneas",
+          role: "translator",
+          observation: { kind: "not_run" },
+        },
+        {
+          component: "charon",
+          role: "rust_frontend",
+          observation: { kind: "not_run" },
+        },
+        {
+          component: "lean",
+          role: "proof_checker",
+          observation: {
+            kind: "process_executed",
+            reported_version: "Lean (version 4.35.0, Release)",
+          },
+        },
+      ],
+    };
+    r.tool.driver = {
+      name: "aeneas",
+      version: i ? String(tv.version).toUpperCase() : tv.version,
+      fullName: toolchainLabel(descriptor),
+    };
+    p.toolchain = descriptor;
+    p.toolchain_input = { manifest_path: "Cargo.toml" };
+    p.contracts[0] = {
+      ...p.contracts[0],
+      harness: "Proofs.safe",
+      precondition: "",
+      file: "Proofs.lean",
+      formal: {
+        version: 1,
+        theorem: "Proofs.safe",
+        module: "Proofs",
+        statement: "True",
+        binders: [],
+        conclusion: "True",
+        program: null,
+        program_head: null,
+        axioms: [],
+        mapping: "manual",
+        manifest: null,
+        source: { file: "Proofs.lean", first_line: 1, last_line: 2 },
+        definitions: [],
+        definitions_truncated: false,
+        translation_rerun: false,
+      },
+    };
+    r.results = [
+      {
+        kind: "pass",
+        ruleId: "aeneas.lean.theorem",
+        message: { text: "checked" },
+        properties: { harness: "Proofs.safe" },
+      },
+    ];
+    assert.equal(
+      (await request(`/runs/${id}/sarif`, "POST", sarif)).status,
+      201,
+    );
+    records.push(sarif);
+  }
+  const body = (i: number) => ({
+    ...reportInput,
+    tool_version_id: tv.id,
+    run_ids: [ids[i]],
+    claims: [
+      {
+        ...reportInput.claims[0],
+        precondition: "",
+        evidence_ref: { run_id: ids[i], harness: "Proofs.safe" },
+      },
+    ],
+  });
+  const mixed = await request("/reports/validate", "POST", {
+    ...body(0),
+    run_ids: ids,
+  });
+  assert.equal(mixed.status, 400);
+  assert.equal(mixed.body.error, "inconsistent_run_toolchain_sources");
+  const created = await request("/reports", "POST", body(0));
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const report = (await request(`/reports/${created.body.id}`)).body;
+  const claim = report.claims[0];
+  const update = await request(`/reports/${report.id}/revisions`, "POST", {
+    ...body(1),
+    expected_revision: 1,
+    claims: [{ ...body(1).claims[0], id: claim.id }],
+  });
+  assert.equal(update.status, 201, JSON.stringify(update.body));
+  for (const i of [0, 1]) {
+    const expected = toolchainLabel(
+      records[i].runs[0].properties.proofs.toolchain,
+    );
+    for (const path of [
+      `/report/${report.id}?v=${i + 1}`,
+      `/claim/${claim.id}?report_revision=${i + 1}`,
+    ]) {
+      const response = await app.request(env.APP_ORIGIN + path, {}, env);
+      assert.equal(response.status, 200);
+      const html = await response.text();
+      assert.ok(html.includes(expected), path);
+      assert.ok(
+        !html.includes(
+          toolchainLabel(records[1 - i].runs[0].properties.proofs.toolchain),
+        ),
+        path,
+      );
+    }
+  }
+  const mutated = structuredClone(records[0]);
+  mutated.runs[0].properties.proofs.toolchain.components.aeneas.source.patch.sha256 =
+    "a".repeat(64);
+  assert.equal(
+    (await request(`/runs/${ids[0]}/sarif`, "POST", mutated)).status,
+    409,
   );
 });

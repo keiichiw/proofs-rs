@@ -1,3 +1,4 @@
+import { savedToolchainLabel } from "../web/toolchain-view";
 import { validLeanSegments } from "../web/formal-evidence";
 import { renderMarkdown } from "./markdown";
 import { renderAPICatalog, signatureHTML } from "../web/api-catalog";
@@ -92,7 +93,9 @@ export function createViews(
         ? ""
         : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a>`,
       c.tool
-        ? `${c.tool_id ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(c.tool)}</a>` : esc(c.tool)} ${shortVersion(c.tool_version ?? "")}`
+        ? savedToolchainLabel(c)
+          ? esc(savedToolchainLabel(c))
+          : `${c.tool_id ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(c.tool)}</a>` : esc(c.tool)} ${shortVersion(c.tool_version ?? "")}`
         : "",
       plural(c.claim_count ?? 0, "claim"),
       c.dependency_count
@@ -171,14 +174,14 @@ export function createViews(
     return `<div class="title-row"><h1>${kind === "report" ? `Report #${esc(c.id)} — ` : `Claim #${esc(c.claim_number)} — `}${esc(c.title)}</h1>${starButton(kind, c)}</div>`;
   }
   function toolLink(c: any) {
-    const label = `${esc(c.tool)} ${esc(c.tool_version)}`;
+    const label = esc(savedToolchainLabel(c) ?? `${c.tool} ${c.tool_version}`);
     return c.tool_version_id
       ? `<a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${label}</a>`
       : label;
   }
   function toolLimitations(c: any) {
     if (!c.tool_limitations) return "";
-    return `<details class="tool-limitations"><summary>Tool limitations</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
+    return `<details class="tool-limitations"><summary>${savedToolchainLabel(c) ? "Official base tool limitations" : "Tool limitations"}</summary><div class="tool-limitations-body"><p class="plain-text">${esc(c.tool_limitations)}</p>${c.tool_limitations_updated_at ? `<p class="meta">Updated ${date(c.tool_limitations_updated_at)}</p>` : ""}<p><a href="${esc(external(`/tool-version/${enc(c.tool_version_id)}`))}">${esc(c.tool)} ${esc(c.tool_version)} — version details</a></p></div></details>`;
   }
   function findingLinkLabel(link: {
     kind: string;

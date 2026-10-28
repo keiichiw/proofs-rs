@@ -64,7 +64,28 @@ You may set `PROOFS_SERVER` instead. The default is `https://proofs.rs`. Tokens 
 
 ## Local report preview
 
-Install Node.js 24 or newer, then preview a successful recorded run before publishing:
+Install Node.js 24 or newer. To review local report text before committing,
+pushing or recording verification:
+
+```sh
+cargo proofs preview --draft
+cargo proofs preview --draft --manifest-path path/to/crate/Cargo.toml \
+  --proofs-config aeneas/profiles/stage2/proofs.toml
+```
+
+Draft mode requires no Git repository, recorded run, login or service connection.
+It displays report prose and Finding drafts; Aeneas configurations also show the
+configured API, module, theorem and precondition. Every page is marked
+**Unverified draft**. No verification is performed and no run, logs, SARIF,
+source links or evidence are generated. The mode makes no service requests and
+does not access credentials, recorded runs or publication state. Save and reload
+to see changes, including changes to mappings.
+
+`--proofs-config` is relative to the selected package directory, must stay inside
+it, and requires `--draft`. `--draft` conflicts with `--run` and `--report`.
+The normal recording and publication requirements are unchanged.
+
+To preview a successful recorded run before publishing:
 
 ```sh
 cargo proofs preview
@@ -75,6 +96,8 @@ cargo proofs preview --port 8080 --no-browser
 The command opens a local web server on `127.0.0.1` using an available port by
 default. It displays the report, individual claims, reproduction instructions,
 execution logs, and a SARIF download using the UI bundled with this CLI release.
+The production fonts and their SIL OFL licenses are bundled and served locally;
+font loading requires no network connection.
 No repository checkout or npm installation is needed to use an installed CLI
 that includes `preview`. Stop it with Ctrl+C.
 
@@ -408,3 +431,50 @@ report's crate and version. Publication resolves paths to API IDs and deduplicat
 aliases; an unresolved or ambiguous path prevents publication. Preview displays
 these associations and warns about unresolved paths. This applies to initial
 publication only; edit published findings through the Web/API.
+
+## Aeneas patches and prepare
+
+Set `[tool].patch = "proofs/toolchain/aeneas.patch"` to use a committed cumulative
+patch against a registered official Aeneas base in `[tool].version`. Patch paths
+are package-relative. No public fork is required. In a separate modified Aeneas
+checkout, commit all desired changes (including new files), then save:
+
+```sh
+git diff --binary --full-index --no-ext-diff --no-textconv BASE_COMMIT HEAD -- > /path/to/proof-repo/proofs/toolchain/aeneas.patch
+```
+
+Ignore `.proofs-toolchain/` in the Lean directory, run `cargo proofs prepare`,
+and set Lake's `aeneas` require to path `.proofs-toolchain/aeneas/backends/lean`.
+Run `lake update` and `lake build`, commit/push the inputs, then record from the
+Lean directory with `cargo proofs run -- lake build`, preview and publish.
+`prepare` supports `--manifest-path` and `-p`, changes no tracked configuration,
+and executes no proofs or translation. It refuses unmanaged or edited sources.
+
+Only Aeneas patches are supported. Official Charon/Lean pins and Lake package
+configuration must be preserved. Run restores from the committed patch afresh,
+checks the actual dependency and Lean release, builds and audits proofs. It never
+builds the translator or reruns Rust-to-Lean translation. Provenance is stored in
+common `toolchain.components` and role observations in `toolchain.uses`.
+
+Input fingerprints include patch path/bytes, settings and source inputs; source
+identities exclude paths, IDs and observations. Restored trees are checked
+separately. Updating a patch requires a new Run even with `--force`. Matching Runs
+remain previewable/publishable after deleting managed sources without rebuilding.
+Legacy Runs remain supported with provenance unrecorded. See the full
+[Aeneas guide](https://proofs.rs/book/aeneas.html#use-a-cumulative-aeneas-patch).
+
+Maintainers can run the real patched Lean integration with local pinned source and
+external dependency caches (the Aeneas library itself is rebuilt in a fresh checkout):
+
+```sh
+python3 cli/tests/aeneas_patch_e2e.py cli/target/debug/cargo-proofs /tmp/patch-test /path/to/aeneas-git /path/to/lake-packages
+python3 cli/tests/aeneas_patch_failure.py /tmp/patch-test /path/to/aeneas-git /path/to/lake-packages
+PROOFS_REAL_AENEAS_RECORD=/tmp/patch-test/record.json node --import tsx --test --test-name-pattern='real Aeneas run' tests/app.test.ts
+```
+
+The second check retains an old successful compiled proof while recording a
+failing committed proof; it must create only an unsuccessful Run. The last step
+publishes only to a temporary localhost service fixture, checks changed-input
+rejection even with `--force`, and verifies public and preview HTML. Ordinary
+`cargo test` and `npm test` cover local restoration, descriptor validation,
+source comparison, revision history and legacy flows.

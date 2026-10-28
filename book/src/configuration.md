@@ -120,3 +120,19 @@ Submodule snapshots use an isolated temporary clone so initialization cannot alt
 the original checkout's Git configuration. Recording checks pinned HEADs and tracked
 files before and after verification, and removes the snapshot on success or failure.
 Reproduction instructions initialize submodules after checking out the source commit.
+
+## Aeneas cumulative patches
+
+Only Aeneas accepts optional `[tool].patch = "proofs/toolchain/aeneas.patch"`.
+The path is relative to the selected package containing `proofs.toml`; it must be
+a regular file inside the proof repository, without symlink traversal. The
+recorded path is repository-relative. `version` remains a registered official
+full Aeneas base SHA. Users do not write `toolchain.components` or `uses`.
+
+Run `cargo proofs prepare` before configuring Lake's path dependency and its first
+`lake update`. Prepare uses the selected package and `lean_dir`, restoring into
+`.proofs-toolchain/aeneas/`; ignore that directory. See the
+[Aeneas patch guide](aeneas.md#use-a-cumulative-aeneas-patch) for the require entry,
+initial workflow and update steps. Patches cannot change Charon/Lean pins or Lake
+package/dependency configuration, add submodules/symlinks, inject `.lake/` or Lean
+compiled artifacts, or use arbitrary repositories and preparation hooks.

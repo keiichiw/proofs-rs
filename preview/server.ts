@@ -1,9 +1,14 @@
 import { createServer } from "node:http";
 import { createInterface } from "node:readline";
 import { previewPage, renderPreview, type Snapshot } from "./render";
+import { draftBanner } from "./draft";
 
-declare const PREVIEW_ASSETS: Record<string, { type: string; content: string }>;
+declare const PREVIEW_ASSETS: Record<
+  string,
+  { type: string; content: string; encoding?: "base64" }
+>;
 const version = 1;
+const draftMode = process.argv[3] === "draft";
 const send = (message: object) =>
   process.stdout.write(JSON.stringify({ version, ...message }) + "\n");
 const pending = new Map<
@@ -55,13 +60,13 @@ const server = createServer(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
   const reply = (
     status: number,
-    content: string,
+    content: string | Buffer,
     type = "text/html; charset=utf-8",
   ) => {
     res.writeHead(status, { "Content-Type": type });
@@ -90,7 +95,13 @@ const server = createServer(async (req, res) => {
       ? PREVIEW_ASSETS[path]
       : undefined;
     if (asset) {
-      reply(200, asset.content, asset.type);
+      reply(
+        200,
+        asset.encoding === "base64"
+          ? Buffer.from(asset.content, "base64")
+          : asset.content,
+        asset.type,
+      );
       return;
     }
     if (!(
@@ -105,13 +116,21 @@ const server = createServer(async (req, res) => {
         404,
         previewPage(
           "Not found",
-          '<h1>Page not found</h1><a href="/report">Return to report</a>',
+          (draftMode ? draftBanner : "") +
+            '<h1>Page not found</h1><a href="/report">Return to report</a>',
           "",
         ),
       );
       return;
     }
     const data = await snapshot();
+    if (
+      data.mode === "draft" &&
+      (path.startsWith("/runs/") || path.startsWith("/api/v1/runs/"))
+    ) {
+      reply(404, "No recorded run in an unverified draft", "text/plain");
+      return;
+    }
     if (path.startsWith("/api/v1/runs/")) {
       if (
         path !==
@@ -147,7 +166,8 @@ const server = createServer(async (req, res) => {
       500,
       previewPage(
         "Preview error",
-        `<h1>Unable to load preview</h1><pre>${message}</pre><p>Correct the input and reload this page.</p>`,
+        (draftMode ? draftBanner : "") +
+          `<h1>Unable to load preview</h1><pre>${message}</pre><p>Correct the input and reload this page.</p>`,
         "",
       ),
     );

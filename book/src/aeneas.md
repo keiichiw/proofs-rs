@@ -192,3 +192,98 @@ Aeneas Git dependency. It does not support custom Lake source directories,
 local-path Aeneas dependencies, feature/target-specific extraction, or the Coq,
 F*, and HOL4 backends. See the [version's limitations](/tool-version/aeneas-be86ab0f1989d04944292b345b24c435be3ad10a)
 and [CLI documentation](https://github.com/proofs-rs/proofs-rs/tree/main/cli#aeneas-lean).
+
+## Use a cumulative Aeneas patch
+
+A registered **official base commit + one committed cumulative patch** can replace
+an official Git dependency. No public fork or experimental branch is required.
+This supports the OCaml translator and `backends/lean` models, lemmas and tactics.
+The Charon pin, Lean release, `aeneas` package name and Lake dependency configuration
+of the base must remain unchanged. Other tools do not yet support patches.
+
+First commit your changes in a separate local Aeneas checkout. Save its complete
+committed difference into the proof repository (new files must first be committed):
+
+```sh
+# In the modified Aeneas checkout; BASE_COMMIT is the registered full 40-character SHA.
+git diff --binary --full-index --no-ext-diff --no-textconv BASE_COMMIT HEAD -- > /path/to/proof-repo/proofs/toolchain/aeneas.patch
+```
+
+Add this to the existing `[tool]` section of `proofs.toml`:
+
+```toml
+patch = "proofs/toolchain/aeneas.patch"
+```
+
+The patch path is relative to the selected Cargo package, where `proofs.toml`
+lives. Add `.proofs-toolchain/` to `proofs/.gitignore`, then run:
+
+```sh
+cargo proofs prepare --manifest-path Cargo.toml
+```
+
+Prepare works before the first Lake update and before committing or pushing. It
+restores `.proofs-toolchain/aeneas/` inside `lean_dir`. It does not edit tracked
+Lake configuration, execute proofs, translate Rust, create a Run, or publish.
+It refuses unmanaged destinations and edited managed sources; move those aside
+before preparing again if you want to preserve local edits.
+
+Replace the Aeneas require entry in `proofs/lakefile.toml`:
+
+```toml
+[[require]]
+name = "aeneas"
+path = ".proofs-toolchain/aeneas/backends/lean"
+```
+
+Then complete the first record:
+
+```sh
+cd proofs
+lake update
+lake build
+# Commit and push proofs.toml, the patch, sources, lean-toolchain,
+# lakefile and lake-manifest.json, plus Cargo.lock. Exclude .lake/ and .proofs-toolchain/.
+cargo proofs run --manifest-path ../Cargo.toml -- lake build
+cargo proofs preview --manifest-path ../Cargo.toml
+cargo proofs publish --manifest-path ../Cargo.toml
+```
+
+For a patch update, regenerate the single cumulative diff against the same
+registered base, run prepare and Lake update/build again, commit/push the inputs,
+and record a new Run. Changed bytes at the same patch path require a new Run;
+`--force` cannot override this. Description-only edits can reuse the previous Run.
+Prepare and run both support the normal `--manifest-path` and `-p` selectors;
+run must execute from the configured Lean directory.
+
+Record always restores from the published proof commit into a new isolated
+checkout. It builds the patched Lean library from source with Lake cache downloads
+disabled, confirms Lake's effective dependency and selected Lean version, extracts
+theorems, and audits transitive axioms (only `propext`, `Classical.choice` and
+`Quot.sound`). It checks source content, file modes and source additions/deletions
+afterward. It does not build the OCaml translator or run Charon/Rust → Lean.
+`translation_rerun` remains false. Restoring a translator source does not establish
+which translator generated the committed model.
+
+Run metadata records provenance once in `properties.proofs.toolchain`:
+`schema_version = 1`, a `components` map and role-specific `uses`. Aeneas's
+`lean_library` and `translator` roles share the same source component; Charon is
+an official pinned Git source and Lean an official release. Only Aeneas is
+materialized. Uses record dependency resolution, proof-checker execution, and
+unexecuted translator/frontend stages. These observations are facts about this
+Run, not proof grades or binary authentication.
+
+Three comparisons are separate: the **input fingerprint** includes paths,
+configuration and source bytes for local Run reuse; **source identity** includes
+tool/repository/base/patch digest (not patch path or component ID); **observations**
+include the restored tree and actual version output. Report revisions containing
+patched Runs require the same toolchain source identities, and equal identities
+must have equal restored trees. Patched/legacy mixtures are rejected. The original
+Run remains immutable. Its stored patch link is fixed to the recorded proof commit.
+
+Preview/publish compare current inputs without fetching or rebuilding; deleting
+the managed directory does not invalidate matching evidence. Reproduce prepares
+the recorded package before building and auditing Lean. Existing Runs without
+metadata remain usable and show provenance as **not recorded**. Base tool
+limitations describe the official base. The service validates submitted records;
+it does not independently reproduce the author's execution or review the patch.

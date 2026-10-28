@@ -1,10 +1,47 @@
 # Preview a report locally
 
-Use `cargo proofs preview` to review your report as a reader before publishing.
-It combines `proofs.toml`, a successful recorded verification run, and existing
+Use `cargo proofs preview --draft` to review local report text before recording
+verification, or `cargo proofs preview` to review recorded evidence before publishing.
+The recorded mode combines `proofs.toml`, a successful verification run, and existing
 report text when revising a report. The browser displays the report, individual
 claims, reproduction instructions, logs, and a SARIF download using the UI bundled
 with your installed CLI.
+
+## Preview an unverified draft
+
+Before committing or pushing your source, run:
+
+```sh
+cargo proofs preview --draft
+```
+
+This mode reads the local configuration and Cargo package metadata. It requires
+Node.js 24 or newer, but no Git repository, recorded run, verification tool,
+login, or service connection. It makes no service API requests and does not read
+or update credentials, run records, or publication state.
+
+The report text, environment, assumptions, limitations and Finding drafts are
+displayed with an **Unverified draft** banner. For Aeneas, **Configured proof
+mappings** lists the API, module, theorem and configured precondition. Each mapping
+has a local detail page. These are authoring inputs: no theorem audit, API signature,
+verification result, source commit, execution log or SARIF is supplied by this mode.
+Other tools display report text without discovering verification harnesses.
+
+To select a configuration beneath the selected package directory:
+
+```sh
+cargo proofs preview --draft --manifest-path path/to/crate/Cargo.toml \
+  --proofs-config aeneas/profiles/stage2/proofs.toml
+```
+
+`--proofs-config` requires `--draft`; paths must stay inside the package directory.
+`--draft` cannot be combined with `--run` or `--report`. Save your configuration
+and reload the browser to update both prose and mappings. Invalid configuration
+appears as an error; fix it and reload.
+
+Draft preview never creates publishable evidence. The normal recording and
+publication checks still apply, and normal preview does not fall back to draft
+mode when its recording is missing or invalid.
 
 ## Start the preview
 
@@ -99,7 +136,8 @@ Preview does not resolve these publication conditions for you.
 
 | Command                          | What it does                                                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `cargo proofs preview`           | Opens the local reader UI; only GET requests to the service; no upload or publication-state updates           |
+| `cargo proofs preview --draft`   | Displays unverified local configuration; no recorded run, service requests or state updates                  |
+| `cargo proofs preview`           | Opens recorded evidence in the local reader UI; only GET requests to the service; no upload or state updates |
 | `cargo proofs publish --dry-run` | Prints prospective publication data; requires authentication and may prepare the API catalogue on the service |
 | `cargo proofs publish`           | Uploads the recorded SARIF, performs final validation, and publishes or revises the report                    |
 

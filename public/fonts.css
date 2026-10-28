@@ -1,5 +1,5 @@
-/* rustdoc's typefaces (SIL OFL; licenses in /fonts). Linked by the site and
-   the Book, not by the CLI preview, whose CSP falls back to system fonts. */
+/* rustdoc's typefaces (SIL OFL; licenses in /fonts).
+   Shared by the site, the Book, and the bundled CLI preview. */
 @font-face {
   font-family: "Source Serif 4";
   font-style: normal;

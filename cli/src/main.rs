@@ -8,6 +8,7 @@ mod publish;
 mod record;
 mod scan;
 mod state;
+mod toolchain;
 
 const MAX_REPORT_CLAIMS: usize = 200;
 
@@ -69,6 +70,11 @@ enum Commands {
         #[arg(long)]
         tool_version: Option<String>,
     },
+    /// Restore the configured Aeneas cumulative patch without running proofs.
+    Prepare {
+        #[command(flatten)]
+        project: ProjectArgs,
+    },
     /// Authorize this CLI in a browser.
     Login {
         #[arg(long)]
@@ -83,10 +89,16 @@ enum Commands {
         #[arg(last=true, required=true, num_args=2..)]
         command: Vec<String>,
     },
-    /// Preview a recorded report locally (requires Node.js 24+; never uploads).
+    /// Preview a recorded report or an unverified draft locally (requires Node.js 24+).
     Preview {
         #[command(flatten)]
         project: ProjectArgs,
+        /// Preview local report text and configured mappings without recorded evidence or service access.
+        #[arg(long, conflicts_with_all = ["run", "report"])]
+        draft: bool,
+        /// Draft configuration, relative to the selected package directory.
+        #[arg(long, requires = "draft")]
+        proofs_config: Option<PathBuf>,
         /// Select a recorded run (defaults to the latest run at startup).
         #[arg(long)]
         run: Option<String>,
@@ -139,11 +151,14 @@ fn run() -> Result<()> {
             tool,
             tool_target,
         } => config::init(&project, title, tool_version, tool, tool_target),
+        Commands::Prepare { project } => aeneas::prepare_project(&project),
         Commands::Login { no_browser } => api::login(&server, no_browser),
         Commands::Logout => api::logout(&server),
         Commands::Run { project, command } => record::run(&project, command),
         Commands::Preview {
             project,
+            draft,
+            proofs_config,
             run,
             report,
             port,
@@ -152,6 +167,8 @@ fn run() -> Result<()> {
             &server,
             &project,
             preview::Options {
+                draft,
+                proofs_config,
                 run,
                 report,
                 port,

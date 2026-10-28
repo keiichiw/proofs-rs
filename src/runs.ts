@@ -6,6 +6,11 @@ import {
 } from "../web/formal-evidence";
 import { operation } from "./openapi";
 import * as S from "./schemas";
+import {
+  compareToolchains,
+  validateAeneasToolchain,
+  type Toolchain,
+} from "../web/toolchain";
 import { Hono } from "hono";
 import {
   App,
@@ -131,7 +136,26 @@ export function readRecord(sarif: any) {
     execution_successful: inv.executionSuccessful,
     contracts: p.contracts,
     dependencies: p.dependencies,
+    toolchain: p.toolchain as Toolchain | undefined,
   };
+  if (p.aeneas?.source !== undefined)
+    throw new Fault(
+      400,
+      "toolchain_source_required",
+      "Tool source provenance belongs only in proofs.toolchain.",
+    );
+  if (p.toolchain !== undefined) {
+    if (p.toolchain_input === undefined)
+      throw new Fault(400, "toolchain_reproduction_required");
+    try {
+      validateAeneasToolchain(p.toolchain, s.tool.driver, b.contracts);
+    } catch (error) {
+      throw new Fault(
+        400,
+        error instanceof Error ? error.message : "invalid_toolchain",
+      );
+    }
+  }
   if (!Array.isArray(inv.arguments)) throw new Fault(400, "invalid_command");
   if (
     !relative(b.working_directory) ||
@@ -300,7 +324,9 @@ runs.post(
       c.env.DB,
       "SELECT v.id FROM tool_versions v JOIN tools t ON t.id=v.tool_id WHERE lower(t.name)=lower(?) AND v.version=? AND v.selectable=1 AND t.active=1",
       driver.name,
-      driver.version,
+      driver.name.toLowerCase() === "aeneas"
+        ? driver.version.toLowerCase()
+        : driver.version,
     );
     if (!tv) throw new Fault(400, "tool_version_unavailable");
     // Each attempt owns its object, so compensation cannot delete a concurrent winner.
@@ -313,7 +339,7 @@ runs.post(
         quota(c.env.DB, u.id, "verification_run", 90),
         stmt(
           c.env.DB,
-          "INSERT INTO verification_runs(id,author_id,crate,version,tool_version_id,sha256,size,r2_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO verification_runs(id,author_id,crate,version,tool_version_id,sha256,size,r2_key,created_at,toolchain_json) VALUES(?,?,?,?,?,?,?,?,?,?)",
           run,
           u.id,
           record.crate,
@@ -323,6 +349,9 @@ runs.post(
           bytes.byteLength,
           key,
           now(),
+          record.toolchain === undefined
+            ? null
+            : JSON.stringify(record.toolchain),
         ),
         ...record.dependencies.map((d: any) =>
           stmt(
@@ -451,6 +480,7 @@ export async function validateReportRuns(c: Ctx, b: any, v: any) {
     );
   const contracts: any[] = [];
   const records = new Map<string, any>();
+  const toolchains: (Toolchain | undefined)[] = [];
   let source: string | undefined;
   for (const rid of b.run_ids) {
     const r = await one(
@@ -468,11 +498,20 @@ export async function validateReportRuns(c: Ctx, b: any, v: any) {
       throw new Fault(400, "run_report_mismatch");
     const sarif = await (await readStored(c, r)).json();
     const m = readRecord(sarif);
+    toolchains.push(m.toolchain);
     records.set(rid, sarif);
     if (source && source !== JSON.stringify(m.source))
       throw new Fault(400, "inconsistent_run_sources");
     source = JSON.stringify(m.source);
     contracts.push(...m.contracts);
+  }
+  try {
+    compareToolchains(toolchains);
+  } catch (error) {
+    throw new Fault(
+      400,
+      error instanceof Error ? error.message : "invalid_toolchain",
+    );
   }
   for (const claim of v.claims) {
     if (claim.evidence_ref != null) {

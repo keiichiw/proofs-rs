@@ -433,3 +433,146 @@ test("finding draft API associations link resolved paths and label unresolved pa
   assert.equal(finding.querySelector("missing"), null);
   dom.window.close();
 });
+
+test("unrecorded draft renders configuration without inventing evidence", () => {
+  const snapshot: import("../preview/render").DraftSnapshot = {
+    mode: "draft",
+    server: "https://unused.example",
+    warnings: [],
+    sarif: null,
+    report: {
+      title: "  Draft report  ",
+      crate: "demo",
+      version: "1.0.0",
+      tool: "aeneas",
+      tool_version: "a".repeat(40),
+      explanation: "**Overview** <script>unsafe()</script>",
+      trusted_assumptions: "Trusted translation",
+      limitations: "Explicit limits",
+      environment: "Local environment",
+      mappings: [
+        {
+          id: "draft-mapping-0",
+          api: "Crc<u8>::checksum",
+          module: "Proofs.Crc",
+          theorem: "Crc.checksum_spec",
+          precondition: "width < 9 && coherent",
+        },
+      ],
+      findings: [
+        {
+          title: "Finding <draft>",
+          body: "**Details** <script>unsafe()</script>",
+          api_paths: ["demo::f"],
+        },
+      ],
+    },
+  };
+  const before = JSON.stringify(snapshot);
+  const report = new JSDOM(renderPreview(snapshot, "/report").html).window
+    .document;
+  assert.equal(report.querySelector("h1")?.textContent, "Draft report");
+  assert(report.body.textContent.includes("Unverified draft"));
+  assert(report.body.textContent.includes("Configured proof mappings (1)"));
+  assert(report.body.textContent.includes("Crc<u8>::checksum"));
+  assert(report.body.textContent.includes("Local environment"));
+  assert(report.querySelector('a[href="/claim/draft-mapping-0"]'));
+  assert(!report.querySelector("script:not([src])"));
+  assert(!report.body.textContent.includes("verified claims"));
+  assert(!report.body.textContent.includes("Verified APIs"));
+  assert(!report.querySelector('a[href*="/runs/"]'));
+  assert(!report.querySelector('a[href*="/blob/"]'));
+  assert(!report.querySelector('a[href*="/tree/"]'));
+  const detail = new JSDOM(
+    renderPreview(snapshot, "/claim/draft-mapping-0").html,
+  ).window.document;
+  assert(detail.body.textContent.includes("Crc.checksum_spec"));
+  assert(detail.body.textContent.includes("width < 9 && coherent"));
+  assert(detail.body.textContent.includes("Trusted translation"));
+  const finding = new JSDOM(renderPreview(snapshot, "/finding/draft-1").html)
+    .window.document;
+  assert(finding.body.textContent.includes("Finding <draft>"));
+  assert(
+    finding.querySelector("strong")?.textContent.includes("Local preview"),
+  );
+  assert(finding.querySelector(".markdown-body strong"));
+  assert(!finding.querySelector("script:not([src])"));
+  for (const path of [
+    "/runs/missing",
+    "/api/v1/runs/missing/sarif",
+    "/claim/missing",
+    "/finding/missing",
+    "/missing",
+  ]) {
+    const page = renderPreview(snapshot, path);
+    assert.equal(page.status, 404);
+    assert(page.html.includes("Unverified draft"));
+  }
+  assert.equal(JSON.stringify(snapshot), before);
+  snapshot.report.mappings = [];
+  const textOnly = renderPreview(snapshot, "/report").html;
+  assert(textOnly.includes("This draft displays report text only."));
+  assert(!textOnly.includes("verified claims"));
+});
+
+test("draft patch display describes configuration without Run observations", () => {
+  const snapshot: import("../preview/render").DraftSnapshot = {
+    mode: "draft",
+    server: "https://unused.example",
+    warnings: [],
+    sarif: null,
+    report: {
+      title: "Patch draft",
+      crate: "bytes",
+      version: "1.12.1",
+      tool: "aeneas",
+      tool_version: "a".repeat(40),
+      mappings: [
+        {
+          id: "draft-mapping-0",
+          api: "f",
+          module: "Proofs",
+          theorem: "f_spec",
+          precondition: "true",
+        },
+      ],
+      toolchain_configuration: {
+        components: {
+          aeneas: {
+            tool: "aeneas",
+            source: {
+              kind: "git_patch",
+              repository: "https://github.com/AeneasVerif/aeneas",
+              base_commit: "a".repeat(40),
+              patch: {
+                path: "toolchain/<patch>.patch",
+                sha256: "b".repeat(64),
+              },
+            },
+          },
+        },
+        patch_path_base: "package",
+        lean_dir: "proofs",
+        managed_dependency: ".proofs-toolchain/aeneas/backends/lean",
+      },
+    },
+  };
+  for (const path of ["/report", "/claim/draft-mapping-0"]) {
+    const html = renderPreview(snapshot, path).html;
+    const page = new JSDOM(html).window.document;
+    assert.match(page.body.textContent!, /Unverified draft/);
+    assert.ok(
+      page.body.textContent!.includes("Configured patch (package-relative)"),
+    );
+    assert.ok(page.body.textContent!.includes("b".repeat(64)));
+    assert.ok(!page.querySelector("patch"));
+    assert.ok(!page.querySelector('a[href*="/runs/"]'));
+    assert.ok(
+      !html.includes("materialized") && !html.includes("process_executed"),
+    );
+  }
+  const html = renderPreview(snapshot, "/report").html;
+  assert.ok(
+    html.includes(`Aeneas ${"a".repeat(12)} + patch ${"b".repeat(12)}`),
+  );
+});

@@ -8,6 +8,7 @@ for (const name of [
   "style.css",
   "theme-a.css",
   "theme-header.css",
+  "fonts.css",
   "theme.js",
   "site.js",
   "favicon.svg",
@@ -19,6 +20,18 @@ for (const name of [
         ? "image/svg+xml"
         : "text/javascript; charset=utf-8",
     content: await readFile(path.join(root, "public", name), "utf8"),
+  };
+}
+const fontDirectory = path.join(root, "public/fonts");
+const fontFiles = (await readdir(fontDirectory)).sort();
+for (const name of fontFiles) {
+  const binary = name.endsWith(".woff2");
+  assets["/fonts/" + name] = {
+    type: binary ? "font/woff2" : "text/plain; charset=utf-8",
+    content: (await readFile(path.join(fontDirectory, name))).toString(
+      binary ? "base64" : "utf8",
+    ),
+    ...(binary ? { encoding: "base64" } : {}),
   };
 }
 const result = await build({
@@ -53,6 +66,10 @@ for (const input of Object.keys(result.metafile.inputs)) {
   }
 }
 let notices = "Third-party packages bundled into the local preview server\n\n";
+for (const name of fontFiles.filter((name) => name.includes("LICENSE"))) {
+  notices += `\n=== fonts/${name} ===\n`;
+  notices += (await readFile(path.join(fontDirectory, name), "utf8")) + "\n";
+}
 for (const directory of [...packages].sort()) {
   const metadata = JSON.parse(
     await readFile(path.join(directory, "package.json"), "utf8"),

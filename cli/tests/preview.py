@@ -197,3 +197,5 @@ with tempfile.TemporaryDirectory() as temp:
             if p.poll() is None: p.kill(); p.wait()
         shutil.rmtree(state)
         service.shutdown()
+
+subprocess.run([sys.executable, str(Path(__file__).with_name('preview_draft.py')), binary], check=True)

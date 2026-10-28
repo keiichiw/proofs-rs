@@ -21,13 +21,15 @@ use std::{
 };
 
 pub struct Options {
+    pub draft: bool,
+    pub proofs_config: Option<std::path::PathBuf>,
     pub run: Option<String>,
     pub report: Option<u64>,
     pub port: u16,
     pub no_browser: bool,
 }
 
-struct Preview {
+struct RecordedPreview {
     project: Project,
     server: String,
     run_id: String,
@@ -36,7 +38,7 @@ struct Preview {
     identity_warning: Option<String>,
 }
 
-impl Preview {
+impl RecordedPreview {
     fn new(server: &str, args: &ProjectArgs, options: &Options) -> Result<Self> {
         let project = Project::load(args)?;
         let (_, recorded) = record::load(&project, options.run.as_deref())?;
@@ -307,7 +309,117 @@ impl Preview {
             }
             claim["claim_number"] = json!(index + 1);
         }
-        Ok(json!({"report":report,"sarif":recorded.sarif,"warnings":warnings,"server":self.server}))
+        Ok(
+            json!({"mode":"recorded","report":report,"sarif":recorded.sarif,"warnings":warnings,"server":self.server}),
+        )
+    }
+}
+
+struct DraftPreview {
+    project: Project,
+    config_path: std::path::PathBuf,
+    server: String,
+}
+
+impl DraftPreview {
+    fn new(server: &str, args: &ProjectArgs, options: &Options) -> Result<Self> {
+        let project = Project::load(args)?;
+        let config_path = if let Some(path) = &options.proofs_config {
+            ensure!(
+                !path.as_os_str().is_empty()
+                    && !path.is_absolute()
+                    && !path
+                        .components()
+                        .any(|part| matches!(part, std::path::Component::ParentDir)),
+                "--proofs-config must stay within the selected package directory"
+            );
+            project.manifest.parent().unwrap().join(path)
+        } else {
+            project.config_path()
+        };
+        // Keep the lexical path so reload follows edits/replacements, and recheck
+        // containment on every snapshot (including changes to symlinks).
+        Ok(Self {
+            project,
+            config_path,
+            server: server.into(),
+        })
+    }
+
+    fn snapshot(&self) -> Result<Value> {
+        let path = self
+            .config_path
+            .canonicalize()
+            .with_context(|| format!("Read {}", self.config_path.display()))?;
+        ensure!(
+            path.starts_with(self.project.manifest.parent().unwrap()),
+            "Draft configuration must stay within the selected package directory"
+        );
+        let config = crate::config::Config::read(&path)?;
+        let mut report = serde_json::to_value(&config.report)?;
+        report["crate"] = json!(self.project.name);
+        report["version"] = json!(self.project.version);
+        report["tool"] = json!(config.tool.name);
+        report["tool_version"] = json!(config.tool.version);
+        if let Some(patch) = &config.tool.patch {
+            let package = self.project.manifest.parent().unwrap();
+            let (path, bytes) = crate::toolchain::patch_bytes(package, patch, package)?;
+            // Configuration intent only: no materialized tree or execution observations.
+            report["toolchain_configuration"] = json!({
+                "components":{"aeneas":{"tool":"aeneas","source":{
+                    "kind":"git_patch","repository":crate::aeneas::REPOSITORY,
+                    "base_commit":config.tool.version,
+                    "patch":{"path":path,"sha256":crate::toolchain::digest(&bytes)}
+                }}},
+                "patch_path_base":"package",
+                "lean_dir":config.tool.lean_dir,
+                "managed_dependency":".proofs-toolchain/aeneas/backends/lean"
+            });
+        }
+        report["mappings"] = json!(config
+            .tool
+            .proofs
+            .iter()
+            .enumerate()
+            .map(|(i, proof)| {
+                let mut mapping = serde_json::to_value(proof).unwrap();
+                mapping["id"] = json!(format!("draft-mapping-{i}"));
+                mapping
+            })
+            .collect::<Vec<_>>());
+        // This projection is deliberately not a Record and cannot be loaded by
+        // publish: there is no run ID, SARIF, source provenance or success status.
+        Ok(json!({"mode":"draft","report":report,"sarif":null,"warnings":[],"server":self.server}))
+    }
+}
+
+enum Preview {
+    Recorded(RecordedPreview),
+    Draft(DraftPreview),
+}
+
+impl Preview {
+    fn new(server: &str, args: &ProjectArgs, options: &Options) -> Result<Self> {
+        if options.draft {
+            ensure!(
+                options.run.is_none() && options.report.is_none(),
+                "--draft cannot be combined with --run or --report"
+            );
+            Ok(Self::Draft(DraftPreview::new(server, args, options)?))
+        } else {
+            ensure!(
+                options.proofs_config.is_none(),
+                "--proofs-config requires --draft"
+            );
+            Ok(Self::Recorded(RecordedPreview::new(server, args, options)?))
+        }
+    }
+
+    fn snapshot(&self) -> Result<Value> {
+        match self {
+            Self::Recorded(preview) => preview.snapshot(),
+            Self::Draft(preview) => preview.snapshot(),
+        }
     }
 }
 
@@ -388,6 +500,7 @@ pub fn run(server: &str, args: &ProjectArgs, options: Options) -> Result<()> {
         Command::new("node")
             .arg(&script)
             .arg(options.port.to_string())
+            .arg(if options.draft { "draft" } else { "recorded" })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
