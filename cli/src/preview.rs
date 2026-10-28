@@ -375,6 +375,12 @@ impl DraftPreview {
                 "managed_dependency":".proofs-toolchain/aeneas/backends/lean"
             });
         }
+        if let Some(patch) = &config.tool.charon_patch {
+            let package = self.project.manifest.parent().unwrap();
+            let (path, bytes) = crate::toolchain::patch_bytes(package, patch, package)?;
+            // The official base is resolved by prepare, not guessed in draft mode.
+            report["charon_patch_configuration"] = json!({"path":path,"sha256":crate::toolchain::digest(&bytes),"base":"official Aeneas charon-pin","execution":"not_run"});
+        }
         report["mappings"] = json!(config
             .tool
             .proofs

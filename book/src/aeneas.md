@@ -287,3 +287,11 @@ the recorded package before building and auditing Lean. Existing Runs without
 metadata remain usable and show provenance as **not recorded**. Base tool
 limitations describe the official base. The service validates submitted records;
 it does not independently reproduce the author's execution or review the patch.
+
+### Independently patched Charon
+
+Use `tool.charon_patch` alongside or instead of `tool.patch`; see the
+[configuration guide](configuration.md#charon-patches). The Charon base comes from
+the official Aeneas `charon-pin`. Prepare restores patched sources but does not
+run Rust-to-Lean extraction. Commit Rust sources, generated models and proofs so
+an isolated checkout can build them without repository-specific setup hooks.

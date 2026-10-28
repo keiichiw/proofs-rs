@@ -75,6 +75,8 @@ impl Report {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charon_patch: Option<PathBuf>,
     /// Expand Rust macros for public API discovery using the selected native compiler.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub expand_api: bool,
@@ -100,6 +102,9 @@ pub enum CreusotTarget {
     All,
 }
 impl Tool {
+    pub fn has_patches(&self) -> bool {
+        self.patch.is_some() || self.charon_patch.is_some()
+    }
     pub fn is_aeneas(&self) -> bool {
         self.name.eq_ignore_ascii_case("aeneas")
     }
@@ -125,7 +130,7 @@ impl Tool {
             "lean_dir and proofs apply only to Aeneas"
         );
         ensure!(
-            self.patch.is_none() || self.is_aeneas(),
+            (self.patch.is_none() && self.charon_patch.is_none()) || self.is_aeneas(),
             "[tool].patch is currently supported only for Aeneas"
         );
         if self.is_aeneas() {

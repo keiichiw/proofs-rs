@@ -3,7 +3,6 @@ mod api;
 mod config;
 mod draft;
 mod git;
-mod preparation;
 mod preview;
 mod publish;
 mod record;

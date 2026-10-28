@@ -72,6 +72,9 @@ pub fn validate(tool: &Tool) -> Result<()> {
     if let Some(path) = &tool.patch {
         crate::toolchain::relative(path)?;
     }
+    if let Some(path) = &tool.charon_patch {
+        crate::toolchain::relative(path)?;
+    }
     if let Some(dir) = &tool.lean_dir {
         ensure!(
             !dir.as_os_str().is_empty()
@@ -137,7 +140,7 @@ pub fn pinned_version(dir: &Path, version: &str) -> Result<()> {
         "Expected one pinned Aeneas Lake dependency"
     );
     let p = aeneas[0];
-    ensure!(crate::preparation::backend_allowed(dir, version)? || (p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
+    ensure!((p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
         && matches!(p["url"].as_str(), Some("https://github.com/AeneasVerif/aeneas" | "https://github.com/AeneasVerif/aeneas.git"))
         && p["subDir"] == "backends/lean"), "Aeneas Lake dependency must use the official repository, backends/lean, and [tool].version revision");
     ensure!(
@@ -645,13 +648,10 @@ pub fn extract(
                     &dir,
                     Path::new(&format!("{}.lean", module.replace('.', "/"))),
                 )?;
-                definition["source"]["file"] = json!(crate::preparation::maintained_path(
-                    project.manifest.parent().unwrap(),
-                    &path
-                )?
-                .strip_prefix(root.canonicalize()?)?
-                .to_string_lossy()
-                .replace('\\', "/"));
+                definition["source"]["file"] = json!(path
+                    .strip_prefix(root.canonicalize()?)?
+                    .to_string_lossy()
+                    .replace('\\', "/"));
             } else {
                 definition["source"] = Value::Null;
             }
@@ -663,7 +663,7 @@ pub fn extract(
             &dir,
             Path::new(&format!("{}.lean", module.replace('.', "/"))),
         )?;
-        let file = crate::preparation::maintained_path(project.manifest.parent().unwrap(), &file)?
+        let file = file
             .strip_prefix(root.canonicalize()?)?
             .to_string_lossy()
             .replace('\\', "/");
@@ -1215,7 +1215,7 @@ const MANAGED: &str = ".proofs-toolchain/aeneas";
 
 /// Static validation must also work before prepare (and after deleting managed sources).
 pub fn dependency(dir: &Path, tool: &Tool) -> Result<()> {
-    if tool.patch.is_none() {
+    if !tool.has_patches() {
         return pinned_version(dir, &tool.version);
     }
     let manifest: Value = serde_json::from_slice(&fs::read(dir.join("lake-manifest.json"))?)?;
@@ -1236,11 +1236,17 @@ pub fn dependency(dir: &Path, tool: &Tool) -> Result<()> {
 pub fn input_fingerprint(project: &Project, tool: &Tool) -> Result<Value> {
     let package = project.manifest.parent().context("Missing package")?;
     let root = PathBuf::from(crate::git::run(package, &["rev-parse", "--show-toplevel"])?);
-    let (path, bytes) = crate::toolchain::patch_bytes(
-        package,
-        tool.patch.as_deref().context("Missing patch")?,
-        &root,
-    )?;
+    let (path, bytes) = match &tool.patch {
+        Some(path) => crate::toolchain::patch_bytes(package, path, &root)?,
+        None => (String::new(), Vec::new()),
+    };
+    let charon_patch = match &tool.charon_patch {
+        Some(path) => {
+            let (path, bytes) = crate::toolchain::patch_bytes(package, path, &root)?;
+            Some(json!({"path":path,"sha256":crate::toolchain::digest(&bytes)}))
+        }
+        None => None,
+    };
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
     let mut inputs = std::collections::BTreeMap::new();
@@ -1313,18 +1319,20 @@ pub fn input_fingerprint(project: &Project, tool: &Tool) -> Result<Value> {
         Ok(())
     }
     lean_sources(&root, &dir, &mut source_inputs)?;
-    Ok(
-        json!({"base_commit":tool.version.to_ascii_lowercase(), "patch_path":path,
+    let mut value = json!({"base_commit":tool.version.to_ascii_lowercase(), "patch_path":path,
         "patch_sha256":crate::toolchain::digest(&bytes), "configuration":configuration(tool)?,
-        "manifest_path":project.manifest.strip_prefix(root)?.to_string_lossy(), "inputs":inputs, "sources":source_inputs}),
-    )
+        "manifest_path":project.manifest.strip_prefix(root)?.to_string_lossy(), "inputs":inputs, "sources":source_inputs});
+    if let Some(patch) = charon_patch {
+        value["charon_patch"] = patch;
+    }
+    Ok(value)
 }
 
 pub fn prepare_project(args: &crate::ProjectArgs) -> Result<()> {
     let project = Project::load(args)?;
     let config = project.config()?;
     ensure!(
-        config.tool.is_aeneas() && config.tool.patch.is_some(),
+        config.tool.is_aeneas() && config.tool.has_patches(),
         "prepare requires [tool].name = aeneas and [tool].patch"
     );
     let prepared = prepare_source(&project, &config.tool)?;
@@ -1335,17 +1343,44 @@ pub fn prepare_project(args: &crate::ProjectArgs) -> Result<()> {
         prepared.path.display(),
         prepared.tree
     );
+    if let Some(charon) = &prepared.charon {
+        println!(
+            "Prepared Charon {} + patch {} at {} (tree {})",
+            &charon.base_commit[..12],
+            &charon.patch_sha256[..12],
+            charon.path.display(),
+            charon.tree
+        );
+    }
     Ok(())
 }
 
-pub fn prepare_source(project: &Project, tool: &Tool) -> Result<crate::toolchain::PreparedSource> {
+pub struct PreparedToolchain {
+    pub aeneas: crate::toolchain::PreparedSource,
+    pub charon: Option<crate::toolchain::PreparedSource>,
+}
+impl std::ops::Deref for PreparedToolchain {
+    type Target = crate::toolchain::PreparedSource;
+    fn deref(&self) -> &Self::Target {
+        &self.aeneas
+    }
+}
+impl PreparedToolchain {
+    pub fn unchanged(&self) -> Result<()> {
+        self.aeneas.unchanged()?;
+        if let Some(charon) = &self.charon {
+            charon.unchanged()?;
+        }
+        Ok(())
+    }
+}
+pub fn prepare_source(project: &Project, tool: &Tool) -> Result<PreparedToolchain> {
     let package = project.manifest.parent().context("Missing package")?;
     let root = PathBuf::from(crate::git::run(package, &["rev-parse", "--show-toplevel"])?);
-    let (_, bytes) = crate::toolchain::patch_bytes(
-        package,
-        tool.patch.as_deref().context("Missing patch")?,
-        &root,
-    )?;
+    let bytes = match &tool.patch {
+        Some(path) => crate::toolchain::patch_bytes(package, path, &root)?.1,
+        None => Vec::new(),
+    };
     let dir = directory(project, tool)?;
     let destination = dir.join(MANAGED);
     // Refuse tracked managed checkouts, including before the destination exists.
@@ -1374,7 +1409,28 @@ pub fn prepare_source(project: &Project, tool: &Tool) -> Result<crate::toolchain
     // Capture official pins before restoration applies a patch, using Git object contents afterward.
     let prepared = crate::toolchain::prepare(REPOSITORY, &tool.version, &bytes, &destination)?;
     validate_source_pins(&prepared, &dir, tool)?;
-    Ok(prepared)
+    let charon = if let Some(path) = &tool.charon_patch {
+        let pin = fs::read_to_string(prepared.path.join("charon-pin"))?;
+        let pins: Vec<_> = pin
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.starts_with('#'))
+            .collect();
+        ensure!(pins.len() == 1, "Expected one official Charon pin");
+        let bytes = crate::toolchain::patch_bytes(package, path, &root)?.1;
+        Some(crate::toolchain::prepare(
+            "https://github.com/AeneasVerif/charon.git",
+            &crate::toolchain::sha(pins[0])?,
+            &bytes,
+            &dir.join(".proofs-toolchain/charon"),
+        )?)
+    } else {
+        None
+    };
+    Ok(PreparedToolchain {
+        aeneas: prepared,
+        charon,
+    })
 }
 
 fn validate_source_pins(
@@ -1417,7 +1473,7 @@ fn validate_source_pins(
 pub fn observed_toolchain(
     project: &Project,
     tool: &Tool,
-    prepared: &crate::toolchain::PreparedSource,
+    prepared: &PreparedToolchain,
 ) -> Result<Value> {
     let dir = directory(project, tool)?;
     dependency(&dir, tool)?;
@@ -1494,14 +1550,31 @@ pub fn observed_toolchain(
         "Lake did not resolve the prepared Aeneas Lean library"
     );
     let fp = input_fingerprint(project, tool)?;
-    Ok(json!({"schema_version":1,"components":{
+    let mut value = json!({"schema_version":1,"components":{
         "aeneas":{"tool":"aeneas","source":{"kind":"git_patch","repository":REPOSITORY,"base_commit":prepared.base_commit,"patch":{"path":fp["patch_path"],"sha256":prepared.patch_sha256}},"materialized":{"git_tree":prepared.tree}},
         "charon":{"tool":"charon","source":{"kind":"git","repository":"https://github.com/AeneasVerif/charon","commit":charon}},
         "lean":{"tool":"lean","source":{"kind":"release","release_id":release}}},
         "uses":[{"component":"aeneas","role":"lean_library","observation":{"kind":"dependency_resolved","dependency_name":"aeneas","subdirectory":"backends/lean"}},
         {"component":"aeneas","role":"translator","observation":{"kind":"not_run"}},
         {"component":"charon","role":"rust_frontend","observation":{"kind":"not_run"}},
-        {"component":"lean","role":"proof_checker","observation":{"kind":"process_executed","reported_version":reported}}]}))
+        {"component":"lean","role":"proof_checker","observation":{"kind":"process_executed","reported_version":reported}}]});
+    if let Some(charon) = &prepared.charon {
+        let path = crate::toolchain::patch_bytes(
+            project.manifest.parent().unwrap(),
+            tool.charon_patch.as_ref().unwrap(),
+            &PathBuf::from(crate::git::run(
+                project.manifest.parent().unwrap(),
+                &["rev-parse", "--show-toplevel"],
+            )?),
+        )?
+        .0;
+        value["components"]["charon"] = json!({"tool":"charon","source":{"kind":"git_patch","repository":"https://github.com/AeneasVerif/charon","base_commit":charon.base_commit,"patch":{"path":path,"sha256":charon.patch_sha256}},"materialized":{"git_tree":charon.tree}});
+    }
+    if tool.patch.is_none() {
+        value["components"]["aeneas"]["source"] =
+            json!({"kind":"git","repository":REPOSITORY,"commit":tool.version});
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -1633,7 +1706,22 @@ mod patch_tests {
         assert_eq!(initial["manifest_path"], "nested/member/Cargo.toml");
         assert!(!lean.join(MANAGED).exists());
         assert_eq!(initial, input_fingerprint(&project, &tool).unwrap());
+        let charon_tool = Tool {
+            charon_patch: Some("proofs/a.patch".into()),
+            patch: None,
+            lean_dir: Some("proofs".into()),
+            ..Default::default()
+        };
+        let charon_initial = input_fingerprint(&project, &charon_tool).unwrap();
+        assert_eq!(
+            charon_initial["charon_patch"]["path"],
+            "nested/member/proofs/a.patch"
+        );
         fs::write(lean.join("a.patch"), "second bytes").unwrap();
+        assert_ne!(
+            charon_initial,
+            input_fingerprint(&project, &charon_tool).unwrap()
+        );
         assert_ne!(initial, input_fingerprint(&project, &tool).unwrap());
         fs::write(
             lean.join("lake-manifest.json"),
@@ -1719,5 +1807,37 @@ pub use hidden::{Range, Op};
         .unwrap();
         assert!(before.get("api_discovery").is_none());
         assert_eq!(after["api_discovery"]["mode"], "compiler_expansion");
+    }
+}
+
+#[cfg(test)]
+mod prepared_toolchain_integration {
+    use super::*;
+    #[test]
+    #[ignore = "requires an explicitly supplied prepared Aeneas project and native tools"]
+    fn observes_patched_charon_without_running_extraction() {
+        let manifest = std::env::var("PROOFS_TEST_MANIFEST").unwrap();
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(manifest.into()),
+            proofs_config: Some("aeneas/profiles/default/proofs.toml".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let config = project.config().unwrap();
+        let prepared = prepare_source(&project, &config.tool).unwrap();
+        let before = input_fingerprint(&project, &config.tool).unwrap();
+        let observed = observed_toolchain(&project, &config.tool, &prepared).unwrap();
+        assert_eq!(
+            observed["components"]["charon"]["source"]["kind"],
+            "git_patch"
+        );
+        assert_eq!(observed["uses"][2]["observation"]["kind"], "not_run");
+        let apis = discover(&project, &config.tool).unwrap();
+        assert_eq!(apis.len(), 160);
+        prepared.unchanged().unwrap();
+        assert_eq!(before, input_fingerprint(&project, &config.tool).unwrap());
+        if let Ok(path) = std::env::var("PROOFS_TEST_TOOLCHAIN_OUTPUT") {
+            fs::write(path, serde_json::to_vec_pretty(&observed).unwrap()).unwrap();
+        }
     }
 }

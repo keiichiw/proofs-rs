@@ -83,7 +83,7 @@ pub fn load(project: &Project, selected: Option<&str>) -> Result<(PathBuf, Recor
             "Aeneas proof mappings changed; run verification again"
         );
     }
-    if tool.patch.is_some() {
+    if tool.has_patches() {
         ensure!(
             proof["toolchain_input"] == crate::aeneas::input_fingerprint(project, &tool)?,
             "Toolchain inputs changed; run verification again (even with --force)"
@@ -131,11 +131,6 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
             && args.target.is_none(),
         "Pass compilation flags after -- as part of the verifier command"
     );
-    let preparation_manifest = crate::preparation::manifest(args)?;
-    let repository_prepared = crate::preparation::prepare_for(
-        preparation_manifest.parent().unwrap(),
-        args.proofs_config.as_deref(),
-    )?;
     let project = Project::load(args)?;
     let config = project.config()?;
     if config.tool.is_aeneas() {
@@ -181,7 +176,7 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
             &crate::aeneas::directory(&project, &config.tool)?,
             &config.tool,
         )?;
-        if config.tool.patch.is_some() {
+        if config.tool.has_patches() {
             crate::aeneas::input_fingerprint(&project, &config.tool)?;
         }
         if !config.tool.proofs.is_empty() {
@@ -231,14 +226,6 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
                 .join("Cargo.lock")
                 .exists(),
         "Snapshot is missing Cargo.toml or Cargo.lock"
-    );
-    let snapshot_prepared = crate::preparation::prepare_for(
-        source.join(&relative_manifest).parent().unwrap(),
-        args.proofs_config.as_deref(),
-    )?;
-    ensure!(
-        snapshot_prepared == repository_prepared,
-        "Prepared inputs differ in isolated checkout"
     );
     let mut selected = args.clone();
     selected.manifest_path = Some(source.join(&relative_manifest));
@@ -362,7 +349,7 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     );
     // Always restore from the captured proof commit, never from the developer's managed checkout.
     let captured_config = captured.config()?;
-    let prepared = if captured_config.tool.patch.is_some() {
+    let prepared = if captured_config.tool.has_patches() {
         Some(crate::aeneas::prepare_source(
             &captured,
             &captured_config.tool,
@@ -491,18 +478,6 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
                 "Toolchain inputs changed during verification"
             );
         }
-        let package = source.join(&relative_manifest);
-        if let Some(spec) =
-            crate::preparation::read_for(package.parent().unwrap(), args.proofs_config.as_deref())?
-        {
-            ensure!(
-                Some(crate::preparation::verify(
-                    package.parent().unwrap(),
-                    &spec
-                )?) == repository_prepared,
-                "Prepared inputs changed during verification"
-            );
-        }
         Ok(())
     });
     let successful =
@@ -523,20 +498,21 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     sarif["runs"][0]["properties"]["proofs"]["rustTarget"] = json!(platform);
     sarif["runs"][0]["properties"]["proofs"]["features"] = json!(captured.features);
     sarif["runs"][0]["properties"]["proofs"]["cfg"] = json!(captured.cfg);
-    if let Some(provenance) = repository_prepared {
-        sarif["runs"][0]["properties"]["proofs"]["preparation"] = provenance;
-    }
     if config.tool.is_aeneas() {
         sarif["runs"][0]["properties"]["proofs"]["aeneas"] =
             crate::aeneas::configuration(&config.tool)?;
     }
     if let Some(toolchain) = toolchain {
         let a = &toolchain["components"]["aeneas"]["source"];
-        sarif["runs"][0]["tool"]["driver"]["fullName"] = json!(format!(
-            "Aeneas {} + patch {}",
-            &a["base_commit"].as_str().unwrap()[..12],
-            &a["patch"]["sha256"].as_str().unwrap()[..12]
-        ));
+        sarif["runs"][0]["tool"]["driver"]["fullName"] = if a["kind"] == "git_patch" {
+            json!(format!(
+                "Aeneas {} + patch {}",
+                &a["base_commit"].as_str().unwrap()[..12],
+                &a["patch"]["sha256"].as_str().unwrap()[..12]
+            ))
+        } else {
+            json!(format!("Aeneas {}", &a["commit"].as_str().unwrap()[..12]))
+        };
         sarif["runs"][0]["properties"]["proofs"]["toolchain"] = toolchain;
         sarif["runs"][0]["properties"]["proofs"]["toolchain_input"] = json!(toolchain_input);
     }

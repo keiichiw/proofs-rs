@@ -99,17 +99,17 @@ export function validateAeneasToolchain(
   )
     invalid();
   if (
-    aeneas.source.kind !== "git_patch" ||
+    !(["git", "git_patch"].includes(aeneas.source.kind)) ||
     !aeneas.materialized ||
-    charon.source.kind !== "git" ||
-    charon.materialized !== undefined ||
+    !(["git", "git_patch"].includes(charon.source.kind)) ||
+    (charon.source.kind === "git" ? charon.materialized !== undefined : !charon.materialized) ||
     lean.source.kind !== "release" ||
     lean.materialized !== undefined
   )
     invalid();
   if (
-    aeneas.source.kind !== "git_patch" ||
-    charon.source.kind !== "git" ||
+    aeneas.source.kind === "release" ||
+    charon.source.kind === "release" ||
     lean.source.kind !== "release"
   )
     return invalid();
@@ -123,7 +123,7 @@ export function validateAeneasToolchain(
       "https://github.com/aeneasverif/aeneas" ||
     normalizeRepository(charon.source.repository) !==
       "https://github.com/aeneasverif/charon" ||
-    aeneas.source.base_commit.toLowerCase() !== driver.version.toLowerCase()
+    (aeneas.source.kind === "git" ? aeneas.source.commit : aeneas.source.base_commit).toLowerCase() !== driver.version.toLowerCase()
   )
     invalid();
   if (driver.fullName !== toolchainLabel(toolchain))
@@ -192,9 +192,10 @@ export function toolchainLabel(
   toolchain: Pick<Toolchain, "components">,
 ): string {
   const component = Object.values(toolchain.components).find(
-    (c) => c.tool === "aeneas" && c.source.kind === "git_patch",
+    (c) => c.tool === "aeneas",
   );
-  if (!component || component.source.kind !== "git_patch")
+  if (!component || component.source.kind === "release")
     return "Recorded toolchain";
+  if (component.source.kind === "git") return `Aeneas ${component.source.commit.toLowerCase().slice(0, 12)}`;
   return `Aeneas ${component.source.base_commit.toLowerCase().slice(0, 12)} + patch ${component.source.patch.sha256.toLowerCase().slice(0, 12)}`;
 }
