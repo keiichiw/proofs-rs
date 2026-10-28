@@ -6,6 +6,7 @@ fn cargo_subcommand_and_direct_help() {
         vec!["proofs", "--help"],
         vec!["proofs", "publish", "--help"],
         vec!["proofs", "preview", "--help"],
+        vec!["proofs", "prepare", "--help"],
     ] {
         let out = Command::new(env!("CARGO_BIN_EXE_cargo-proofs"))
             .args(&args)
@@ -20,6 +21,10 @@ fn cargo_subcommand_and_direct_help() {
         if args.contains(&"preview") {
             for option in ["preview", "--run", "--report", "--port", "--no-browser"] {
                 assert!(help.contains(option), "Missing preview option {option}");
+            }
+        } else if args.contains(&"prepare") {
+            for option in ["prepare", "--manifest-path", "--package"] {
+                assert!(help.contains(option));
             }
         } else {
             assert!(help.contains("publish"));

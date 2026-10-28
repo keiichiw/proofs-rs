@@ -74,6 +74,21 @@ pub fn load(project: &Project, selected: Option<&str>) -> Result<(PathBuf, Recor
             "Aeneas proof mappings changed; run verification again"
         );
     }
+    if tool.patch.is_some() {
+        ensure!(
+            proof["toolchain_input"] == crate::aeneas::input_fingerprint(project, &tool)?,
+            "Toolchain inputs changed; run verification again (even with --force)"
+        );
+        ensure!(
+            proof["toolchain"].is_object(),
+            "Patched Run requires toolchain metadata; record again"
+        );
+    } else {
+        ensure!(
+            proof.get("toolchain").is_none(),
+            "Patch configuration changed; run verification again"
+        );
+    }
     let record = Record { sarif, contracts };
     Ok((dir, record))
 }
@@ -148,10 +163,13 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         .context("Run from within the source root")?;
     let relative_manifest = project.manifest.strip_prefix(&root)?.to_owned();
     if config.tool.is_aeneas() {
-        crate::aeneas::pinned_version(
+        crate::aeneas::dependency(
             &crate::aeneas::directory(&project, &config.tool)?,
-            &config.tool.version,
+            &config.tool,
         )?;
+        if config.tool.patch.is_some() {
+            crate::aeneas::input_fingerprint(&project, &config.tool)?;
+        }
     } else {
         let version = output(Command::new("cargo").args([
             config.tool.name.as_str(),
@@ -317,6 +335,24 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         captured.name == project.name,
         "Command selects a different package"
     );
+    // Always restore from the captured proof commit, never from the developer's managed checkout.
+    let captured_config = captured.config()?;
+    let prepared = if captured_config.tool.patch.is_some() {
+        Some(crate::aeneas::prepare_source(
+            &captured,
+            &captured_config.tool,
+        )?)
+    } else {
+        None
+    };
+    let toolchain_input = if prepared.is_some() {
+        Some(crate::aeneas::input_fingerprint(
+            &captured,
+            &captured_config.tool,
+        )?)
+    } else {
+        None
+    };
     let discovered = if config.tool.is_aeneas() {
         vec![]
     } else {
@@ -389,9 +425,15 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     let mut stderr =
         String::from_utf8_lossy(&stderr).replace(&source.to_string_lossy().to_string(), ".");
     let mut extraction_source = None;
+    let mut toolchain = None;
     let parsed = if config.tool.is_aeneas() {
         if status.success() {
-            crate::aeneas::extract(&captured, &config.tool, &source).map(|(contracts, out, err, source)| {
+            (|| {
+                if let Some(prepared) = &prepared {
+                    toolchain = Some(crate::aeneas::observed_toolchain(&captured, &captured_config.tool, prepared)?);
+                }
+                crate::aeneas::extract(&captured, &config.tool, &source)
+            })().map(|(contracts, out, err, source)| {
                 extraction_source = Some(source);
                 stdout.push_str("\n$ lake env lean --stdin (proofs.rs formal extraction and axiom audit)\n");
                 stdout.push_str(&out);
@@ -413,7 +455,19 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         Err(e) => (vec![], vec![], Some(format!("{e:#}"))),
     };
     let finished = chrono::Utc::now();
-    let unchanged = checkout.unchanged();
+    let unchanged = checkout.unchanged().and_then(|_| {
+        if let Some(prepared) = &prepared {
+            prepared.unchanged()?;
+            ensure!(
+                Some(crate::aeneas::input_fingerprint(
+                    &captured,
+                    &captured_config.tool
+                )?) == toolchain_input,
+                "Toolchain inputs changed during verification"
+            );
+        }
+        Ok(())
+    });
     let successful =
         status.success() && diagnostic.is_none() && unchanged.is_ok() && !verified.is_empty();
     let mut invocation = json!({"arguments":&command[1..],"workingDirectory":{"uri":format!("{}/",path_string(relative_cwd))},"startTimeUtc":started.to_rfc3339(),"endTimeUtc":finished.to_rfc3339(),"executionSuccessful":successful,"executableLocation":{"uri":command[0]},"environmentVariables":env});
@@ -432,6 +486,16 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     if config.tool.is_aeneas() {
         sarif["runs"][0]["properties"]["proofs"]["aeneas"] =
             crate::aeneas::configuration(&config.tool)?;
+    }
+    if let Some(toolchain) = toolchain {
+        let a = &toolchain["components"]["aeneas"]["source"];
+        sarif["runs"][0]["tool"]["driver"]["fullName"] = json!(format!(
+            "Aeneas {} + patch {}",
+            &a["base_commit"].as_str().unwrap()[..12],
+            &a["patch"]["sha256"].as_str().unwrap()[..12]
+        ));
+        sarif["runs"][0]["properties"]["proofs"]["toolchain"] = toolchain;
+        sarif["runs"][0]["properties"]["proofs"]["toolchain_input"] = json!(toolchain_input);
     }
     if let Some(source) = extraction_source {
         sarif["runs"][0]["properties"]["proofs"]["aeneas_extraction_source"] = json!(source);

@@ -8,6 +8,7 @@ mod publish;
 mod record;
 mod scan;
 mod state;
+mod toolchain;
 
 const MAX_REPORT_CLAIMS: usize = 200;
 
@@ -68,6 +69,11 @@ enum Commands {
         /// Tool version used for the existing verification (detected if omitted).
         #[arg(long)]
         tool_version: Option<String>,
+    },
+    /// Restore the configured Aeneas cumulative patch without running proofs.
+    Prepare {
+        #[command(flatten)]
+        project: ProjectArgs,
     },
     /// Authorize this CLI in a browser.
     Login {
@@ -145,6 +151,7 @@ fn run() -> Result<()> {
             tool,
             tool_target,
         } => config::init(&project, title, tool_version, tool, tool_target),
+        Commands::Prepare { project } => aeneas::prepare_project(&project),
         Commands::Login { no_browser } => api::login(&server, no_browser),
         Commands::Logout => api::logout(&server),
         Commands::Run { project, command } => record::run(&project, command),

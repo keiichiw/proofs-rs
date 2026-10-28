@@ -75,6 +75,8 @@ impl Report {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<PathBuf>,
     pub name: String,
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +119,10 @@ impl Tool {
                     && self.proof_modules.is_empty()
                     && self.translation_manifest.is_none()),
             "lean_dir and proofs apply only to Aeneas"
+        );
+        ensure!(
+            self.patch.is_none() || self.is_aeneas(),
+            "[tool].patch is currently supported only for Aeneas"
         );
         if self.is_aeneas() {
             crate::aeneas::validate(self)?;
@@ -297,9 +303,12 @@ impl Project {
 }
 impl Config {
     pub fn read(path: &Path) -> Result<Self> {
-        let config: Config = toml::from_str(
+        let mut config: Config = toml::from_str(
             &fs::read_to_string(path).with_context(|| format!("Read {}", path.display()))?,
         )?;
+        if config.tool.is_aeneas() {
+            config.tool.version = config.tool.version.to_ascii_lowercase();
+        }
         config.report.validate()?;
         config.tool.validate()?;
         Ok(config)
