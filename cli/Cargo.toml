@@ -14,8 +14,6 @@ publish = ["crates-io"]
 include = ["src/**", "preview/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE*"]
 
 [dependencies]
-tar = "0.4"
-flate2 = "1"
 anyhow = "1"
 ctrlc = { version = "3.5", features = ["termination"] }
 clap = { version = "4", features = ["derive", "env"] }

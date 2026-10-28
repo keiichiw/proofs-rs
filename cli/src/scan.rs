@@ -60,6 +60,8 @@ struct Scanner<'a> {
     public_items: BTreeSet<String>,
     traits: BTreeSet<String>,
     self_default_traits: BTreeSet<String>,
+    default_methods: std::collections::BTreeMap<String, Vec<(syn::TraitItemFn, PathBuf)>>,
+    trait_impls: Vec<(CallableContext, Vec<String>, BTreeSet<String>)>,
     types: BTreeSet<String>,
     functions: Vec<Function>,
     imports: Vec<Import>,
@@ -369,6 +371,42 @@ fn public_contracts_from(
     let mut s = scanner(project, creusot);
     s.expanded = expanded;
     s.file(source, &[], true)?;
+    if expanded {
+        // Enumerate inherited defaults only from locally observed active traits.
+        // Explicit implementations replace defaults; external trait bodies are unknown.
+        for (context, module, overrides) in s.trait_impls.clone() {
+            let CallableContext::TraitImpl { trait_path, .. } = &context else {
+                continue;
+            };
+            let resolved = s.resolve(
+                &trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect::<Vec<_>>(),
+                &module,
+                0,
+            )?;
+            for (method, file) in s
+                .default_methods
+                .get(&resolved)
+                .cloned()
+                .unwrap_or_default()
+            {
+                if !overrides.contains(&method.sig.ident.to_string()) {
+                    s.function(
+                        &method.attrs,
+                        &method.sig,
+                        &syn::Visibility::Inherited,
+                        method.span(),
+                        &file,
+                        &module,
+                        context.clone(),
+                    )?;
+                }
+            }
+        }
+    }
     let mut result = vec![];
     let mut seen = BTreeSet::new();
     for f in &s.functions {
@@ -959,6 +997,19 @@ impl Scanner<'_> {
                     if attrs(&i.attrs, self.project)?.is_some() {
                         let path = item_path(module, &i.ident.to_string());
                         self.traits.insert(path.clone());
+                        if self.expanded {
+                            let methods = i
+                                .items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    syn::TraitItem::Fn(f) if f.default.is_some() => {
+                                        Some((f.clone(), file.to_owned()))
+                                    }
+                                    _ => None,
+                                })
+                                .collect();
+                            self.default_methods.insert(path.clone(), methods);
+                        }
                         if i.generics.params.len() == 1
                             && matches!(i.generics.params.first(), Some(syn::GenericParam::Type(p)) if matches!(&p.default, Some(syn::Type::Path(t)) if t.qself.is_none() && t.path.is_ident("Self")))
                         {
@@ -1003,6 +1054,19 @@ impl Scanner<'_> {
                             self_ty: (*i.self_ty).clone(),
                         }
                     };
+                    if self.expanded && matches!(context, CallableContext::TraitImpl { .. }) {
+                        self.trait_impls.push((
+                            context.clone(),
+                            module.to_vec(),
+                            i.items
+                                .iter()
+                                .filter_map(|item| match item {
+                                    syn::ImplItem::Fn(f) => Some(f.sig.ident.to_string()),
+                                    _ => None,
+                                })
+                                .collect(),
+                        ));
+                    }
                     for method in &i.items {
                         if let syn::ImplItem::Fn(f) = method {
                             self.function(
@@ -1213,6 +1277,8 @@ fn scanner(project: &Project, creusot: bool) -> Scanner<'_> {
         public_items: BTreeSet::new(),
         traits: BTreeSet::new(),
         self_default_traits: BTreeSet::new(),
+        default_methods: Default::default(),
+        trait_impls: vec![],
         types: BTreeSet::new(),
         functions: vec![],
         imports: vec![],

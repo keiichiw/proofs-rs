@@ -295,3 +295,8 @@ Use `tool.charon_patch` alongside or instead of `tool.patch`; see the
 the official Aeneas `charon-pin`. Prepare restores patched sources but does not
 run Rust-to-Lean extraction. Commit Rust sources, generated models and proofs so
 an isolated checkout can build them without repository-specific setup hooks.
+
+When `tool.expand_api` is enabled, API enumeration also includes inherited default
+methods from active traits defined in the selected crate. Explicit implementations
+replace those defaults. Private traits and unknown external trait defaults are not
+exposed. This enumerates callable paths only and supplies no proof of their behavior.

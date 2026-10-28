@@ -1750,9 +1750,12 @@ mod expanded_api_tests {
 mod hidden {
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)] pub struct Range;
     #[derive(Clone)] struct Private;
-    pub trait Op<Rhs=Self> { fn op(self, rhs: Rhs); }
+    pub trait Op<Rhs=Self> { fn op(self, rhs: Rhs); fn inherited(&self) {} }
     macro_rules! op { ($rhs:ty) => { impl Op<$rhs> for Range { fn op(self, _: $rhs) {} } }; }
-    op!(Range); op!(u32);
+    op!(Range);
+    impl Op<u32> for Range { fn op(self, _: u32) {} fn inherited(&self) {} }
+    trait Secret { fn secret(&self) {} }
+    impl Secret for Range {}
 }
 pub use hidden::{Range, Op};
 "#,
@@ -1781,6 +1784,15 @@ pub use hidden::{Range, Op};
             .flat_map(|c| c.api_paths.iter())
             .cloned()
             .collect::<BTreeSet<_>>();
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op>::inherited"));
+        assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op<u32>>::inherited"));
+        assert_eq!(
+            apis.iter()
+                .filter(|c| c.api_paths.iter().any(|p| p.ends_with("::inherited")))
+                .count(),
+            2
+        );
+        assert!(paths.iter().all(|p| !p.contains("secret")));
         assert!(paths.contains("<expanded_fixture::Range as Clone>::clone"));
         assert!(paths.contains("<expanded_fixture::Range as Ord>::cmp"));
         assert!(paths.contains("<expanded_fixture::Range as expanded_fixture::Op>::op"));
@@ -1839,5 +1851,35 @@ mod prepared_toolchain_integration {
         if let Ok(path) = std::env::var("PROOFS_TEST_TOOLCHAIN_OUTPUT") {
             fs::write(path, serde_json::to_vec_pretty(&observed).unwrap()).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod unpatched_project_integration {
+    use super::*;
+    #[test]
+    #[ignore = "requires an explicit unpatched Aeneas project"]
+    fn discovers_unpatched_project_mappings() {
+        let project = Project::load(&crate::ProjectArgs {
+            manifest_path: Some(std::env::var("PROOFS_TEST_MANIFEST").unwrap().into()),
+            proofs_config: Some("aeneas/profiles/default/proofs.toml".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let config = project.config().unwrap();
+        assert!(!config.tool.has_patches());
+        let public = public_apis(&project, &config.tool).unwrap();
+        if let Ok(path) = std::env::var("PROOFS_TEST_API_OUTPUT") {
+            fs::write(
+                path,
+                serde_json::to_vec_pretty(&public.iter().map(|c| &c.api_paths).collect::<Vec<_>>())
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            discover(&project, &config.tool).unwrap().len(),
+            config.tool.proofs.len()
+        );
     }
 }
