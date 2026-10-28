@@ -121,6 +121,25 @@ with tempfile.TemporaryDirectory(prefix='proofs-draft-') as temp:
         profile.write_text(profile_text.replace('Profile draft', 'Edited draft') + mapping.replace('checksum_spec', 'second_spec').replace('checksum"', 'update"'))
         assert 'Edited draft' in fetch(url)[1] and 'Configured proof mappings (2)' in fetch(url)[1]
         assert 'second_spec' in fetch(base + '/claim/draft-mapping-1')[1]
+        # Patch paths remain package-relative even for a nested profile configuration.
+        patch = work / 'configured.patch'
+        patch.write_bytes(b'first patch bytes\n')
+        patched_text = profile_text.replace('lean_dir="does-not-exist"', 'lean_dir="does-not-exist"\npatch="configured.patch"')
+        profile.write_text(patched_text)
+        html = fetch(url)[1]
+        assert 'Aeneas ' + 'a'*12 + ' + patch ' + hashlib.sha256(patch.read_bytes()).hexdigest()[:12] in html
+        assert 'configured.patch' in html and 'Managed Lake dependency' in html
+        assert 'Configuration only. No restored tree' in html
+        assert 'materialized' not in html and 'dependency_resolved' not in html
+        patch.write_bytes(b'second patch bytes\n')
+        assert hashlib.sha256(patch.read_bytes()).hexdigest() in fetch(url)[1]
+        patch.unlink()
+        assert fetch(url)[0] == 500
+        outside_patch = root / 'outside.patch'; outside_patch.write_bytes(b'outside')
+        patch.symlink_to(outside_patch)
+        assert fetch(url)[0] == 500
+        patch.unlink(); patch.write_bytes(b'first patch bytes\n')
+        assert fetch(url)[0] == 200
         profile.write_text('not valid toml =')
         status, error = fetch(url)
         assert status == 500 and 'Unverified draft' in error

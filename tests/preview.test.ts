@@ -514,3 +514,65 @@ test("unrecorded draft renders configuration without inventing evidence", () => 
   assert(textOnly.includes("This draft displays report text only."));
   assert(!textOnly.includes("verified claims"));
 });
+
+test("draft patch display describes configuration without Run observations", () => {
+  const snapshot: import("../preview/render").DraftSnapshot = {
+    mode: "draft",
+    server: "https://unused.example",
+    warnings: [],
+    sarif: null,
+    report: {
+      title: "Patch draft",
+      crate: "bytes",
+      version: "1.12.1",
+      tool: "aeneas",
+      tool_version: "a".repeat(40),
+      mappings: [
+        {
+          id: "draft-mapping-0",
+          api: "f",
+          module: "Proofs",
+          theorem: "f_spec",
+          precondition: "true",
+        },
+      ],
+      toolchain_configuration: {
+        components: {
+          aeneas: {
+            tool: "aeneas",
+            source: {
+              kind: "git_patch",
+              repository: "https://github.com/AeneasVerif/aeneas",
+              base_commit: "a".repeat(40),
+              patch: {
+                path: "toolchain/<patch>.patch",
+                sha256: "b".repeat(64),
+              },
+            },
+          },
+        },
+        patch_path_base: "package",
+        lean_dir: "proofs",
+        managed_dependency: ".proofs-toolchain/aeneas/backends/lean",
+      },
+    },
+  };
+  for (const path of ["/report", "/claim/draft-mapping-0"]) {
+    const html = renderPreview(snapshot, path).html;
+    const page = new JSDOM(html).window.document;
+    assert.match(page.body.textContent!, /Unverified draft/);
+    assert.ok(
+      page.body.textContent!.includes("Configured patch (package-relative)"),
+    );
+    assert.ok(page.body.textContent!.includes("b".repeat(64)));
+    assert.ok(!page.querySelector("patch"));
+    assert.ok(!page.querySelector('a[href*="/runs/"]'));
+    assert.ok(
+      !html.includes("materialized") && !html.includes("process_executed"),
+    );
+  }
+  const html = renderPreview(snapshot, "/report").html;
+  assert.ok(
+    html.includes(`Aeneas ${"a".repeat(12)} + patch ${"b".repeat(12)}`),
+  );
+});

@@ -1,3 +1,4 @@
+import { toolchainLabel, type Component } from "../web/toolchain";
 import { renderMarkdown } from "../src/markdown";
 import type { DraftSnapshot } from "./render";
 
@@ -22,6 +23,22 @@ export function renderDraftPreview(snapshot: DraftSnapshot, path: string) {
   const report = snapshot.report;
   const mappings: any[] = report.mappings;
   const findings: any[] = report.findings ?? [];
+  const configured = report.toolchain_configuration;
+  const toolLabel = configured
+    ? toolchainLabel(configured)
+    : `${report.tool} ${report.tool_version}`;
+  const patches = configured
+    ? Object.values(configured.components as Record<string, Component>)
+        .filter((c) => c.source.kind === "git_patch")
+        .map((c) => {
+          if (c.source.kind !== "git_patch") return "";
+          return `<dt>Configured patch (package-relative)</dt><dd><code>${esc(c.source.patch.path)}</code></dd><dt>Patch SHA-256</dt><dd><code>${esc(c.source.patch.sha256)}</code></dd>`;
+        })
+        .join("")
+    : "";
+  const patchDetails = patches
+    ? `<section class="report-section configured-toolchain"><h2>Configured toolchain</h2><dl>${patches}<dt>Lean directory</dt><dd><code>${esc(configured.lean_dir ?? ".")}</code></dd><dt>Managed Lake dependency</dt><dd><code>${esc(configured.managed_dependency)}</code></dd></dl><p>Configuration only. No restored tree, dependency resolution, translation or proof-checker execution is recorded in this draft.</p></section>`
+    : "";
   const context = () =>
     section("What is trusted", report.trusted_assumptions) +
     section("Technical limitations", report.limitations);
@@ -37,13 +54,13 @@ export function renderDraftPreview(snapshot: DraftSnapshot, path: string) {
           `<tr><td><a href="${mappingHref(m.id)}">Mapping #${i + 1}</a><br><code>${esc(m.api)}</code></td><td><code>${esc(m.module)}</code><br><code>${esc(m.theorem)}</code></td><td class="plain-text code">${esc(m.precondition || "None stated in configuration")}</td></tr>`,
       )
       .join("");
-    content = `<h1>${esc(title)}</h1><p class="meta">${esc(report.crate)} ${esc(report.version)}</p><p class="report-tool">Configured tool: ${esc(report.tool)} ${esc(report.tool_version)}</p>${section("Overview", report.explanation)}${findings.length ? `<section class="report-section"><h2>Findings (${findings.length})</h2>${findings.map((f, i) => finding(f, i, true)).join("")}</section>` : ""}${context()}${section("Environment", report.environment)}<section class="report-section"><h2>Configured proof mappings (${mappings.length})</h2>${rows ? `<table><thead><tr><th>API</th><th>Module / theorem</th><th>Configured precondition</th></tr></thead><tbody>${rows}</tbody></table>` : "<p>No API-to-theorem mappings are configured. This draft displays report text only.</p>"}</section>`;
+    content = `<h1>${esc(title)}</h1><p class="meta">${esc(report.crate)} ${esc(report.version)}</p><p class="report-tool">Configured tool: ${esc(toolLabel)}</p>${patchDetails}${section("Overview", report.explanation)}${findings.length ? `<section class="report-section"><h2>Findings (${findings.length})</h2>${findings.map((f, i) => finding(f, i, true)).join("")}</section>` : ""}${context()}${section("Environment", report.environment)}<section class="report-section"><h2>Configured proof mappings (${mappings.length})</h2>${rows ? `<table><thead><tr><th>API</th><th>Module / theorem</th><th>Configured precondition</th></tr></thead><tbody>${rows}</tbody></table>` : "<p>No API-to-theorem mappings are configured. This draft displays report text only.</p>"}</section>`;
   } else if (path.startsWith("/claim/")) {
     const i = mappings.findIndex((m) => mappingHref(m.id) === path);
     if (i >= 0) {
       const m = mappings[i];
       title = `Configured proof mapping #${i + 1}`;
-      content = `<p><a href="/report">← ${esc(report.title)}</a></p><h1>${esc(title)}</h1><dl><dt>API</dt><dd><code>${esc(m.api)}</code></dd><dt>Module</dt><dd><code>${esc(m.module)}</code></dd><dt>Theorem</dt><dd><code>${esc(m.theorem)}</code></dd></dl><section class="report-section"><h2>Configured precondition</h2><p class="plain-text code">${esc(m.precondition || "None stated in configuration")}</p></section>${context()}`;
+      content = `<p><a href="/report">← ${esc(report.title)}</a></p><h1>${esc(title)}</h1><dl><dt>API</dt><dd><code>${esc(m.api)}</code></dd><dt>Module</dt><dd><code>${esc(m.module)}</code></dd><dt>Theorem</dt><dd><code>${esc(m.theorem)}</code></dd></dl><section class="report-section"><h2>Configured precondition</h2><p class="plain-text code">${esc(m.precondition || "None stated in configuration")}</p></section>${context()}${patchDetails}`;
     } else {
       status = 404;
       content =

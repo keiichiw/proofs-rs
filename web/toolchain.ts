@@ -188,7 +188,9 @@ export function compareToolchains(toolchains: (Toolchain | undefined)[]): void {
 }
 
 /** Shared public/preview descriptor; resolve by tool/source rather than component ID. */
-export function toolchainLabel(toolchain: Toolchain): string {
+export function toolchainLabel(
+  toolchain: Pick<Toolchain, "components">,
+): string {
   const component = Object.values(toolchain.components).find(
     (c) => c.tool === "aeneas" && c.source.kind === "git_patch",
   );

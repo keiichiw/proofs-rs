@@ -361,6 +361,21 @@ impl DraftPreview {
         report["version"] = json!(self.project.version);
         report["tool"] = json!(config.tool.name);
         report["tool_version"] = json!(config.tool.version);
+        if let Some(patch) = &config.tool.patch {
+            let package = self.project.manifest.parent().unwrap();
+            let (path, bytes) = crate::toolchain::patch_bytes(package, patch, package)?;
+            // Configuration intent only: no materialized tree or execution observations.
+            report["toolchain_configuration"] = json!({
+                "components":{"aeneas":{"tool":"aeneas","source":{
+                    "kind":"git_patch","repository":crate::aeneas::REPOSITORY,
+                    "base_commit":config.tool.version,
+                    "patch":{"path":path,"sha256":crate::toolchain::digest(&bytes)}
+                }}},
+                "patch_path_base":"package",
+                "lean_dir":config.tool.lean_dir,
+                "managed_dependency":".proofs-toolchain/aeneas/backends/lean"
+            });
+        }
         report["mappings"] = json!(config
             .tool
             .proofs
