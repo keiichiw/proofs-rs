@@ -50,7 +50,7 @@ for (const path of [
   if (path === "/book/aeneas.html") {
     const html = await r.text();
     if (
-      !html.includes("Publish Aeneas Lean proofs") ||
+      !html.includes("Record with Aeneas and Lean") ||
       !html.includes("tool.proofs")
     )
       throw Error("Aeneas tutorial heading or proof configuration missing");
@@ -58,7 +58,7 @@ for (const path of [
   if (path === "/book/review-a-dependency.html") {
     const html = await r.text();
     if (
-      !html.includes("Review a dependency") ||
+      !html.includes("Declare dependency reviews") ||
       !html.includes('href="publish-a-report.html"')
     )
       throw Error("Dependency tutorial heading or publishing link missing");

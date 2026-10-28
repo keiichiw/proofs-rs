@@ -330,6 +330,20 @@ require Node.js 24+.
 
 CI runs tests on Linux and macOS. Tests use temporary Git repositories and local HTTP servers; they never publish to proofs.rs, run Kani/Creusot/Lean (the separate Lean audit job runs Lean), or push user source repositories.
 
+The `lean-audit` job runs real Lean/Aeneas integration tests only when CLI,
+service, test, dependency, or CI inputs change. PRs compare their merge base with
+the head; pushes compare before/after commits. Unavailable comparisons run the
+full audit. Documentation, book, static assets, and frontend-only changes skip
+this job; the regular CLI and service checks still run. Manual runs of **CLI and
+service checks**, and its Monday 08:00 UTC schedule, always run the full audit.
+
+Lean toolchains, compiled Aeneas dependencies, and Cargo dependencies are cached
+between runs. The Aeneas cache requires an exact key matching the toolchain,
+fixture, and preparation script; each test still builds and audits fresh proof
+sources. The Actions summary records the selection reason, cache hits, and
+dependency preparation time. To compare cold/warm performance, compare runs with
+the same Aeneas key and check both the summary and job step durations.
+
 ### Source repositories with submodules
 
 Recording automatically restores all submodules recursively at the Gitlink commits
