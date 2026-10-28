@@ -134,9 +134,9 @@ pub fn pinned_version(dir: &Path, version: &str) -> Result<()> {
         "Expected one pinned Aeneas Lake dependency"
     );
     let p = aeneas[0];
-    ensure!(p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
+    ensure!(crate::preparation::backend_allowed(dir, version)? || (p["type"] == "git" && p["rev"].as_str().is_some_and(|rev| rev.eq_ignore_ascii_case(version))
         && matches!(p["url"].as_str(), Some("https://github.com/AeneasVerif/aeneas" | "https://github.com/AeneasVerif/aeneas.git"))
-        && p["subDir"] == "backends/lean", "Aeneas Lake dependency must use the official repository, backends/lean, and [tool].version revision");
+        && p["subDir"] == "backends/lean"), "Aeneas Lake dependency must use the official repository, backends/lean, and [tool].version revision");
     ensure!(
         dir.join("lean-toolchain").is_file(),
         "Commit lean-toolchain for reproducibility"
@@ -292,31 +292,82 @@ fn safe_relative(path: &Path) -> bool {
         })
         && !path.to_string_lossy().contains(['\\', ':'])
 }
+fn source_roots(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut roots = vec![dir.canonicalize()?];
+    let config = dir.join("lakefile.toml");
+    if config.is_file() {
+        let config: toml::Value = toml::from_str(&fs::read_to_string(config)?)?;
+        if let Some(libs) = config.get("lean_lib").and_then(|v| v.as_array()) {
+            for lib in libs {
+                if let Some(path) = lib.get("srcDir").and_then(|v| v.as_str()) {
+                    ensure!(
+                        safe_relative(Path::new(path)),
+                        "Invalid Lean source directory"
+                    );
+                    let root = dir.join(path).canonicalize()?;
+                    ensure!(
+                        root.starts_with(dir.canonicalize()?),
+                        "Lean source directory escapes package"
+                    );
+                    if !roots.contains(&root) {
+                        roots.push(root);
+                    }
+                }
+            }
+        }
+    }
+    Ok(roots)
+}
 fn local_source(dir: &Path, relative: &Path) -> Result<PathBuf> {
     ensure!(
-        safe_relative(relative),
+        safe_relative(relative) && !relative.components().any(|p| p.as_os_str() == ".lake"),
         "Invalid package-relative source path"
     );
-    let file = dir.join(relative).canonicalize()?;
+    let roots = if relative.extension().is_some_and(|s| s == "lean") {
+        source_roots(dir)?
+    } else {
+        vec![dir.canonicalize()?]
+    };
+    let mut matches = BTreeSet::new();
+    for root in roots {
+        if let Ok(file) = root.join(relative).canonicalize() {
+            ensure!(
+                file.starts_with(dir.canonicalize()?),
+                "Source escapes the Lake package"
+            );
+            if file.is_file() {
+                matches.insert(file);
+            }
+        }
+    }
     ensure!(
-        file.starts_with(dir.canonicalize()?)
-            && !relative.components().any(|p| p.as_os_str() == ".lake"),
-        "Source escapes the Lake package"
+        matches.len() == 1,
+        "Source must resolve to exactly one maintained file: {}",
+        relative.display()
     );
-    Ok(file)
+    Ok(matches.into_iter().next().unwrap())
 }
 fn local_modules(dir: &Path) -> Result<BTreeSet<String>> {
     let mut modules = BTreeSet::new();
-    for entry in ignore::WalkBuilder::new(dir).hidden(true).build() {
-        let entry = entry?;
-        if entry.path().extension().is_some_and(|x| x == "lean") {
-            let relative = entry.path().strip_prefix(dir)?;
-            let name = relative
-                .with_extension("")
-                .to_string_lossy()
-                .replace('/', ".");
-            if lean_name(&name) && local_source(dir, relative).is_ok() {
-                modules.insert(name);
+    for root in source_roots(dir)? {
+        for entry in ignore::WalkBuilder::new(&root)
+            .hidden(true)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false)
+            .filter_entry(|e| e.file_name() != ".lake" && e.file_name() != ".git")
+            .build()
+        {
+            let entry = entry?;
+            if entry.path().extension().is_some_and(|x| x == "lean") {
+                let relative = entry.path().strip_prefix(&root)?;
+                let name = relative
+                    .with_extension("")
+                    .to_string_lossy()
+                    .replace('/', ".");
+                if lean_name(&name) && local_source(dir, relative).is_ok() {
+                    modules.insert(name);
+                }
             }
         }
     }
@@ -549,10 +600,13 @@ pub fn extract(
                     &dir,
                     Path::new(&format!("{}.lean", module.replace('.', "/"))),
                 )?;
-                definition["source"]["file"] = json!(path
-                    .strip_prefix(root.canonicalize()?)?
-                    .to_string_lossy()
-                    .replace('\\', "/"));
+                definition["source"]["file"] = json!(crate::preparation::maintained_path(
+                    project.manifest.parent().unwrap(),
+                    &path
+                )?
+                .strip_prefix(root.canonicalize()?)?
+                .to_string_lossy()
+                .replace('\\', "/"));
             } else {
                 definition["source"] = Value::Null;
             }
@@ -564,7 +618,7 @@ pub fn extract(
             &dir,
             Path::new(&format!("{}.lean", module.replace('.', "/"))),
         )?;
-        let file = file
+        let file = crate::preparation::maintained_path(project.manifest.parent().unwrap(), &file)?
             .strip_prefix(root.canonicalize()?)?
             .to_string_lossy()
             .replace('\\', "/");
@@ -659,6 +713,25 @@ pub fn extract(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn target_specific_generated_sources() {
+        let d = tempfile::tempdir().unwrap();
+        fs::create_dir_all(d.path().join("Generated/aarch64-apple-darwin")).unwrap();
+        fs::write(d.path().join("lakefile.toml"), "name='demo'\n[[lean_lib]]\nname='GeneratedModel'\nsrcDir='Generated/aarch64-apple-darwin'\n").unwrap();
+        fs::write(
+            d.path()
+                .join("Generated/aarch64-apple-darwin/GeneratedModel.lean"),
+            "def x := 1\n",
+        )
+        .unwrap();
+        assert!(local_modules(d.path()).unwrap().contains("GeneratedModel"));
+        assert!(local_source(d.path(), Path::new("GeneratedModel.lean"))
+            .unwrap()
+            .ends_with("Generated/aarch64-apple-darwin/GeneratedModel.lean"));
+        fs::write(d.path().join("GeneratedModel.lean"), "def x := 2\n").unwrap();
+        assert!(local_source(d.path(), Path::new("GeneratedModel.lean")).is_err());
+    }
+
     fn tool() -> Tool {
         toml::from_str(&format!("name='aeneas'\nversion='{}'\n[[proofs]]\napi='f'\nmodule='Proofs.F'\ntheorem='demo.f_spec'\nprecondition='x > 0'", "a".repeat(40))).unwrap()
     }
@@ -763,6 +836,7 @@ mod tests {
         fs::write(d.path().join("lean-toolchain"), "leanprover/lean4:v4.35.0").unwrap();
         fs::write(d.path().join("lake-manifest.json"), json!({"packages":[{"name":"aeneas","type":"git","url":"https://github.com/AeneasVerif/aeneas","rev":"a".repeat(40),"subDir":"backends/lean"}]}).to_string()).unwrap();
         let project = Project {
+            config_override: None,
             name: "demo".into(),
             version: "1".into(),
             lib_name: "demo".into(),
@@ -819,6 +893,7 @@ mod tests {
             }
         }
         let project = Project {
+            config_override: None,
             name: "formal_fixture".into(),
             version: "0.1.0".into(),
             lib_name: "formal_fixture".into(),

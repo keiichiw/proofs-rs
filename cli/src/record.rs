@@ -29,7 +29,16 @@ pub fn state_dir(project: &Project) -> Result<PathBuf> {
     let base = dirs::data_local_dir()
         .context("Cannot locate local data directory")?
         .join("cargo-proofs");
-    Ok(base.join(state::digest(&project.manifest.to_string_lossy())))
+    let key = if project.config_override.is_some() {
+        format!(
+            "{}:{}",
+            project.manifest.display(),
+            project.config_path().display()
+        )
+    } else {
+        project.manifest.to_string_lossy().into_owned()
+    };
+    Ok(base.join(state::digest(&key)))
 }
 pub fn load(project: &Project, selected: Option<&str>) -> Result<(PathBuf, Record)> {
     let base = state_dir(project)?;
@@ -122,6 +131,11 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
             && args.target.is_none(),
         "Pass compilation flags after -- as part of the verifier command"
     );
+    let preparation_manifest = crate::preparation::manifest(args)?;
+    let repository_prepared = crate::preparation::prepare_for(
+        preparation_manifest.parent().unwrap(),
+        args.proofs_config.as_deref(),
+    )?;
     let project = Project::load(args)?;
     let config = project.config()?;
     if config.tool.is_aeneas() {
@@ -214,6 +228,14 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
                 .join("Cargo.lock")
                 .exists(),
         "Snapshot is missing Cargo.toml or Cargo.lock"
+    );
+    let snapshot_prepared = crate::preparation::prepare_for(
+        source.join(&relative_manifest).parent().unwrap(),
+        args.proofs_config.as_deref(),
+    )?;
+    ensure!(
+        snapshot_prepared == repository_prepared,
+        "Prepared inputs differ in isolated checkout"
     );
     let mut selected = args.clone();
     selected.manifest_path = Some(source.join(&relative_manifest));
@@ -455,7 +477,7 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
         Err(e) => (vec![], vec![], Some(format!("{e:#}"))),
     };
     let finished = chrono::Utc::now();
-    let unchanged = checkout.unchanged().and_then(|_| {
+    let unchanged = checkout.unchanged().and_then(|()| {
         if let Some(prepared) = &prepared {
             prepared.unchanged()?;
             ensure!(
@@ -464,6 +486,18 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
                     &captured_config.tool
                 )?) == toolchain_input,
                 "Toolchain inputs changed during verification"
+            );
+        }
+        let package = source.join(&relative_manifest);
+        if let Some(spec) =
+            crate::preparation::read_for(package.parent().unwrap(), args.proofs_config.as_deref())?
+        {
+            ensure!(
+                Some(crate::preparation::verify(
+                    package.parent().unwrap(),
+                    &spec
+                )?) == repository_prepared,
+                "Prepared inputs changed during verification"
             );
         }
         Ok(())
@@ -483,6 +517,12 @@ pub fn run(args: &ProjectArgs, mut command: Vec<String>) -> Result<()> {
     invocation["stderr"] = json!({"index":artifacts.len()});
     artifacts.push(json!({"contents":{"text":stderr}}));
     let mut sarif = json!({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":config.tool.name,"version":config.tool.version}},"invocations":[invocation],"results":results,"artifacts":artifacts,"versionControlProvenance":[{"repositoryUri":source_ref["repository"],"revisionId":source_ref["commit"]}],"automationDetails":{"guid":rid},"properties":{"proofs":{"schemaVersion":2,"dependencies":dependencies,"crate":project.name,"version":project.version,"contracts":verified,"target":config.tool.target,"platform":format!("{} {}",std::env::consts::OS,std::env::consts::ARCH),"rustc":output(Command::new("rustc").arg("-vV").current_dir(source.join(relative_cwd))).unwrap_or_default(),"recorderVersion":env!("CARGO_PKG_VERSION")}}}]});
+    sarif["runs"][0]["properties"]["proofs"]["rustTarget"] = json!(platform);
+    sarif["runs"][0]["properties"]["proofs"]["features"] = json!(captured.features);
+    sarif["runs"][0]["properties"]["proofs"]["cfg"] = json!(captured.cfg);
+    if let Some(provenance) = repository_prepared {
+        sarif["runs"][0]["properties"]["proofs"]["preparation"] = provenance;
+    }
     if config.tool.is_aeneas() {
         sarif["runs"][0]["properties"]["proofs"]["aeneas"] =
             crate::aeneas::configuration(&config.tool)?;
@@ -1056,6 +1096,7 @@ mod tests {
     }
     fn empty_project_args() -> ProjectArgs {
         ProjectArgs {
+            proofs_config: None,
             manifest_path: None,
             package: None,
             features: vec![],

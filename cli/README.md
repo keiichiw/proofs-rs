@@ -478,3 +478,49 @@ publishes only to a temporary localhost service fixture, checks changed-input
 rejection even with `--force`, and verifies public and preview HTML. Ordinary
 `cargo test` and `npm test` cover local restoration, descriptor validation,
 source comparison, revision history and legacy flows.
+
+### Prepared Aeneas sources and profiles
+
+Repositories with an existing setup script may provide `proofs-prepare.toml` beside
+its Cargo manifest. Explicit
+`run` reads this before Cargo metadata, executes its argv array without implicit
+shell evaluation, and repeats preparation in the isolated source checkout:
+
+```toml
+schema_version = 1
+command = ["bash", "scripts/setup.sh"]
+source_lock = "source.lock.json"
+source_dir = ".work/source"
+toolchain_lock = "aeneas/profiles/default/toolchain.lock.json"
+tool_dir = ".work/selected-tools"
+lean_source = "aeneas/profiles/default/proofs"
+lean_build = ".work/build/default/@HOST@/proofs"
+```
+
+Source locks pin the archive checksum/full inventory or exact Git commit/tree.
+Tool locks pin official base revisions, ordered patch files/checksums and resulting
+Git trees. The CLI independently checks source origin/inventory, replays patches
+and compares maintained Lean sources with the prepared build copy. Arbitrary local
+Aeneas paths are not accepted as pinned dependencies.
+
+Use `--proofs-config aeneas/profiles/stage3/reports/part-01.toml` to select a report.
+Optional `[profiles."aeneas/profiles/stage3"]` entries in the preparation file repeat
+the fields above with that profile's command, tool lock and Lean paths. The longest
+matching report-directory prefix selects preparation. Keep each profile's Lean build
+path distinct; `@HOST@` resolves to the supported native Linux x86_64 or macOS arm64
+target. Split mappings across report files at the CLI claim limit and verify their
+union separately. Configuration overrides have separate local recording and publication state.
+The same `--proofs-config` selects the report for `run`, `preview` (including
+`--draft`) and `publish`.
+
+Repository preparation and `[tool].patch` are separate opt-in paths. Preparation
+checks the declared source/tool locks and copied Lean sources; the cumulative
+Aeneas patch path still performs its own restoration, source checks and input
+fingerprint checks. Setup logs are not proof evidence. Only run preparation for
+repositories whose setup scripts you trust.
+
+Preparation logs remain under `.work/preparation`. Neither those logs nor repository
+script/patch bodies are embedded in SARIF. Standard Lake output, CLI audit code and
+results, input/configuration/tool hashes, source origins, Rust target/features/cfg
+and maintained Lean digests are recorded. Preparation success alone cannot establish
+proof success. Existing committed/pushed-source and publication conditions remain.

@@ -1261,6 +1261,7 @@ mod tests {
         let root = d.path().join("lib.rs");
         fs::write(&root, source).unwrap();
         let p = Project {
+            config_override: None,
             name: "demo".into(),
             lib_name: "demo".into(),
             version: "1.0.0".into(),

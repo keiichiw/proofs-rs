@@ -22,7 +22,6 @@ use std::{
 
 pub struct Options {
     pub draft: bool,
-    pub proofs_config: Option<std::path::PathBuf>,
     pub run: Option<String>,
     pub report: Option<u64>,
     pub port: u16,
@@ -322,9 +321,9 @@ struct DraftPreview {
 }
 
 impl DraftPreview {
-    fn new(server: &str, args: &ProjectArgs, options: &Options) -> Result<Self> {
+    fn new(server: &str, args: &ProjectArgs) -> Result<Self> {
         let project = Project::load(args)?;
-        let config_path = if let Some(path) = &options.proofs_config {
+        let config_path = if let Some(path) = &args.proofs_config {
             ensure!(
                 !path.as_os_str().is_empty()
                     && !path.is_absolute()
@@ -405,12 +404,8 @@ impl Preview {
                 options.run.is_none() && options.report.is_none(),
                 "--draft cannot be combined with --run or --report"
             );
-            Ok(Self::Draft(DraftPreview::new(server, args, options)?))
+            Ok(Self::Draft(DraftPreview::new(server, args)?))
         } else {
-            ensure!(
-                options.proofs_config.is_none(),
-                "--proofs-config requires --draft"
-            );
             Ok(Self::Recorded(RecordedPreview::new(server, args, options)?))
         }
     }
