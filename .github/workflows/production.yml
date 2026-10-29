@@ -23,6 +23,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: "false"
       PRODUCTION_CUSTOM_DOMAIN: ${{ vars.PRODUCTION_CUSTOM_DOMAIN }}
+      PRODUCTION_ZULIP_ENABLED: ${{ vars.PRODUCTION_ZULIP_ENABLED }}
+      ZULIP_SITE: ${{ vars.PRODUCTION_ZULIP_SITE }}
+      ZULIP_CHANNEL_ID: ${{ vars.PRODUCTION_ZULIP_CHANNEL_ID }}
+      ZULIP_BOT_EMAIL: ${{ vars.PRODUCTION_ZULIP_BOT_EMAIL }}
+      ZULIP_API_KEY: ${{ secrets.PRODUCTION_ZULIP_API_KEY }}
       PRODUCTION_EMAIL_ENABLED: ${{ vars.PRODUCTION_EMAIL_ENABLED }}
       EMAIL_EVENT_SUBSCRIPTION: ${{ vars.PRODUCTION_EMAIL_EVENT_SUBSCRIPTION }}
     steps:
@@ -85,3 +90,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Deployment summary
         run: echo 'Production Worker deployed to ${{ steps.resources.outputs.url }}. Check the domain/OAuth readiness summary before announcing launch.' >> "$GITHUB_STEP_SUMMARY"
+  notify:
+    needs: [ci, deploy]
+    if: always() && github.ref == 'refs/heads/main' && (needs.deploy.result == 'success' || needs.deploy.result == 'failure' || needs.ci.result == 'failure')
+    uses: ./.github/workflows/notify-deploy.yml
+    with:
+      environment: production
+      result: ${{ needs.ci.result == 'failure' && 'failure' || needs.deploy.result }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

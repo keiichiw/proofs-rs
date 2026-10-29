@@ -1,3 +1,4 @@
+import { zulipEvent } from "./zulip";
 import { findings, validateFinding, findingStatements } from "./findings";
 import { decodeEvidence } from "./core";
 import { claimFormalEvidence } from "./runs";
@@ -999,6 +1000,7 @@ api.post(
         now(),
       ),
       ...revisionStatements(c, v, key, 1, true),
+      ...zulipEvent(c.env, "report", key, 1, true),
       ...(v.findings ?? []).flatMap((input: any) =>
         findingStatements(c, input, key, 1, true),
       ),
@@ -1059,6 +1061,7 @@ api.post(
       ),
       quota(c.env.DB, u.id, "report", 20),
       ...revisionStatements(c, v, p.id, n),
+      ...zulipEvent(c.env, "report", p.id, n),
       stmt(c.env.DB, "UPDATE reports SET updated_at=? WHERE id=?", now(), p.id),
     ]);
     return c.json({ id: p.id, revision_no: n }, 201);
@@ -1305,6 +1308,7 @@ api.post(
         JSON.stringify({ comment_id: id }),
         now(),
       ),
+      ...zulipEvent(c.env, "comment", id),
     ]);
     return c.json({ id: resource }, 201);
   },

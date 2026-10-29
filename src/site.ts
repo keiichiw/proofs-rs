@@ -1,3 +1,5 @@
+import { reportShare } from "../web/report-share";
+import { resolveSocialCard, cardMetadata } from "./social-card";
 import { reportFindings } from "./findings";
 import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
@@ -13,6 +15,12 @@ import { renderRecordedRun } from "../web/recorded-run";
 import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
 import { dependencyCatalog } from "./dependencies";
+import {
+  githubIssueTemplates,
+  githubIssueDraft,
+  githubIssueURL,
+  upstreamRepository,
+} from "./github-issue";
 
 export type SiteFetch = (request: Request) => Promise<Response>;
 const enc = encodeURIComponent;
@@ -147,13 +155,22 @@ function layout(
   body: string,
   me: any = { user: null },
   canonicalPath?: string,
+  metadata?: Parameters<typeof pageLayout>[6],
 ) {
   const account = accountNavigation(c, me);
   const canonical = new URL(
     canonicalPath ?? c.req.path + new URL(c.req.url).search,
     c.env.APP_ORIGIN,
   ).href;
-  return pageLayout(title, body, account, canonical);
+  return pageLayout(
+    title,
+    body,
+    account,
+    canonical,
+    undefined,
+    false,
+    metadata,
+  );
 }
 export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
   c.header("Cache-Control", "private, no-store");
@@ -171,14 +188,23 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     return value;
   };
   let canonicalPath: string | undefined;
-  const result = (title: string, body: string, status = 200) =>
-    new Response(layout(c, title, body, me, canonicalPath), {
+  let metadata: Parameters<typeof pageLayout>[6];
+  const result = async (title: string, body: string, status = 200) => {
+    if (status === 200 && !metadata) {
+      const card = await resolveSocialCard(current, get).catch(() => null);
+      if (card) {
+        metadata = cardMetadata(card, c.env.APP_ORIGIN);
+        canonicalPath ??= card.path;
+      }
+    }
+    return new Response(layout(c, title, body, me, canonicalPath, metadata), {
       status,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "private, no-store",
       },
     });
+  };
   try {
     const parts = current.pathname
       .split("/")
@@ -236,7 +262,10 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         .join("")}<button ${buttonAttributes}>${escape(label)}</button></form>`;
     const confirmation = (message: string, submit: string, cancel: string) =>
       `<dialog open class="confirmation-dialog"><p>${escape(message)}</p><div class="form-actions">${submit}<a class="button-link" href="${escape(cancel)}">Cancel</a></div></dialog>`;
-    const v = createViews(me, config, action);
+    const v = createViews(me, config, action, {
+      addIssue:
+        p === "finding" && current.searchParams.get("add_issue") === "1",
+    });
     const {
       esc,
       date,
@@ -516,6 +545,31 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const f = await get(`/findings/${enc(id)}`);
       const owner = await get(`/reports/${f.report_id}`);
       const editable = me.user?.id === owner.author_id && !f.withdrawn_at;
+      if (parts.length === 3 && parts[2] === "github-issue") {
+        if (!me.user) return login();
+        if (me.user.id !== owner.author_id) throw new Fault(403, "not_author");
+        if (f.withdrawn_at) throw new Fault(409, "report_withdrawn");
+        const upstream = await upstreamRepository(c.env, f.crate);
+        if (!upstream.repository)
+          throw new Fault(
+            upstream.reason === "unavailable" ? 503 : 404,
+            "github_upstream_unavailable",
+          );
+        const draft = githubIssueDraft(f, c.env.APP_ORIGIN);
+        const templates = await githubIssueTemplates(
+          c.env,
+          upstream.repository,
+        );
+        const issue = githubIssueURL(upstream.repository, draft, templates);
+        if (issue.prefill === "all") return c.redirect(issue.url, 302);
+        return result(
+          "Create GitHub issue",
+          `<h1>Create GitHub issue</h1><p>The draft is too long to prefill in a GitHub URL. Copy it below, then submit on GitHub.</p><p>Upstream repository: <a href="${esc(upstream.repository)}" target="_blank" rel="noopener noreferrer">${esc(upstream.repository)}</a></p><section class="finding-form" data-issue-draft><label>Issue title<input id="issue-title" readonly value="${esc(draft.title)}"></label><button type="button" data-copy-issue="issue-title">Copy title</button><label>Issue body (Markdown)<textarea id="issue-body" readonly rows="18">\n${esc(draft.body)}</textarea></label><button type="button" data-copy-issue="issue-body">Copy body</button><p data-copy-status role="status" aria-live="polite"></p><p>${issue.prefill === "title" ? "The body is too long to prefill in a URL. Copy the complete body and paste it into GitHub." : "The title and body are too long to prefill in a URL. Copy both fields and paste them into GitHub."}</p><p><a href="${esc(issue.url)}" target="_blank" rel="noopener noreferrer">Continue on GitHub</a></p></section><p><a href="/finding/${enc(f.id)}">Return to Finding</a></p>`,
+        );
+      }
+      if (editable)
+        f.github_issue_available = !!(await upstreamRepository(c.env, f.crate))
+          .repository;
       const apis = editable
         ? await get(`/crates/${enc(f.crate)}/${enc(f.version)}/apis`)
         : null;
@@ -593,10 +647,16 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           ).length;
       const editableFindings =
         me.user?.id === item.author_id && !item.withdrawn_at;
+      if (editableFindings && item.findings.length) {
+        const available = !!(await upstreamRepository(c.env, item.crate))
+          .repository;
+        for (const finding of item.findings)
+          finding.github_issue_available = available;
+      }
       const findingAPIs = editableFindings
         ? await get(`/crates/${enc(item.crate)}/${enc(item.version)}/apis`)
         : null;
-      const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, false, [], true)).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
+      const findingSection = `<section id="findings" class="report-section"><h2>Findings (${item.finding_count})</h2>${item.revision_no !== item.latest_revision_no ? "<p>Findings show current information, including later additions. Each entry identifies its origin revision and latest update; it is separate from this revision’s proof content.</p>" : ""}${item.findings.map((f: any) => findingItem(f, false, [], true, editableFindings)).join("") || "<p>No findings reported.</p>"}${editableFindings ? `<details><summary>Add finding</summary>${findingForm(item.id, undefined, findingAPIs.items)}</details>` : ""}</section>`;
       const content = reportBody(
         item,
         recorded.join(""),
@@ -704,9 +764,37 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const olderRevisions = history.filter(
         (h: any) => !shownRevisions.includes(h),
       );
+      canonicalPath = `/report/${item.id}${current.searchParams.has("v") ? `?v=${item.revision_no}` : ""}`;
+      const shareURL = new URL(
+        `/report/${item.id}?v=${item.revision_no}`,
+        c.env.APP_ORIGIN,
+      ).href;
+      const plain = item.explanation
+        ? (await import("./markdown"))
+            .renderMarkdown(item.explanation, 1)
+            .replace(/<[^>]*>/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, " ")
+            .trim()
+        : `${item.crate} ${item.version} verification report using ${item.tool}.`;
+      metadata = {
+        title: `${item.withdrawn_at ? "Withdrawn · " : ""}${item.title} · ${item.crate} ${item.version} · proofs.rs`,
+        description: Array.from(plain).slice(0, 160).join(""),
+        url: shareURL,
+        image: new URL(
+          `/og/report/${item.id}/${item.revision_no}.png`,
+          c.env.APP_ORIGIN,
+        ).href,
+        alt: `${item.withdrawn_at ? "Withdrawn · " : ""}${item.title} · ${item.crate} ${item.version}`,
+      };
+      const share = reportShare(item.title, shareURL, !!item.withdrawn_at);
       return result(
         `Report #${item.id} — ${item.title}`,
-        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${reportOutline(item, true, item.comment_count)}${content}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
+        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p>${share}<div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${reportOutline(item, true, item.comment_count)}${content}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
       );
     }
     if (p === "runs" && id) {

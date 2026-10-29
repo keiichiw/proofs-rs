@@ -12,6 +12,28 @@ import {
 } from "../web/toolchain";
 
 const base = "a".repeat(40);
+test("report summary links saved toolchain labels to the tool filter", async () => {
+  const { createViews } = await import("../src/site-views");
+  const { JSDOM } = await import("jsdom");
+  const views = createViews(null, {}, () => "");
+  for (const saved of [false, true]) {
+    const html = views.reportSummary({
+      id: 9,
+      tool: "Aeneas",
+      tool_id: "aeneas",
+      tool_version: base,
+      ...(saved ? { toolchains_json: JSON.stringify([fixture()]) } : {}),
+    });
+    const link = new JSDOM(html).window.document.querySelector(
+      'a[href="/reports?tool=aeneas"]',
+    );
+    assert.equal(
+      link?.textContent,
+      saved ? toolchainLabel(fixture()) : "Aeneas",
+    );
+  }
+});
+
 function fixture(): Toolchain {
   return {
     schema_version: 1,

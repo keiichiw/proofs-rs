@@ -97,7 +97,7 @@ test("production bundle excludes demo authentication and fixture modules", async
     metafile: true,
     platform: "browser",
     format: "esm",
-    external: ["node:*", "cloudflare:*"],
+    external: ["node:*", "cloudflare:*", "*.wasm"],
   });
   assert.ok(
     !Object.keys(result.metafile!.inputs).some((path) =>
@@ -152,6 +152,7 @@ test(
         platform: "browser",
         format: "esm",
         external: ["node:*", "cloudflare:*"],
+        loader: { ".wasm": "copy" },
         banner: {
           js: 'globalThis.fetch = async () => { throw new Error("External network disabled by demo integration test"); };',
         },
@@ -218,6 +219,15 @@ test(
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
+    // Drain status-only responses too so releasing local proxy connections
+    // does not depend on garbage collection while later requests run.
+    const expectStatus = async (
+      response: Promise<Response>,
+      status: number,
+    ) => {
+      const result = await response;
+      assert.equal(result.status, status, await result.text());
+    };
     const switchUser = async (user: string) => {
       const response = await fetch(origin + "/__demo/session", {
         method: "POST",
@@ -295,6 +305,44 @@ test(
         await compileOffline();
       });
       await start();
+      const image = await fetch(origin + `/og/report/${ids.report}/1.png`);
+      await delay(300);
+      assert.equal(image.status, 200, output);
+      assert.equal(image.headers.get("Content-Type"), "image/png");
+      const png = Buffer.from(await image.arrayBuffer());
+      assert.equal(png.readUInt32BE(16), 1200);
+      assert.equal(png.readUInt32BE(20), 630);
+      for (const page of [
+        "/",
+        "/crate/findings-demo",
+        `/claim/${ids.claim}`,
+        `/finding/${ids.openFinding}`,
+        "/reports",
+      ]) {
+        const response = await fetch(origin + page);
+        assert.equal(response.status, 200, page);
+        const document = new JSDOM(await response.text()).window.document;
+        const imageURL = document
+          .querySelector('meta[property="og:image"]')
+          ?.getAttribute("content");
+        assert(imageURL, page);
+        const imageResponse = await fetch(imageURL);
+        assert.equal(imageResponse.status, 200, page);
+        assert.equal(imageResponse.headers.get("Content-Type"), "image/png");
+        await imageResponse.arrayBuffer();
+      }
+      for (const page of [
+        "/account",
+        "/settings",
+        "/claim/missing",
+        "/og/page.png",
+      ]) {
+        await expectStatus(
+          fetch(origin + "/og/page.png?path=" + encodeURIComponent(page)),
+          404,
+        );
+      }
+
       const docs = await request("/book/");
       assert.equal(docs.status, 200);
       const docsHTML = await docs.text();
@@ -303,17 +351,17 @@ test(
         docs.headers.get("content-security-policy") || "",
         /script-src 'self'/,
       );
-      assert.equal((await request("/book/css/chrome.css")).status, 200);
+      await expectStatus(request("/book/css/chrome.css"), 200);
       // The demo serves the real Book when the pinned mdBook is installed.
       if (mdbookAvailable()) {
         assert.match(docsHTML, /proofs-site-header/);
-        assert.equal((await request("/book/book.js")).status, 200);
+        await expectStatus(request("/book/book.js"), 200);
       } else {
         assert.match(docsHTML, /Docs layout demo/);
-        assert.equal((await request("/book/demo-book.js")).status, 200);
+        await expectStatus(request("/book/demo-book.js"), 200);
       }
 
-      assert.equal((await request("/__demo")).status, 200);
+      await expectStatus(request("/__demo"), 200);
       for (const [, url] of demoScenarios.filter(
         ([, url]) => !url.startsWith("/my-"),
       )) {
@@ -325,17 +373,15 @@ test(
         headers: { Origin: "https://evil.test" },
         body: new URLSearchParams({ user: "author" }),
       });
-      assert.equal(denied.status, 403);
-      assert.equal(
-        (await request("/api/v1/publish/prepare", "POST", {})).status,
-        503,
-      );
+      assert.equal(denied.status, 403, await denied.text());
+      await expectStatus(request("/api/v1/publish/prepare", "POST", {}), 503);
       await switchUser("author");
       for (const [, url] of demoScenarios.filter(([, url]) =>
         url.startsWith("/my-"),
       )) {
         const response = await request(url);
         if (response.status === 302) {
+          await response.text();
           const redirected = await request(response.headers.get("location")!);
           assert.equal(redirected.status, 200, await redirected.text());
         } else
@@ -347,6 +393,18 @@ test(
       }
       const findingPath = `/api/v1/findings/${ids.openFinding}`;
       const initial = await readJSON<Finding>(await request(findingPath));
+      const issuePage = await request(
+        `/finding/${ids.openFinding}/github-issue`,
+      );
+      assert.equal(issuePage.status, 302);
+      const issueURL = new URL(issuePage.headers.get("Location")!);
+      assert.equal(
+        issueURL.origin + issueURL.pathname,
+        "https://github.com/example/findings-demo/issues/new",
+      );
+      assert.equal(issueURL.searchParams.get("title"), initial.title);
+      assert.ok(issueURL.searchParams.get("body")!.startsWith(initial.body));
+      await issuePage.text();
       const edited = await request(findingPath, "PATCH", {
         edit_version: initial.edit_version,
         title: "Edited locally",
@@ -428,23 +486,19 @@ test(
         activity.window.document.querySelector('a[href*="comments_cursor="]'),
       );
       const updated = await readJSON<Finding>(await request(findingPath));
-      assert.equal(
-        (
-          await request(findingPath, "PATCH", {
-            edit_version: updated.edit_version,
-            title: "Forbidden",
-          })
-        ).status,
+      await expectStatus(
+        request(findingPath, "PATCH", {
+          edit_version: updated.edit_version,
+          title: "Forbidden",
+        }),
         403,
       );
       await switchUser("");
-      assert.equal(
-        (
-          await request(findingPath, "PATCH", {
-            edit_version: updated.edit_version,
-            title: "Forbidden",
-          })
-        ).status,
+      await expectStatus(
+        request(findingPath, "PATCH", {
+          edit_version: updated.edit_version,
+          title: "Forbidden",
+        }),
         401,
       );
       await stop();

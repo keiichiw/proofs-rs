@@ -1,3 +1,4 @@
+import { deliverZulip } from "./zulip";
 import { Env, now, uid, one, rows, stmt, batch, signToken } from "./core";
 import { importJob } from "./imports";
 export async function dispatch(env: Env) {
@@ -338,7 +339,8 @@ export async function queue(batchMessages: MessageBatch<any>, env: Env) {
                 "UPDATE outbox_events SET enqueued_at=NULL WHERE id=?",
                 event.id,
               ).run();
-          } else if (event.type === "comment")
+          } else if (event.type === "zulip") await deliverZulip(env, event);
+          else if (event.type === "comment")
             await createNotifications(env, event);
         }
       } else if (b.delivery_id) await deliver(env, b.delivery_id);

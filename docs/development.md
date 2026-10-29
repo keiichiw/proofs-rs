@@ -194,6 +194,38 @@ Zero reviews does not mean the crate has zero dependencies.
 
 For existing installations, see [the migration procedure](dependency-migration.md).
 
+## Finding to GitHub Issue
+
+Report authors can choose **Create GitHub issue** on a saved Finding or its Report
+when crates.io lists a supported HTTPS GitHub upstream repository. The recorded
+verification repository, which may be a fork, is not used. Missing, unsupported,
+or unavailable upstream metadata hides the prompts. Findings without an Issue
+link also offer **Add issue URL**. Both prompts disappear once an Issue link is
+registered; PR links alone do not hide them. Removing the Issue link restores them.
+The ordinary **Add issue or PR link** form remains available for other hosts.
+
+**Create GitHub issue** redirects directly to GitHub. When the repository has
+Issue templates or an Issue template configuration directory, it opens the
+GitHub template chooser with the title and no body. The lookup covers legacy
+Markdown templates in the root, `.github`, and `docs` directories, template/form
+folders, and defaults inherited from the owner's public `.github` repository.
+A failed or incomplete configuration lookup also uses the chooser without a body.
+Successful upstream and template lookups are cached in R2 for five minutes;
+GitHub requests have a shared five-second timeout and require no credentials.
+
+When no templates are configured, GitHub's creation page is prefilled with the
+Finding title and complete Markdown body, followed by a horizontal rule (`---`)
+and one sentence linking to the origin Report revision. If the encoded URL exceeds 8 KiB, a local fallback
+page lets authors copy the complete body; unusually long titles also fall back
+to copying. Text selection works without JavaScript, and copy buttons use the
+Clipboard API when available.
+
+No GitHub write permission is requested and no issue is posted by the service.
+After posting on GitHub, return to **Add issue or PR link** to register its URL
+and edit the upstream status as appropriate. Opening the action does not change
+Finding state. CLI previews do not expose it. The local demo uses synthetic
+repository and template fixtures without fetching crates.io or GitHub.
+
 ## Local CLI preview development
 
 `preview/server.ts` runs in Node.js 24+ and uses the same page shell, report/claim
