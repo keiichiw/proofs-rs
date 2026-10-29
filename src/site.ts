@@ -1,3 +1,5 @@
+import { reportShare } from "../web/report-share";
+import { resolveSocialCard, cardMetadata } from "./social-card";
 import { reportFindings } from "./findings";
 import { pageLayout } from "../web/page-layout";
 import type { Ctx } from "./core";
@@ -152,13 +154,22 @@ function layout(
   body: string,
   me: any = { user: null },
   canonicalPath?: string,
+  metadata?: Parameters<typeof pageLayout>[6],
 ) {
   const account = accountNavigation(c, me);
   const canonical = new URL(
     canonicalPath ?? c.req.path + new URL(c.req.url).search,
     c.env.APP_ORIGIN,
   ).href;
-  return pageLayout(title, body, account, canonical);
+  return pageLayout(
+    title,
+    body,
+    account,
+    canonical,
+    undefined,
+    false,
+    metadata,
+  );
 }
 export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
   c.header("Cache-Control", "private, no-store");
@@ -176,14 +187,23 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
     return value;
   };
   let canonicalPath: string | undefined;
-  const result = (title: string, body: string, status = 200) =>
-    new Response(layout(c, title, body, me, canonicalPath), {
+  let metadata: Parameters<typeof pageLayout>[6];
+  const result = async (title: string, body: string, status = 200) => {
+    if (status === 200 && !metadata) {
+      const card = await resolveSocialCard(current, get).catch(() => null);
+      if (card) {
+        metadata = cardMetadata(card, c.env.APP_ORIGIN);
+        canonicalPath ??= card.path;
+      }
+    }
+    return new Response(layout(c, title, body, me, canonicalPath, metadata), {
       status,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "private, no-store",
       },
     });
+  };
   try {
     const parts = current.pathname
       .split("/")
@@ -726,9 +746,37 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const olderRevisions = history.filter(
         (h: any) => !shownRevisions.includes(h),
       );
+      canonicalPath = `/report/${item.id}${current.searchParams.has("v") ? `?v=${item.revision_no}` : ""}`;
+      const shareURL = new URL(
+        `/report/${item.id}?v=${item.revision_no}`,
+        c.env.APP_ORIGIN,
+      ).href;
+      const plain = item.explanation
+        ? (await import("./markdown"))
+            .renderMarkdown(item.explanation, 1)
+            .replace(/<[^>]*>/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s+/g, " ")
+            .trim()
+        : `${item.crate} ${item.version} verification report using ${item.tool}.`;
+      metadata = {
+        title: `${item.withdrawn_at ? "Withdrawn · " : ""}${item.title} · ${item.crate} ${item.version} · proofs.rs`,
+        description: Array.from(plain).slice(0, 160).join(""),
+        url: shareURL,
+        image: new URL(
+          `/og/report/${item.id}/${item.revision_no}.png`,
+          c.env.APP_ORIGIN,
+        ).href,
+        alt: `${item.withdrawn_at ? "Withdrawn · " : ""}${item.title} · ${item.crate} ${item.version}`,
+      };
+      const share = reportShare(item.title, shareURL, !!item.withdrawn_at);
       return result(
         `Report #${item.id} — ${item.title}`,
-        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p><div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${reportOutline(item, true, item.comment_count)}${content}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
+        `${breadcrumbs(crateCrumbs(item, "reports"))}${reportContent(item, true)}<p class="meta">${user(item.author_id, item.username)} · ${date(item.created_at)}</p>${share}<div class="meta" id="revision-history">Revision ${shownRevisions.map(revisionLink).join(" · ")}${item.revision_no !== item.latest_revision_no ? ` ${badge("Past revision", "warn")}` : ""}${olderRevisions.length ? `<details class="revision-more"><summary>${olderRevisions.length} more revisions</summary>${olderRevisions.map(revisionLink).join(" · ")}</details>` : ""}</div>${item.withdrawn_at ? `<p>${badge("Withdrawn by the author.", "warn")}</p>` : ""}<div class="report-actions">${me.user?.id === item.author_id && !item.withdrawn_at ? navigateButton({ v: item.revision_no, withdraw: "1" }, "Withdraw report") + (current.searchParams.has("withdraw") ? confirmation("Withdraw this report? Its history and discussion remain public.", action("withdraw", { id: item.id }, "Withdraw report"), `/report/${item.id}?v=${item.revision_no}`) : "") : ""}</div>${reportOutline(item, true, item.comment_count)}${content}<section id="discussion" class="discussion"><h2>Comments (${item.comment_count})</h2>${rendered.join("") || "<p>No comments.</p>"}${form}</section>`,
       );
     }
     if (p === "runs" && id) {

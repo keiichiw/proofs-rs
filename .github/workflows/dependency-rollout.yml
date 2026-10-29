@@ -23,6 +23,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: "false"
       PRODUCTION_CUSTOM_DOMAIN: ${{ vars.PRODUCTION_CUSTOM_DOMAIN }}
+      PRODUCTION_ZULIP_ENABLED: ${{ vars.PRODUCTION_ZULIP_ENABLED }}
+      ZULIP_SITE: ${{ vars.PRODUCTION_ZULIP_SITE }}
+      ZULIP_CHANNEL_ID: ${{ vars.PRODUCTION_ZULIP_CHANNEL_ID }}
+      ZULIP_BOT_EMAIL: ${{ vars.PRODUCTION_ZULIP_BOT_EMAIL }}
+      ZULIP_API_KEY: ${{ secrets.PRODUCTION_ZULIP_API_KEY }}
       PRODUCTION_EMAIL_ENABLED: ${{ vars.PRODUCTION_EMAIL_ENABLED }}
       EMAIL_EVENT_SUBSCRIPTION: ${{ vars.PRODUCTION_EMAIL_EVENT_SUBSCRIPTION }}
     steps:
@@ -55,3 +60,12 @@ jobs:
         run: node scripts/smoke.mjs '${{ steps.resources.outputs.url }}' production
       - name: Rollout summary
         run: echo 'One-time dependency migration and schema-v2 deployment succeeded. Private backups remain in the private R2 archive. Normal Production deployments now require the completed migration gate.' >> "$GITHUB_STEP_SUMMARY"
+  notify:
+    needs: [ci, migrate]
+    if: always() && (needs.migrate.result == 'success' || needs.migrate.result == 'failure' || needs.ci.result == 'failure')
+    uses: ./.github/workflows/notify-deploy.yml
+    with:
+      environment: production (dependency rollout)
+      result: ${{ needs.ci.result == 'failure' && 'failure' || needs.migrate.result }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

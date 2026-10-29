@@ -12,6 +12,7 @@
     "run_worker_first": true
   },
   "vars": {
+    "ZULIP_ENABLED": "false",
     "ENVIRONMENT": "production",
     "APP_ORIGIN": "https://proofs.rs",
     "GITHUB_CLIENT_ID": "",

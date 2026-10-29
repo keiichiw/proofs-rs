@@ -86,3 +86,12 @@ jobs:
         run: |
           echo 'Staging deployed to ${{ steps.resources.outputs.url }}' >> "$GITHUB_STEP_SUMMARY"
           echo 'Commit: `${{ github.event.pull_request.head.sha || github.sha }}`' >> "$GITHUB_STEP_SUMMARY"
+  notify:
+    needs: deploy
+    if: always() && (needs.deploy.result == 'success' || needs.deploy.result == 'failure')
+    uses: ./.github/workflows/notify-deploy.yml
+    with:
+      environment: staging
+      result: ${{ needs.deploy.result }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
