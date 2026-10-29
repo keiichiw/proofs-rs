@@ -396,17 +396,15 @@ test(
       const issuePage = await request(
         `/finding/${ids.openFinding}/github-issue`,
       );
-      assert.equal(issuePage.status, 200);
-      const issueDocument = new JSDOM(await issuePage.text()).window.document;
-      assert.match(
-        issueDocument.body.textContent!,
-        /Synthetic demo repository/,
+      assert.equal(issuePage.status, 302);
+      const issueURL = new URL(issuePage.headers.get("Location")!);
+      assert.equal(
+        issueURL.origin + issueURL.pathname,
+        "https://github.com/example/findings-demo/issues/new",
       );
-      assert.ok(
-        issueDocument.querySelector(
-          'a[href^="https://github.com/example/findings-demo/issues/new"]',
-        ),
-      );
+      assert.equal(issueURL.searchParams.get("title"), initial.title);
+      assert.ok(issueURL.searchParams.get("body")!.startsWith(initial.body));
+      await issuePage.text();
       const edited = await request(findingPath, "PATCH", {
         edit_version: initial.edit_version,
         title: "Edited locally",

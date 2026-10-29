@@ -236,6 +236,7 @@ export function createViews(
     const permalink = `/finding/${enc(f.id)}`;
     const needsIssue =
       canReportIssue &&
+      f.github_issue_available === true &&
       !options.preview &&
       !f.draft &&
       !f.withdrawn_at &&

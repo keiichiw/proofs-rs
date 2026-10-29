@@ -178,9 +178,15 @@ export async function fixture(seedTools = true, throughMigration?: string) {
       put: async () => {},
       get: async (key: string) => ({
         json: async () =>
-          key.startsWith("cache/crates.io/dependencies/")
-            ? []
-            : recordedSarif("11111111-1111-4111-8111-111111111111"),
+          key.startsWith("cache/crates.io/repositories/")
+            ? {
+                name: "sample",
+                repository: "https://github.com/upstream/project",
+                fetchedAt: Date.now(),
+              }
+            : key.startsWith("cache/crates.io/dependencies/")
+              ? []
+              : recordedSarif("11111111-1111-4111-8111-111111111111"),
         body: new Response(
           JSON.stringify(recordedSarif("11111111-1111-4111-8111-111111111111")),
         ).body,

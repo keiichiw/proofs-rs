@@ -120,55 +120,45 @@ test("GitHub issue preparation uses the upstream, escapes the draft and leaves F
     );
     dom.window.close();
   }
-  const response = await html(`/finding/${id}/github-issue`);
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
-  const dom = new JSDOM(await response.text());
-  const document = dom.window.document;
-  assert.equal(
-    document.querySelector<HTMLInputElement>("#issue-title")!.value,
-    input.title,
-  );
-  const body =
-    document.querySelector<HTMLTextAreaElement>("#issue-body")!.value;
-  assert.ok(body.startsWith(before.body));
-  assert.ok(!body.includes(input.evidence_url));
-  assert.ok(body.includes(`https://example.test/report/${report}?v=1`));
-  assert.ok(!body.includes(`https://example.test/finding/${id}`));
-  assert.ok(!body.includes("sample::safe"));
-  assert.equal(
-    document.querySelectorAll("[data-issue-draft] script").length,
-    0,
-  );
-  const link = [...document.querySelectorAll("a")].find(
-    (a) => a.textContent === "Continue on GitHub",
-  )!;
-  const url = new URL(link.href);
-  assert.equal(
-    url.origin + url.pathname,
-    "https://github.com/upstream/project/issues/new",
-  );
-  assert.equal(url.searchParams.get("title"), input.title);
-  assert.equal(url.searchParams.get("body"), body);
-  assert.equal(link.rel, "noopener noreferrer");
-  assert.equal(link.target, "_blank");
-  assert.doesNotMatch(link.href, /test\/source/);
-  dom.window.close();
-  assert.deepEqual((await request(`/findings/${id}`)).body, before);
-  for (const [value, message] of [
-    [null, /no upstream repository/],
-    ["https://gitlab.com/upstream/project", /not a supported HTTPS GitHub/],
-  ] as const) {
-    repository = value;
-    const document = new JSDOM(
-      await (await html(`/finding/${id}/github-issue`)).text(),
-    ).window.document;
-    assert.match(
-      document.querySelector('[role="alert"]')!.textContent!,
-      message,
+  for (const hasTemplates of [false, true, null]) {
+    const previousGet = env.ARCHIVE.get.bind(env.ARCHIVE);
+    Object.assign(env.ARCHIVE, {
+      get: async (key: string) =>
+        key.startsWith("local-demo/github/issue-templates/")
+          ? { json: async () => ({ hasTemplates }) }
+          : previousGet(key),
+    });
+    const response = await html(`/finding/${id}/github-issue`);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    const url = new URL(response.headers.get("Location")!);
+    assert.equal(url.origin, "https://github.com");
+    assert.equal(
+      url.pathname,
+      hasTemplates === false
+        ? "/upstream/project/issues/new"
+        : "/upstream/project/issues/new/choose",
     );
-    assert.ok(document.querySelector(`a[href="/finding/${id}/github-issue"]`));
-    assert.equal(document.querySelectorAll('a[href*="/issues/new"]').length, 0);
+    assert.equal(url.searchParams.get("title"), input.title);
+    if (hasTemplates === false) {
+      const body = url.searchParams.get("body")!;
+      assert.ok(body.startsWith(before.body));
+      assert.ok(body.includes(`https://example.test/report/${report}?v=1`));
+      assert.ok(!body.includes(input.evidence_url));
+    } else assert.equal(url.searchParams.has("body"), false);
+    assert.deepEqual((await request(`/findings/${id}`)).body, before);
+  }
+  for (const value of [null, "https://gitlab.com/upstream/project"]) {
+    repository = value;
+    assert.equal((await html(`/finding/${id}/github-issue`)).status, 404);
+    for (const page of [`/finding/${id}`, `/report/${report}`]) {
+      const dom = new JSDOM(await (await html(page)).text());
+      assert.equal(
+        dom.window.document.querySelector('a[href$="/github-issue"]'),
+        null,
+      );
+      dom.window.close();
+    }
   }
 });
 
@@ -219,11 +209,14 @@ test("long Issue drafts retain the complete body and title for copying", async (
   const id = (await request(path, "POST", { ...findingInput, body })).body.id;
   env.EXTERNAL_FETCH_DISABLED = "true";
   Object.assign(env.ARCHIVE, {
-    get: async () => ({
-      json: async () => ({
-        name: "sample",
-        repository: "https://github.com/upstream/project",
-      }),
+    get: async (key: string) => ({
+      json: async () =>
+        key.includes("/issue-templates/")
+          ? { hasTemplates: false }
+          : {
+              name: "sample",
+              repository: "https://github.com/upstream/project",
+            },
     }),
   });
   const page = async () => {

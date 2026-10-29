@@ -16,6 +16,7 @@ import { reportDiscussion } from "./api";
 import { createViews } from "./site-views";
 import { dependencyCatalog } from "./dependencies";
 import {
+  githubIssueTemplates,
   githubIssueDraft,
   githubIssueURL,
   upstreamRepository,
@@ -540,24 +541,26 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
         if (me.user.id !== owner.author_id) throw new Fault(403, "not_author");
         if (f.withdrawn_at) throw new Fault(409, "report_withdrawn");
         const upstream = await upstreamRepository(c.env, f.crate);
+        if (!upstream.repository)
+          throw new Fault(
+            upstream.reason === "unavailable" ? 503 : 404,
+            "github_upstream_unavailable",
+          );
         const draft = githubIssueDraft(f, c.env.APP_ORIGIN);
-        const issue = upstream.repository
-          ? githubIssueURL(upstream.repository, draft)
-          : null;
-        const unavailable = {
-          missing: "This crate has no upstream repository listed on crates.io.",
-          unsupported:
-            "The upstream repository listed on crates.io is not a supported HTTPS GitHub repository.",
-          unavailable:
-            "Unable to load the upstream repository from crates.io. Please try again.",
-        };
-        const unavailableReason =
-          upstream.repository === null ? unavailable[upstream.reason] : "";
+        const templates = await githubIssueTemplates(
+          c.env,
+          upstream.repository,
+        );
+        const issue = githubIssueURL(upstream.repository, draft, templates);
+        if (issue.prefill === "all") return c.redirect(issue.url, 302);
         return result(
           "Create GitHub issue",
-          `<h1>Create GitHub issue</h1><p>Review the destination and draft below, then confirm and submit on GitHub. No issue is created by proofs.rs.</p>${c.env.ENVIRONMENT === "local-demo" ? "<p>Synthetic demo repository. These fixtures are not verification results.</p>" : ""}${upstream.repository ? `<p>Upstream repository from crates.io: <a href="${esc(upstream.repository)}" target="_blank" rel="noopener noreferrer">${esc(upstream.repository)}</a></p>` : `<p role="alert">${esc(unavailableReason)}</p><p><a href="${esc(current.pathname)}">Retry repository lookup</a></p>`}<section class="finding-form" data-issue-draft><label>Issue title<input id="issue-title" readonly value="${esc(draft.title)}"></label><button type="button" data-copy-issue="issue-title">Copy title</button><label>Issue body (Markdown)<textarea id="issue-body" readonly rows="18">\n${esc(draft.body)}</textarea></label><button type="button" data-copy-issue="issue-body">Copy body</button><p data-copy-status role="status" aria-live="polite"></p>${issue ? `${issue.prefill === "all" ? "" : `<p>${issue.prefill === "title" ? "The body is too long to prefill in a URL. Copy the complete body and paste it into GitHub." : "The title and body are too long to prefill in a URL. Copy both fields and paste them into GitHub."}</p>`}<p><a href="${esc(issue.url)}" target="_blank" rel="noopener noreferrer">Continue on GitHub</a></p>` : ""}</section><p>After posting, return to the Finding and use “Add issue or PR link” to register the Issue URL. Opening GitHub does not change the Finding’s links or upstream status.</p><p><a href="/finding/${enc(f.id)}">Return to Finding</a></p>`,
+          `<h1>Create GitHub issue</h1><p>The draft is too long to prefill in a GitHub URL. Copy it below, then submit on GitHub.</p><p>Upstream repository: <a href="${esc(upstream.repository)}" target="_blank" rel="noopener noreferrer">${esc(upstream.repository)}</a></p><section class="finding-form" data-issue-draft><label>Issue title<input id="issue-title" readonly value="${esc(draft.title)}"></label><button type="button" data-copy-issue="issue-title">Copy title</button><label>Issue body (Markdown)<textarea id="issue-body" readonly rows="18">\n${esc(draft.body)}</textarea></label><button type="button" data-copy-issue="issue-body">Copy body</button><p data-copy-status role="status" aria-live="polite"></p><p>${issue.prefill === "title" ? "The body is too long to prefill in a URL. Copy the complete body and paste it into GitHub." : "The title and body are too long to prefill in a URL. Copy both fields and paste them into GitHub."}</p><p><a href="${esc(issue.url)}" target="_blank" rel="noopener noreferrer">Continue on GitHub</a></p></section><p><a href="/finding/${enc(f.id)}">Return to Finding</a></p>`,
         );
       }
+      if (editable)
+        f.github_issue_available = !!(await upstreamRepository(c.env, f.crate))
+          .repository;
       const apis = editable
         ? await get(`/crates/${enc(f.crate)}/${enc(f.version)}/apis`)
         : null;
@@ -635,6 +638,12 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
           ).length;
       const editableFindings =
         me.user?.id === item.author_id && !item.withdrawn_at;
+      if (editableFindings && item.findings.length) {
+        const available = !!(await upstreamRepository(c.env, item.crate))
+          .repository;
+        for (const finding of item.findings)
+          finding.github_issue_available = available;
+      }
       const findingAPIs = editableFindings
         ? await get(`/crates/${enc(item.crate)}/${enc(item.version)}/apis`)
         : null;

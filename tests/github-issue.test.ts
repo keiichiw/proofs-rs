@@ -9,6 +9,7 @@ import {
   githubIssueDraft,
   githubIssueURL,
   upstreamRepository,
+  githubIssueTemplates,
 } from "../src/github-issue";
 import { createViews } from "../src/site-views";
 
@@ -36,6 +37,7 @@ const finding = {
   evidence_url: "https://example.test/evidence?a=1&b=2",
   apis: [{ display_path: "sample::safe" }],
   links: [],
+  github_issue_available: true,
 };
 
 test("repository normalization accepts only plain HTTPS GitHub repositories", () => {
@@ -271,6 +273,10 @@ test("saved authors get the issue action; local drafts and CLI previews do not",
       /finding-issue-actions/,
     );
   }
+  assert.doesNotMatch(
+    views.findingItem({ ...finding, github_issue_available: false }, true),
+    /Create GitHub issue/,
+  );
   assert.doesNotMatch(views.findingItem(finding), /Create GitHub issue/);
   assert.doesNotMatch(
     views.findingItem({ ...finding, draft: true }, true),
@@ -340,4 +346,134 @@ test("copy buttons preserve the entire body and select it when clipboard access 
     /Selected/,
   );
   dom.window.close();
+});
+
+test("templates include Markdown, forms/configuration directories and inherited defaults", async (t) => {
+  const { env, objects } = archive();
+  let templatePath = "project/contents/.github";
+  let entries = [{ name: "ISSUE_TEMPLATE", type: "dir" }];
+  const calls: string[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(init.redirect, "manual");
+    assert.ok(init.signal instanceof AbortSignal);
+    calls.push(url);
+    return Response.json(url.endsWith(templatePath) ? entries : []);
+  });
+  for (const [path, files] of [
+    ["project/contents/.github", [{ name: "ISSUE_TEMPLATE", type: "dir" }]],
+    ["project/contents/", [{ name: "ISSUE_TEMPLATE.md", type: "file" }]],
+    [
+      "project/contents/docs",
+      [{ name: "issue_template.markdown", type: "file" }],
+    ],
+    [".github/contents/.github", [{ name: "ISSUE_TEMPLATE", type: "dir" }]],
+  ] as const) {
+    objects.clear();
+    templatePath = path;
+    entries = files.map((entry) => ({ ...entry }));
+    assert.equal(
+      await githubIssueTemplates(env, "https://github.com/upstream/project"),
+      true,
+      path,
+    );
+  }
+  const previousCalls = calls.length;
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    true,
+  );
+  assert.equal(calls.length, previousCalls);
+  objects.clear();
+  templatePath = "missing";
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    false,
+  );
+  assert.equal(calls.length, previousCalls + 6);
+  const chooser = new URL(
+    githubIssueURL(
+      "https://github.com/upstream/project",
+      { title: "Bug", body: "Do not replace template" },
+      true,
+    ).url,
+  );
+  assert.equal(chooser.pathname, "/upstream/project/issues/new/choose");
+  assert.equal(chooser.searchParams.get("title"), "Bug");
+  assert.equal(chooser.searchParams.has("body"), false);
+});
+
+test("failed or incomplete template lookups use the chooser and do not cache absence", async (t) => {
+  const { env, objects } = archive();
+  let response = () => new Response(null, { status: 403 });
+  t.mock.method(globalThis, "fetch", async () => response());
+  for (const makeResponse of [
+    () => new Response(null, { status: 403 }),
+    () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://evil.test" },
+      }),
+    () => Response.json({ message: "invalid" }),
+    () =>
+      Response.json(
+        Array.from({ length: 1000 }, () => ({ name: "file", type: "file" })),
+      ),
+    () => new Response("x".repeat(1024 * 1024 + 1)),
+  ]) {
+    response = makeResponse;
+    assert.equal(
+      await githubIssueTemplates(env, "https://github.com/upstream/project"),
+      null,
+    );
+    assert.equal(objects.size, 0);
+  }
+  response = () => new Response(null, { status: 404 });
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    false,
+  );
+  const key = "cache/github/issue-templates/upstream/project.json";
+  objects.get(key).fetchedAt = 0;
+  response = () => new Response(null, { status: 503 });
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    null,
+  );
+  assert.equal(objects.get(key).fetchedAt, 0);
+  const url = new URL(
+    githubIssueURL(
+      "https://github.com/upstream/project",
+      { title: "Bug", body: "Body" },
+      null,
+    ).url,
+  );
+  assert.equal(url.pathname, "/upstream/project/issues/new/choose");
+  assert.equal(url.searchParams.has("body"), false);
+});
+
+test("offline template fixtures never access GitHub or use the production cache", async (t) => {
+  const { env, objects } = archive();
+  env.EXTERNAL_FETCH_DISABLED = "true";
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("Must not fetch");
+  });
+  objects.set("cache/github/issue-templates/upstream/project.json", {
+    hasTemplates: false,
+    fetchedAt: Date.now(),
+  });
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    null,
+  );
+  objects.set("local-demo/github/issue-templates/upstream/project.json", {
+    hasTemplates: true,
+  });
+  assert.equal(
+    await githubIssueTemplates(env, "https://github.com/upstream/project"),
+    true,
+  );
+  assert.equal(
+    await githubIssueTemplates(env, "https://gitlab.com/upstream/project"),
+    null,
+  );
 });

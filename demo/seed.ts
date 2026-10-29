@@ -22,7 +22,11 @@ async function seedRepositoryFixtures(env: Pick<Env, "DB" | "ARCHIVE">) {
   const crates = (
     await env.DB.prepare("SELECT name FROM crates").all<{ name: string }>()
   ).results;
-  for (const crate of crates)
+  for (const crate of crates) {
+    await env.ARCHIVE.put(
+      `local-demo/github/issue-templates/example/${crate.name}.json`,
+      JSON.stringify({ hasTemplates: false }),
+    );
     await env.ARCHIVE.put(
       `local-demo/crates.io/repositories/${encodeURIComponent(crate.name)}.json`,
       JSON.stringify({
@@ -31,6 +35,7 @@ async function seedRepositoryFixtures(env: Pick<Env, "DB" | "ARCHIVE">) {
       }),
       { httpMetadata: { contentType: "application/json" } },
     );
+  }
 }
 
 /** Uses real local D1/R2 bindings. Ready seeds are never reapplied over edits. */
