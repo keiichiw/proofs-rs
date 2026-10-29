@@ -404,6 +404,15 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       const canonical = new URL(`/crate/${enc(id)}`, c.env.APP_ORIGIN);
       if (version !== releases.default_version)
         canonical.searchParams.set("version", version);
+      const badgeEndpoint = new URL(
+        `/api/v1/crates/${enc(id)}/${enc(version)}/badge`,
+        c.env.APP_ORIGIN,
+      );
+      const badgeURL = `https://img.shields.io/endpoint?url=${enc(badgeEndpoint.href)}`;
+      const badgeTarget = new URL(`/crate/${enc(id)}`, c.env.APP_ORIGIN);
+      badgeTarget.searchParams.set("version", version);
+      const badgeMarkdown = `[![proofs.rs](${badgeURL})](${badgeTarget.href})`;
+      const badge = `<div class="crate-badge"><a href="${esc(badgeTarget.href)}"><img src="${esc(badgeURL)}" alt="proofs.rs claims for ${esc(id)} ${esc(version)}" height="20"></a><details><summary>README badge</summary><p class="meta">Claims in public reports for version ${esc(version)}.</p><button type="button" data-copy-badge>Copy Markdown</button><span role="status" data-copy-status></span><pre tabindex="0"><code>${esc(badgeMarkdown)}</code></pre></details></div>`;
       const cursor = current.searchParams.get("cursor");
       if (cursor) canonical.searchParams.set("cursor", cursor);
       canonicalPath = canonical.pathname + canonical.search;
@@ -462,7 +471,7 @@ export async function sitePage(c: Ctx, fetch: SiteFetch): Promise<Response> {
       );
       return result(
         `${id} ${version}`,
-        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><nav class="filterbar" aria-label="Sections for version ${esc(version)}"><a href="#reports">${counts[0].n} report${counts[0].n === 1 ? "" : "s"}</a> · <a href="#findings">${findingCount[0].n} finding${findingCount[0].n === 1 ? "" : "s"}</a> · <a href="#apis">${claimedAPIs} of ${apis.items.length} catalogued API${apis.items.length === 1 ? "" : "s"} with claims</a></nav><h2 id="reports">Reports (${counts[0].n})</h2>${reports}${findingSection}<h2 id="apis">APIs (${apis.items.length})</h2><p class="meta">The catalogue lists every public API of this version. ${claimedAPIs} ${claimedAPIs === 1 ? "has" : "have"} at least one claim; a count says nothing about how strong each claim is.</p><form class="api-filter" data-api-filter hidden><input type="search" aria-label="Filter APIs" placeholder="Filter APIs"><label><input type="checkbox" name="claimed"> With claims</label><label><input type="checkbox" name="found"> With findings</label><span role="status" class="meta"></span></form>${renderAPICatalog(apis.items, id)}`,
+        `${breadcrumbs([{ label: "crates", href: "/crates" }])}<h1>${esc(id)} ${esc(version)}</h1>${badge}${releases.description ? `<p>${esc(releases.description)}</p>` : ""}<p><a href="https://crates.io/crates/${enc(id)}/${enc(version)}" target="_blank" rel="noopener noreferrer">crates.io</a></p><form method="get" action="/crate/${enc(id)}" data-version-selector><label>Version <select name="version" aria-label="Version">${releases.items.map((r: any) => `<option value="${esc(r.version)}"${r.version === version ? " selected" : ""}>${esc(r.version)}${r.yanked ? " (yanked)" : ""}</option>`).join("")}</select></label></form><nav class="filterbar" aria-label="Sections for version ${esc(version)}"><a href="#reports">${counts[0].n} report${counts[0].n === 1 ? "" : "s"}</a> · <a href="#findings">${findingCount[0].n} finding${findingCount[0].n === 1 ? "" : "s"}</a> · <a href="#apis">${claimedAPIs} of ${apis.items.length} catalogued API${apis.items.length === 1 ? "" : "s"} with claims</a></nav><h2 id="reports">Reports (${counts[0].n})</h2>${reports}${findingSection}<h2 id="apis">APIs (${apis.items.length})</h2><p class="meta">The catalogue lists every public API of this version. ${claimedAPIs} ${claimedAPIs === 1 ? "has" : "have"} at least one claim; a count says nothing about how strong each claim is.</p><form class="api-filter" data-api-filter hidden><input type="search" aria-label="Filter APIs" placeholder="Filter APIs"><label><input type="checkbox" name="claimed"> With claims</label><label><input type="checkbox" name="found"> With findings</label><span role="status" class="meta"></span></form>${renderAPICatalog(apis.items, id)}`,
       );
     }
     if (p === "api" && id) {

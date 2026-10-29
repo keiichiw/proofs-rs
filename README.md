@@ -1,31 +1,15 @@
 # proofs.rs
 
-A public registry for Rust formal verification results.
-
 - [Website](https://proofs.rs)
 - [Book](https://proofs.rs/book/)
 - [Zulip](https://proofs-rs.zulipchat.com/)
 - [CLI](cli/README.md)
 - [Development](docs/development.md)
+- [Announcement](https://proofs-rs.hashnode.dev/announcing-proofs-rs-a-public-registry-for-rust-formal-verification-results)
 - [Zulip announcements setup](docs/zulip-notifications.md)
 
-For local UI development, run `npm ci` once, then `npm run dev:demo` and open
-[the demo scenarios](http://127.0.0.1:8787/__demo). The demo seeds local D1/R2,
-supports switching between an author, another user and a logged-out visitor,
-and keeps edits between restarts. See [the demo guide](docs/development.md#local-ui-demo).
+This repository contains the source for [proofs.rs](https://proofs.rs), a public registry for Rust formal verification results. It includes the website and service, the `cargo proofs` publishing CLI, and the proofs.rs book.
 
-### Automatic Aeneas formal statements
+A Report records an author's verification results for one version of a crate, with Claims about individual APIs, assumptions, limitations, evidence, and discussion. Publication is not certification: proofs.rs does not independently rerun verification. Authors can publish independently of the upstream project, and small, well-scoped results are welcome.
 
-Aeneas runs can resolve specifications using committed `-emit-json` output.
-Set `proof_modules = ["Proofs"]` and
-`translation_manifest = "Generated/translation.json"` under `[tool]` (paths
-relative to `lean_dir`), then use the usual `cargo proofs run -- lake build`
-and `cargo proofs publish`. Existing `[[tool.proofs]]` entries remain supported
-and explicitly select among ambiguous candidates. New recordings capture the
-full Lean proposition, typed binders, target expression, source and axiom audit;
-Claim revisions refer to the recorded run and theorem, so editing prose cannot
-change the displayed theorem. `precondition` prose may be omitted for these
-records. Translation itself is not rerun by the recorder.
-
-See [the Aeneas guide](https://proofs.rs/book/aeneas.html) for setup, scope,
-provenance, limits, and the tested Lean 4.35.0 / Aeneas be86ab0f adapter.
+The service runs on Cloudflare Workers with Hono and TypeScript. The [development guide](docs/development.md) covers local setup, tests, and deployment; its [local UI demo](docs/development.md#local-ui-demo) provides seeded scenarios for working on the interface. The CLI lives in `cli/`, and the book source lives in `book/`.

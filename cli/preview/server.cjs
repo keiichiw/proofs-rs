@@ -914,6 +914,21 @@ textarea {
   font-weight: 600;
 }
 
+.crate-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+.crate-badge details {
+  min-width: 0;
+  max-width: 100%;
+}
+.crate-badge img {
+  display: block;
+}
+
 .report-share {
   display: flex;
   flex-wrap: wrap;
@@ -1712,7 +1727,9 @@ html:not([data-theme="base"])
     if (url.origin === location.origin)
       location.replace(url.pathname + url.search + url.hash);
   }
-  for (const button of document.querySelectorAll("button[data-copy-formal]")) {
+  for (const button of document.querySelectorAll(
+    "button[data-copy-formal], button[data-copy-badge]",
+  )) {
     button.addEventListener("click", async () => {
       const details = button.closest("details");
       const code = details.querySelector("code");

@@ -387,6 +387,44 @@ api.get(
   },
 );
 api.get(
+  "/crates/:name/:version/badge",
+  ...operation(
+    "Read a Shields.io claims badge for a crate release",
+    S.z.object({
+      schemaVersion: S.z.literal(1),
+      label: S.z.literal("proofs.rs"),
+      message: S.string,
+      color: S.z.literal("blue"),
+    }),
+    {
+      tags: ["Crates"],
+      auth: "optional",
+      description:
+        "Shields.io endpoint badge. Counts claims in the latest revisions of public, non-withdrawn reports for this version.",
+    },
+  ),
+  async (c) => {
+    const release = await one(
+      c.env.DB,
+      "SELECT rel.id FROM releases rel JOIN crates cr ON cr.id=rel.crate_id WHERE cr.name=? AND rel.version=?",
+      c.req.param("name"),
+      c.req.param("version"),
+    );
+    if (!release) throw new Fault(404, "release_not_found");
+    const count = await one(
+      c.env.DB,
+      `SELECT COUNT(*) n FROM claims c JOIN reports p ON p.id=c.report_id JOIN claim_revisions r ON r.claim_id=c.id WHERE p.release_id=? AND ${activeReport} AND ${latest}`,
+      release.id,
+    );
+    return c.json({
+      schemaVersion: 1 as const,
+      label: "proofs.rs" as const,
+      message: `${count.n} claim${count.n === 1 ? "" : "s"}`,
+      color: "blue" as const,
+    });
+  },
+);
+api.get(
   "/crates/:name/:version/apis",
   ...operation(
     "List crate APIs",

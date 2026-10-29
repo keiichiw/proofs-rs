@@ -5023,6 +5023,90 @@ test("catalogue includes provided local trait defaults for primitive and nominal
   }
 });
 
+test("crate badge counts current public claims for only the selected release", async () => {
+  const { db, env, request } = await fixture();
+  const path = "/crates/sample/1.0.0/badge";
+  const badge = async (message: string) => {
+    const response = await request(path, "GET", undefined, "");
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, {
+      schemaVersion: 1,
+      label: "proofs.rs",
+      message,
+      color: "blue",
+    });
+  };
+  await badge("0 claims");
+  assert.equal((await request("/reports", "POST", reportInput)).status, 201);
+  await badge("1 claim");
+  const claims = (await request("/reports/1")).body.claims;
+  assert.equal(
+    (
+      await request("/reports/1/revisions", "POST", {
+        ...reportInput,
+        expected_revision: 1,
+        claims: [
+          { ...reportInput.claims[0], id: claims[0].id },
+          { ...reportInput.claims[0], title: "Another claim" },
+        ],
+      })
+    ).status,
+    201,
+  );
+  await badge("2 claims");
+  const updated = (await request("/reports/1")).body.claims;
+  assert.equal(
+    (
+      await request("/reports/1/revisions", "POST", {
+        ...reportInput,
+        expected_revision: 2,
+        claims: [{ ...reportInput.claims[0], id: updated[0].id }],
+      })
+    ).status,
+    201,
+  );
+  await badge("1 claim");
+  db.exec("UPDATE reports SET visibility='hidden' WHERE id=1");
+  await badge("0 claims");
+  db.exec(
+    "UPDATE reports SET visibility='public',withdrawn_at='2026-10-29' WHERE id=1",
+  );
+  await badge("0 claims");
+  db.exec("UPDATE reports SET withdrawn_at=NULL WHERE id=1");
+  db.exec("INSERT INTO releases VALUES(2,1,'2.0.0','checksum',0,'2026-10-29')");
+  assert.equal(
+    (await request("/crates/sample/2.0.0/badge")).body.message,
+    "0 claims",
+  );
+  assert.equal((await request("/crates/missing/1.0.0/badge")).status, 404);
+  assert.equal((await request("/crates/sample/9.0.0/badge")).status, 404);
+
+  const page = await app.request(
+    "https://example.test/crate/sample?version=1.0.0",
+    {},
+    env,
+  );
+  assert.equal(page.status, 200);
+  const { JSDOM } = await import("jsdom");
+  const document = new JSDOM(await page.text()).window.document;
+  const image = document.querySelector<HTMLImageElement>(".crate-badge img")!;
+  const imageURL = new URL(image.src);
+  assert.equal(imageURL.origin, "https://img.shields.io");
+  assert.equal(
+    imageURL.searchParams.get("url"),
+    "https://example.test/api/v1/crates/sample/1.0.0/badge",
+  );
+  assert.equal(
+    document.querySelector(".crate-badge code")!.textContent,
+    `[![proofs.rs](${image.src})](https://example.test/crate/sample?version=1.0.0)`,
+  );
+  assert.ok(document.querySelector("button[data-copy-badge]"));
+  assert.match(
+    page.headers.get("Content-Security-Policy")!,
+    /img-src[^;]*https:\/\/img.shields.io/,
+  );
+});
+
 test("Zulip announcements: transactional events, idempotency, retries and visibility", async () => {
   const { deliverZulip } = await import("../src/zulip");
   const { db, env, request } = await fixture();

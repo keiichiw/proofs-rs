@@ -914,6 +914,21 @@ textarea {
   font-weight: 600;
 }
 
+.crate-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+.crate-badge details {
+  min-width: 0;
+  max-width: 100%;
+}
+.crate-badge img {
+  display: block;
+}
+
 .report-share {
   display: flex;
   flex-wrap: wrap;
