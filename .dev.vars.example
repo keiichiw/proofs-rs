@@ -3,3 +3,5 @@ TOKEN_SECRET=
 # Required only for the scheduled D1 export:
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_D1_TOKEN=
+# Zulip announcements are production-only. Configure the production CI secret:
+# PRODUCTION_ZULIP_API_KEY (Worker secret: ZULIP_API_KEY)
