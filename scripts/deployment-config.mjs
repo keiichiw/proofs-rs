@@ -11,6 +11,36 @@ export function configureDeployment(config, target, env) {
     !["true", "false"].includes(env.PRODUCTION_EMAIL_ENABLED)
   )
     throw Error("PRODUCTION_EMAIL_ENABLED must be true or false.");
+  if (
+    env.PRODUCTION_ZULIP_ENABLED &&
+    !["true", "false"].includes(env.PRODUCTION_ZULIP_ENABLED)
+  )
+    throw Error("PRODUCTION_ZULIP_ENABLED must be true or false.");
+  const zulipEnabled =
+    target === "production" && env.PRODUCTION_ZULIP_ENABLED === "true";
+  config.vars.ZULIP_ENABLED = zulipEnabled ? "true" : "false";
+  for (const key of ["ZULIP_SITE", "ZULIP_CHANNEL_ID", "ZULIP_BOT_EMAIL"]) {
+    delete config.vars[key];
+    if (zulipEnabled) {
+      if (!env[key]?.trim()) throw Error("Missing " + key);
+      config.vars[key] = env[key].trim();
+    }
+  }
+  if (zulipEnabled) {
+    const site = new URL(config.vars.ZULIP_SITE);
+    if (
+      site.protocol !== "https:" ||
+      site.username ||
+      site.password ||
+      site.pathname !== "/" ||
+      site.search ||
+      site.hash
+    )
+      throw Error("ZULIP_SITE must be an HTTPS origin.");
+    if (!/^[1-9]\d*$/.test(config.vars.ZULIP_CHANNEL_ID))
+      throw Error("Invalid ZULIP_CHANNEL_ID.");
+    if (!env.ZULIP_API_KEY?.trim()) throw Error("Missing ZULIP_API_KEY.");
+  }
   config.workers_dev = !customDomain;
   if (target === "production") config.preview_urls = false;
   const emailEnabled =

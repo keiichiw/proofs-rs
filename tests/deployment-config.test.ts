@@ -64,3 +64,29 @@ test("only staging and an explicit pre-domain production fallback use workers.de
     assert.equal(c.preview_urls, false);
   }
 });
+
+test("Zulip deployment is opt-in and production-only", () => {
+  const env = {
+    PRODUCTION_CUSTOM_DOMAIN: "false",
+    PRODUCTION_ZULIP_ENABLED: "true",
+    ZULIP_SITE: "https://zulip.example",
+    ZULIP_CHANNEL_ID: "12",
+    ZULIP_BOT_EMAIL: "bot@example.test",
+    ZULIP_API_KEY: "key",
+  };
+  const c = { vars: {} as Record<string, string> };
+  configureDeployment(c, "staging", env);
+  assert.equal(c.vars.ZULIP_ENABLED, "false");
+  configureDeployment(c, "production", env);
+  assert.equal(c.vars.ZULIP_ENABLED, "true");
+  assert.equal(c.vars.ZULIP_API_KEY, undefined);
+  assert.throws(() =>
+    configureDeployment(c, "production", { ...env, ZULIP_API_KEY: "" }),
+  );
+  assert.throws(() =>
+    configureDeployment(c, "production", {
+      ...env,
+      ZULIP_SITE: "http://zulip.example",
+    }),
+  );
+});

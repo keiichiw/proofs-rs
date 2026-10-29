@@ -141,6 +141,25 @@ CSRF checks use the configured APP_ORIGIN. Production tokens/users are separate
 from staging. `scripts/domain-status.mjs` only reads onboarding status and cannot
 change nameservers. The Cloudflare account credentials remain in GitHub Secrets.
 
+## Discord deployment notifications
+
+Create an incoming webhook in the target Discord text channel (Server Settings →
+Integrations → Webhooks), then save its URL in this repository's Settings →
+Secrets and variables → Actions as the **repository secret** `DISCORD_WEBHOOK_URL`.
+An environment-only secret is not passed to the notification workflow.
+
+Staging, Production and the one-time dependency rollout send a notification after
+success or failure, including build, migration and smoke-check failures. Production
+and the rollout also notify when prerequisite CI fails. Messages include the
+environment, repository, workflow, target commit/ref and a link to the run attempt.
+Skipped and cancelled deployments do not send a notification unless prerequisite
+CI failed. Notifications disable mentions. A missing webhook or a failed delivery
+produces an Actions warning without changing the deployment result.
+
+To verify delivery, run Staging manually after configuring the secret and check
+the Discord channel and the notification job. No webhook URL belongs in source
+control or workflow logs.
+
 ## Staging deployment and configuration
 
 Run Actions → Staging → Run workflow and select the PR branch when staging verification is needed. This shared environment is overwritten by each run; only deploy trusted branches from this repository because the workflow uses staging credentials. Staging is not a production gate. `scripts/provision.mjs` creates/reuses only resources named `proofs-rs-staging-*` and writes the ignored `wrangler.staging.json`. Staging is public on workers.dev, with no Cloudflare Access gate and `noindex` headers.

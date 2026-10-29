@@ -1494,6 +1494,44 @@ test("report list filters by keyword, tool and author", async () => {
   assert.equal(d.querySelectorAll("article.claim-item").length, 11);
   assert.equal(d.querySelector(".report-filters a"), null);
   assert.equal(d.querySelector(".report-filters option[selected]"), null);
+  const filterDOM = new JSDOM(d.documentElement.outerHTML, {
+    url: "https://example.test/reports?cursor=old",
+    runScripts: "outside-only",
+  });
+  filterDOM.window.eval(
+    readFileSync(new URL("../public/site.js", import.meta.url), "utf8"),
+  );
+  const form =
+    filterDOM.window.document.querySelector<HTMLFormElement>(
+      ".report-filters",
+    )!;
+  const toolSelect = form.querySelector(
+    'select[name="tool"]',
+  )! as unknown as { value: string; dispatchEvent(event: Event): boolean };
+  form.querySelector<HTMLInputElement>('[name="q"]')!.value = "verification";
+  form.querySelector<HTMLInputElement>('[name="author"]')!.value = "demo_mira";
+  const submissions: string[] = [];
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submissions.push(
+      new URLSearchParams(
+        new filterDOM.window.FormData(form) as any,
+      ).toString(),
+    );
+  });
+  toolSelect.value = "demo-kani";
+  toolSelect.dispatchEvent(
+    new filterDOM.window.Event("change", { bubbles: true }),
+  );
+  toolSelect.value = "";
+  toolSelect.dispatchEvent(
+    new filterDOM.window.Event("change", { bubbles: true }),
+  );
+  assert.deepEqual(submissions, [
+    "q=verification&tool=demo-kani&author=demo_mira",
+    "q=verification&tool=&author=demo_mira",
+  ]);
+  filterDOM.window.close();
   d = await page(
     `/reports?q=verification&tool=demo-kani&author=demo_mira&cursor=${cursor}`,
   );
@@ -4976,5 +5014,179 @@ test("catalogue includes provided local trait defaults for primitive and nominal
         .length,
       0,
     );
+  }
+});
+
+test("Zulip announcements: transactional events, idempotency, retries and visibility", async () => {
+  const { deliverZulip } = await import("../src/zulip");
+  const { db, env, request } = await fixture();
+  Object.assign(env, {
+    ENVIRONMENT: "production",
+    EMAIL_DISABLED: "true",
+    ZULIP_ENABLED: "true",
+    ZULIP_SITE: "https://zulip.example",
+    ZULIP_CHANNEL_ID: "12",
+    ZULIP_BOT_EMAIL: "bot@example.test",
+    ZULIP_API_KEY: "test-key",
+  });
+  const key = { "Idempotency-Key": crypto.randomUUID() };
+  const made = await request("/reports", "POST", reportInput, "alice", key);
+  assert.equal(made.status, 201);
+  await request("/reports", "POST", reportInput, "alice", key);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM outbox_events WHERE type='zulip'").get()!
+      .n,
+    1,
+  );
+  const id = made.body.id;
+  const revision = await request(`/reports/${id}/revisions`, "POST", {
+    ...reportInput,
+    expected_revision: 1,
+  });
+  assert.equal(revision.status, 201);
+  const cm = await request(
+    `/reports/${id}/comments`,
+    "POST",
+    { body: "hello", revision_no: 2 },
+    "bob",
+  );
+  assert.equal(cm.status, 201);
+  const events = db
+    .prepare(
+      "SELECT * FROM outbox_events WHERE type='zulip' ORDER BY created_at",
+    )
+    .all();
+  assert.equal(events.length, 3);
+  const original = globalThis.fetch;
+  const messages: URLSearchParams[] = [];
+  let status = 200;
+  globalThis.fetch = (async (_url: any, init: any) => {
+    assert.match(init.headers.Authorization, /^Basic /);
+    messages.push(init.body);
+    return new Response(JSON.stringify({ result: "success", id: 99 }), {
+      status,
+      headers: { "Retry-After": "120" },
+    });
+  }) as typeof fetch;
+  try {
+    await deliverZulip(env, events[0]);
+    await deliverZulip(env, events[0]);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].get("topic"), `Report #${id}`);
+    assert.match(messages[0].get("content")!, /\?v=1/);
+    status = 429;
+    await deliverZulip(env, events[1]);
+    assert.equal(
+      db
+        .prepare("SELECT status FROM zulip_deliveries WHERE event_id=?")
+        .get(events[1].id as string)!.status,
+      "retry",
+    );
+    db.prepare(
+      "UPDATE zulip_deliveries SET next_attempt_at=NULL WHERE event_id=?",
+    ).run(events[1].id as string);
+    status = 200;
+    await deliverZulip(env, events[1]);
+    const { queue } = await import("../src/jobs");
+    let acknowledged = false;
+    await queue(
+      {
+        messages: [
+          {
+            body: { event_id: events[2].id },
+            ack() {
+              acknowledged = true;
+            },
+            retry() {
+              assert.fail("unexpected queue retry");
+            },
+          },
+        ],
+      } as any,
+      env,
+    );
+    assert.equal(acknowledged, true);
+    assert.match(messages.at(-1)!.get("content")!, /\?comment=/);
+    assert.ok(messages.every((m) => m.get("topic") === `Report #${id}`));
+    const extra = { ...events[0], id: crypto.randomUUID() };
+    db.prepare(
+      "INSERT INTO outbox_events SELECT ?,type,aggregate_id,?,payload,created_at,NULL,NULL FROM outbox_events WHERE id=?",
+    ).run(extra.id as string, crypto.randomUUID(), events[0].id as string);
+    db.prepare("UPDATE reports SET visibility='hidden' WHERE id=?").run(id);
+    await deliverZulip(env, extra);
+    assert.equal(
+      db
+        .prepare("SELECT status FROM zulip_deliveries WHERE event_id=?")
+        .get(extra.id as string)!.status,
+      "cancelled",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Zulip leases, retry limits, permanent errors and rollback", async () => {
+  const { deliverZulip, zulipText } = await import("../src/zulip");
+  const { db, env, request } = await fixture();
+  Object.assign(env, {
+    ENVIRONMENT: "production",
+    ZULIP_ENABLED: "true",
+    ZULIP_SITE: "https://zulip.example",
+    ZULIP_CHANNEL_ID: "12",
+    ZULIP_BOT_EMAIL: "bot@example.test",
+    ZULIP_API_KEY: "key",
+  });
+  assert.equal((await request("/reports", "POST", reportInput)).status, 201);
+  const event = db
+    .prepare("SELECT * FROM outbox_events WHERE type='zulip'")
+    .get()!;
+  const original = globalThis.fetch;
+  let calls = 0;
+  let status = 503;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response("{}", { status });
+  }) as typeof fetch;
+  try {
+    db.prepare(
+      "INSERT INTO zulip_deliveries(event_id,status,attempts,lease_until) VALUES(?,'sending',1,?)",
+    ).run(event.id as string, new Date(Date.now() + 60000).toISOString());
+    await deliverZulip(env, event);
+    assert.equal(calls, 0);
+    db.prepare(
+      "UPDATE zulip_deliveries SET lease_until='2000',attempts=7 WHERE event_id=?",
+    ).run(event.id as string);
+    await deliverZulip(env, event);
+    assert.equal(calls, 1);
+    assert.equal(
+      db.prepare("SELECT status FROM zulip_deliveries").get()!.status,
+      "failed",
+    );
+    db.prepare(
+      "UPDATE zulip_deliveries SET status='pending',attempts=0,next_attempt_at=NULL",
+    ).run();
+    status = 401;
+    await deliverZulip(env, event);
+    assert.equal(
+      db.prepare("SELECT status FROM zulip_deliveries").get()!.status,
+      "failed",
+    );
+    assert.equal(
+      db.prepare("SELECT attempts FROM zulip_deliveries").get()!.attempts,
+      1,
+    );
+    const before = db.prepare("SELECT COUNT(*) n FROM reports").get()!.n;
+    db.exec(
+      "CREATE TRIGGER reject_zulip BEFORE INSERT ON outbox_events WHEN NEW.type='zulip' BEGIN SELECT RAISE(ABORT,'test rollback'); END",
+    );
+    assert.notEqual(
+      (await request("/reports", "POST", reportInput)).status,
+      201,
+    );
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM reports").get()!.n, before);
+    assert.ok(!zulipText("@**all** `title`\nhello").includes("@"));
+    assert.equal(zulipText("@**all** `title`\nhello").split("`").length, 3);
+  } finally {
+    globalThis.fetch = original;
   }
 });
