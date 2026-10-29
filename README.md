@@ -7,6 +7,7 @@ A public registry for Rust formal verification results.
 - [Zulip](https://proofs-rs.zulipchat.com/)
 - [CLI](cli/README.md)
 - [Development](docs/development.md)
+- [Zulip announcements setup](docs/zulip-notifications.md)
 
 For local UI development, run `npm ci` once, then `npm run dev:demo` and open
 [the demo scenarios](http://127.0.0.1:8787/__demo). The demo seeds local D1/R2,

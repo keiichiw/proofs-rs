@@ -12,6 +12,7 @@
   },
   "dev": { "ip": "127.0.0.1", "port": 8787 },
   "vars": {
+    "ZULIP_ENABLED": "false",
     "ENVIRONMENT": "local-demo",
     "APP_ORIGIN": "http://127.0.0.1:8787",
     "EXTERNAL_FETCH_DISABLED": "true",

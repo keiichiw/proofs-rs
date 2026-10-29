@@ -1,0 +1,63 @@
+name: Notify deployment on Discord
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      result:
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: false
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send deployment result
+        uses: actions/github-script@v7
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          DEPLOY_RESULT: ${{ inputs.result }}
+        with:
+          script: |
+            if (!process.env.DISCORD_WEBHOOK_URL) {
+              core.warning('DISCORD_WEBHOOK_URL is not configured; skipping deployment notification.');
+              return;
+            }
+            const success = process.env.DEPLOY_RESULT === 'success';
+            const sha = context.payload.pull_request?.head.sha || context.sha;
+            const ref = context.payload.pull_request?.head.ref || context.ref;
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            try {
+              const url = new URL(process.env.DISCORD_WEBHOOK_URL);
+              url.searchParams.set('wait', 'true');
+              const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(15000),
+                body: JSON.stringify({
+                  allowed_mentions: { parse: [] },
+                  embeds: [{
+                    title: `${process.env.DEPLOY_ENVIRONMENT}: deploy ${success ? 'succeeded' : 'failed'}`,
+                    color: success ? 0x2ecc71 : 0xe74c3c,
+                    url: runUrl,
+                    fields: [
+                      { name: 'Repository', value: `${context.repo.owner}/${context.repo.repo}` },
+                      { name: 'Workflow', value: context.workflow },
+                      { name: 'Ref', value: ref },
+                      { name: 'Commit', value: sha },
+                    ],
+                  }],
+                }),
+              });
+              if (!response.ok) core.warning(`Discord notification failed (HTTP ${response.status}).`);
+            } catch {
+              // Request errors may contain the secret webhook URL; do not log them.
+              core.warning('Discord notification failed (network error, timeout, or invalid webhook URL).');
+            }

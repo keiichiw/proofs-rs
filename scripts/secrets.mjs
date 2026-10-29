@@ -21,6 +21,10 @@ if (process.env.GITHUB_CLIENT_SECRET)
   values.GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 if (process.env.CLOUDFLARE_D1_TOKEN)
   values.CLOUDFLARE_D1_TOKEN = process.env.CLOUDFLARE_D1_TOKEN;
+if (target === "production" && config.vars.ZULIP_ENABLED === "true") {
+  if (!process.env.ZULIP_API_KEY) throw Error("Missing ZULIP_API_KEY");
+  values.ZULIP_API_KEY = process.env.ZULIP_API_KEY;
+}
 for (const [name, text] of Object.entries(values)) {
   const response = await fetch(endpoint, {
     method: "PUT",
