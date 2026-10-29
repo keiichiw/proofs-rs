@@ -14,6 +14,7 @@ const execute = new (Object.getPrototypeOf(async function () {}).constructor)(
   "context",
   "core",
   "fetch",
+  "github",
   script,
 );
 
@@ -24,14 +25,20 @@ async function notify(
     pr?: boolean;
     status?: number;
     fail?: boolean;
+    message?: string;
+    push?: boolean;
+    lookupFail?: boolean;
+    pushSha?: string;
   } = {},
 ) {
   const warnings: string[] = [];
+  const lookups: { owner: string; repo: string; ref: string }[] = [];
   const requests: {
     url: URL;
     body: {
       embeds: {
         title: string;
+        description: string;
         color: number;
         url: string;
         fields: { name: string; value: string }[];
@@ -58,8 +65,21 @@ async function notify(
       sha: "merge-sha",
       ref: "refs/heads/main",
       payload: options.pr
-        ? { pull_request: { head: { sha: "head-sha", ref: "staging/test" } } }
-        : {},
+        ? {
+            pull_request: {
+              number: 88,
+              title: "Fix report tool links",
+              head: { sha: "head-sha", ref: "staging/test" },
+            },
+          }
+        : options.push
+          ? {
+              head_commit: {
+                id: options.pushSha ?? "merge-sha",
+                message: options.message ?? "Fix report tool links",
+              },
+            }
+          : {},
     },
     { warning: (message: string) => warnings.push(message) },
     async (url: URL, request: { body: string }) => {
@@ -70,8 +90,27 @@ async function notify(
         status: options.status ?? 200,
       };
     },
+    {
+      rest: {
+        repos: {
+          getCommit: async (args: {
+            owner: string;
+            repo: string;
+            ref: string;
+          }) => {
+            lookups.push(args);
+            if (options.lookupFail) throw new Error("lookup failed");
+            return {
+              data: {
+                commit: { message: options.message ?? "Fix report tool links" },
+              },
+            };
+          },
+        },
+      },
+    },
   );
-  return { warnings, requests };
+  return { warnings, requests, lookups };
 }
 
 test("Discord deployment notification sends success/failure and the PR head with a run-attempt link", async () => {
@@ -86,7 +125,7 @@ test("Discord deployment notification sends success/failure and the PR head with
     const embed = body.embeds[0];
     assert.equal(
       embed.title,
-      `staging: deploy ${result === "success" ? "succeeded" : "failed"}`,
+      `staging: deploy ${result === "success" ? "succeeded" : "failed"} — Fix report tool links`,
     );
     assert.equal(embed.color, result === "success" ? 0x2ecc71 : 0xe74c3c);
     assert.equal(
@@ -95,13 +134,68 @@ test("Discord deployment notification sends success/failure and the PR head with
     );
     assert.equal(
       embed.fields.find((field) => field.name === "Commit")?.value,
-      "head-sha",
+      "[head-sh](https://github.com/proofs-rs/proofs-rs/commit/head-sha)",
     );
     assert.equal(
       embed.fields.find((field) => field.name === "Ref")?.value,
       "staging/test",
     );
   }
+});
+
+test("production merge notifications show the PR title, full message and PR link", async () => {
+  const message =
+    "Merge pull request #88 from keiichiw/codex/reports-tool-filter\n\nFix report tool links and automatically apply tool filters";
+  const { warnings, requests, lookups } = await notify("success", {
+    push: true,
+    message,
+  });
+  const embed = requests[0].body.embeds[0];
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(lookups, []);
+  assert.equal(
+    embed.title,
+    "staging: deploy succeeded — Fix report tool links and automatically apply tool filters",
+  );
+  assert.match(
+    embed.description,
+    /Fix report tool links and automatically apply tool filters/,
+  );
+  assert.equal(
+    embed.fields.find((field) => field.name === "Pull request")?.value,
+    "[#88](https://github.com/proofs-rs/proofs-rs/pull/88)",
+  );
+});
+
+test("manual runs fetch the exact target commit and lookup errors still send a notification", async () => {
+  for (const options of [{}, { push: true, pushSha: "different-sha" }]) {
+    const { requests, lookups } = await notify("success", options);
+    assert.deepEqual(lookups, [
+      { owner: "proofs-rs", repo: "proofs-rs", ref: "merge-sha" },
+    ]);
+    assert.match(requests[0].body.embeds[0].title, /Fix report tool links$/);
+  }
+  const failed = await notify("failure", { lookupFail: true });
+  assert.equal(failed.warnings.length, 1);
+  assert.equal(failed.requests.length, 1);
+  assert.equal(
+    failed.requests[0].body.embeds[0].description,
+    "Commit message unavailable.",
+  );
+});
+
+test("long commit messages fit Discord embed limits and escape Markdown", async () => {
+  const { requests } = await notify("success", {
+    push: true,
+    message: "*[change](https://example.com)* ".repeat(400),
+  });
+  const embed = requests[0].body.embeds[0];
+  assert.equal(embed.title.length, 256);
+  assert.equal(embed.description.length, 3500);
+  assert.ok(
+    embed.description.startsWith("\\*\\[change\\]\\(https://example.com\\)\\*"),
+  );
+  assert.ok(embed.description.endsWith("…"));
 });
 
 test("missing webhook skips sending; failed deliveries warn without exposing the webhook", async () => {

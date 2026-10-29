@@ -152,6 +152,11 @@ Staging, Production and the one-time dependency rollout send a notification afte
 success or failure, including build, migration and smoke-check failures. Production
 and the rollout also notify when prerequisite CI fails. Messages include the
 environment, repository, workflow, target commit/ref and a link to the run attempt.
+The notification title includes the change summary (the PR title for a merge),
+and the body includes the commit message and links to the commit and PR when
+available. Manual runs fetch the message for the exact target SHA; if that lookup
+fails, the status and commit link are still sent. Long titles/messages are truncated
+to fit Discord's embed limits.
 Skipped and cancelled deployments do not send a notification unless prerequisite
 CI failed. Notifications disable mentions. A missing webhook or a failed delivery
 produces an Actions warning without changing the deployment result.
