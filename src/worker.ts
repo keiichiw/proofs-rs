@@ -1,3 +1,5 @@
+import { resolveSocialCard } from "./social-card";
+import { socialImage, renderSocialImage } from "./social-image";
 import { seoResponse } from "./seo";
 import { isSitePage, sitePage, siteAction, bookPage } from "./site";
 import { generateSpecs } from "hono-openapi";
@@ -57,6 +59,36 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+app.get("/og/page.png", async (c) => {
+  const path = c.req.query("path") || "/";
+  if (!path.startsWith("/") || path.startsWith("//") || /[\\\r\n]/.test(path))
+    return c.notFound();
+  const url = new URL(path, c.env.APP_ORIGIN);
+  try {
+    const card = await resolveSocialCard(url, async (apiPath) => {
+      // Anonymous requests preserve public API visibility checks and never forward credentials.
+      const response = await app.fetch(
+        new Request(new URL("/api/v1" + apiPath, c.env.APP_ORIGIN)),
+        c.env,
+      );
+      if (!response.ok)
+        throw new Fault(response.status, "social_source_unavailable");
+      return response.json();
+    });
+    if (!card) return c.notFound();
+    return renderSocialImage(c.env, c.req.raw, { ...card, corner: "" });
+  } catch (error) {
+    const missing = error instanceof Fault && [400, 404].includes(error.status);
+    return new Response(
+      missing ? "Not found" : "Image temporarily unavailable",
+      {
+        status: missing ? 404 : 503,
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
+  }
+});
+app.get("/og/report/:id/:image", (c) => socialImage(c.env, c.req.raw));
 // Documentation is public and independent of cookies, tokens and database access.
 app.get("/openapi.json", async (c) =>
   c.json(

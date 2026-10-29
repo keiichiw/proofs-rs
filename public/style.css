@@ -913,3 +913,22 @@ textarea {
 .report-outcome {
   font-weight: 600;
 }
+
+.report-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.report-share a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+}
+.report-share img {
+  width: 1em;
+  height: 1em;
+  object-fit: contain;
+}
