@@ -97,7 +97,7 @@ test("production bundle excludes demo authentication and fixture modules", async
     metafile: true,
     platform: "browser",
     format: "esm",
-    external: ["node:*", "cloudflare:*"],
+    external: ["node:*", "cloudflare:*", "*.wasm"],
   });
   assert.ok(
     !Object.keys(result.metafile!.inputs).some((path) =>
@@ -152,6 +152,7 @@ test(
         platform: "browser",
         format: "esm",
         external: ["node:*", "cloudflare:*"],
+        loader: { ".wasm": "copy" },
         banner: {
           js: 'globalThis.fetch = async () => { throw new Error("External network disabled by demo integration test"); };',
         },
@@ -295,6 +296,49 @@ test(
         await compileOffline();
       });
       await start();
+      const image = await fetch(origin + `/og/report/${ids.report}/1.png`);
+      await delay(300);
+      assert.equal(image.status, 200, output);
+      assert.equal(image.headers.get("Content-Type"), "image/png");
+      const png = Buffer.from(await image.arrayBuffer());
+      assert.equal(png.readUInt32BE(16), 1200);
+      assert.equal(png.readUInt32BE(20), 630);
+      for (const page of [
+        "/",
+        "/crate/findings-demo",
+        `/claim/${ids.claim}`,
+        `/finding/${ids.openFinding}`,
+        "/reports",
+      ]) {
+        const response = await fetch(origin + page);
+        assert.equal(response.status, 200, page);
+        const document = new JSDOM(await response.text()).window.document;
+        const imageURL = document
+          .querySelector('meta[property="og:image"]')
+          ?.getAttribute("content");
+        assert(imageURL, page);
+        const imageResponse = await fetch(imageURL);
+        assert.equal(imageResponse.status, 200, page);
+        assert.equal(imageResponse.headers.get("Content-Type"), "image/png");
+        await imageResponse.arrayBuffer();
+      }
+      for (const page of [
+        "/account",
+        "/settings",
+        "/claim/missing",
+        "/og/page.png",
+      ]) {
+        assert.equal(
+          (
+            await fetch(
+              origin + "/og/page.png?path=" + encodeURIComponent(page),
+            )
+          ).status,
+          404,
+          page,
+        );
+      }
+
       const docs = await request("/book/");
       assert.equal(docs.status, 200);
       const docsHTML = await docs.text();
