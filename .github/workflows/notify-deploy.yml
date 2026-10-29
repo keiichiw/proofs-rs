@@ -33,7 +33,35 @@ jobs:
             const success = process.env.DEPLOY_RESULT === 'success';
             const sha = context.payload.pull_request?.head.sha || context.sha;
             const ref = context.payload.pull_request?.head.ref || context.ref;
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            const repoUrl = `${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}`;
+            const runUrl = `${repoUrl}/actions/runs/${context.runId}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            const pr = context.payload.pull_request;
+            let message = pr?.title || (context.payload.head_commit?.id === sha ? context.payload.head_commit.message : '');
+            if (!message) {
+              try {
+                const { data } = await github.rest.repos.getCommit({ ...context.repo, ref: sha });
+                message = data.commit.message;
+              } catch {
+                core.warning('Could not load the target commit message; sending deployment status with a commit link.');
+              }
+            }
+            // GitHub merge commits put the descriptive PR title after the merge header.
+            const merge = message.match(/^Merge pull request #(\d+)\b/);
+            const summary = (merge ? message.split('\n').slice(1) : message.split('\n'))
+              .map(line => line.trim()).find(Boolean) || sha.slice(0, 7);
+            const status = `${process.env.DEPLOY_ENVIRONMENT}: deploy ${success ? 'succeeded' : 'failed'}`;
+            const escapeMarkdown = text => text.replace(/([\\`*_{}\[\]()<>#|~])/g, '\\$1');
+            const changes = escapeMarkdown(message || 'Commit message unavailable.');
+            const fields = [
+              { name: 'Repository', value: `${context.repo.owner}/${context.repo.repo}` },
+              { name: 'Workflow', value: context.workflow },
+              { name: 'Ref', value: ref },
+              { name: 'Commit', value: `[${sha.slice(0, 7)}](${repoUrl}/commit/${sha})` },
+            ];
+            if (pr || merge) {
+              const number = pr?.number || merge[1];
+              fields.push({ name: 'Pull request', value: `[#${number}](${repoUrl}/pull/${number})` });
+            }
             try {
               const url = new URL(process.env.DISCORD_WEBHOOK_URL);
               url.searchParams.set('wait', 'true');
@@ -44,15 +72,11 @@ jobs:
                 body: JSON.stringify({
                   allowed_mentions: { parse: [] },
                   embeds: [{
-                    title: `${process.env.DEPLOY_ENVIRONMENT}: deploy ${success ? 'succeeded' : 'failed'}`,
+                    title: `${status} — ${summary}`.slice(0, 256),
+                    description: changes.length > 3500 ? `${changes.slice(0, 3499)}…` : changes,
                     color: success ? 0x2ecc71 : 0xe74c3c,
                     url: runUrl,
-                    fields: [
-                      { name: 'Repository', value: `${context.repo.owner}/${context.repo.repo}` },
-                      { name: 'Workflow', value: context.workflow },
-                      { name: 'Ref', value: ref },
-                      { name: 'Commit', value: sha },
-                    ],
+                    fields,
                   }],
                 }),
               });
