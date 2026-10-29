@@ -209,7 +209,9 @@ Issue templates or an Issue template configuration directory, it opens the
 GitHub template chooser with the title and no body. The lookup covers legacy
 Markdown templates in the root, `.github`, and `docs` directories, template/form
 folders, and defaults inherited from the owner's public `.github` repository.
-A failed or incomplete configuration lookup also uses the chooser without a body.
+A failed or incomplete configuration lookup preserves the full draft on a local
+fallback page with a retry link and copy controls, rather than silently dropping
+the body. Authors can retry or copy the draft before opening GitHub’s chooser.
 Successful upstream and template lookups are cached in R2 for five minutes;
 GitHub requests have a shared five-second timeout and require no credentials.
 
