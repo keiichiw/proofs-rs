@@ -218,7 +218,9 @@ app.use("/api/*", async (c, next) => {
     c.req.method === "POST" &&
     c.res.ok &&
     (c.req.path.endsWith("/publish/prepare") ||
-      c.req.path.endsWith("/comments"))
+      c.req.path.endsWith("/comments") ||
+      c.req.path === "/api/v1/reports" ||
+      /^\/api\/v1\/reports\/[^/]+\/revisions$/.test(c.req.path))
   )
     c.executionCtx.waitUntil(dispatch(c.env));
 });
