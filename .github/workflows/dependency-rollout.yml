@@ -55,3 +55,12 @@ jobs:
         run: node scripts/smoke.mjs '${{ steps.resources.outputs.url }}' production
       - name: Rollout summary
         run: echo 'One-time dependency migration and schema-v2 deployment succeeded. Private backups remain in the private R2 archive. Normal Production deployments now require the completed migration gate.' >> "$GITHUB_STEP_SUMMARY"
+  notify:
+    needs: [ci, migrate]
+    if: always() && (needs.migrate.result == 'success' || needs.migrate.result == 'failure' || needs.ci.result == 'failure')
+    uses: ./.github/workflows/notify-deploy.yml
+    with:
+      environment: production (dependency rollout)
+      result: ${{ needs.ci.result == 'failure' && 'failure' || needs.migrate.result }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
