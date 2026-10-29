@@ -129,8 +129,45 @@ test("GitHub issue preparation uses the upstream, escapes the draft and leaves F
           : previousGet(key),
     });
     const response = await html(`/finding/${id}/github-issue`);
-    assert.equal(response.status, 302);
     assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    if (hasTemplates === null) {
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("Location"), null);
+      const dom = new JSDOM(await response.text());
+      const document = dom.window.document;
+      assert.match(
+        document.querySelector('[role="alert"]')!.textContent!,
+        /Unable to check/,
+      );
+      assert.equal(
+        document.querySelector<HTMLInputElement>("#issue-title")!.value,
+        input.title,
+      );
+      const body =
+        document.querySelector<HTMLTextAreaElement>("#issue-body")!.value;
+      assert.ok(body.startsWith(before.body));
+      assert.ok(body.includes(`https://example.test/report/${report}?v=1`));
+      assert.equal(
+        document.querySelectorAll("[data-issue-draft] script").length,
+        0,
+      );
+      assert.equal(
+        [...document.querySelectorAll("a")]
+          .find((a) => a.textContent === "Retry template lookup")!
+          .getAttribute("href"),
+        `/finding/${id}/github-issue`,
+      );
+      const link = new URL(
+        document.querySelector<HTMLAnchorElement>('a[href*="/issues/new"]')!
+          .href,
+      );
+      assert.equal(link.pathname, "/upstream/project/issues/new/choose");
+      assert.equal(link.searchParams.has("body"), false);
+      dom.window.close();
+      assert.deepEqual((await request(`/findings/${id}`)).body, before);
+      continue;
+    }
+    assert.equal(response.status, 302);
     const url = new URL(response.headers.get("Location")!);
     assert.equal(url.origin, "https://github.com");
     assert.equal(
