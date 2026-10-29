@@ -196,57 +196,32 @@ For existing installations, see [the migration procedure](dependency-migration.m
 
 ## Finding to GitHub Issue
 
-Report authors can choose **Create GitHub issue** on a saved Finding or its Report.
-Findings without an Issue link also offer **Add issue URL**, which opens the link
-registration form directly. Both prompts disappear once an Issue link is registered;
-PR links alone do not hide them, and removing the Issue link restores the prompts.
-The preparation page uses the crate's current `repository` metadata from crates.io,
-not the recorded verification repository (which may be a fork). Successful metadata
-lookups are cached in R2 for five minutes. Only HTTPS GitHub repository URLs are
-supported; missing or unavailable metadata offers a retry without guessing a target.
+Report authors can choose **Create GitHub issue** on a saved Finding or its Report
+when crates.io lists a supported HTTPS GitHub upstream repository. The recorded
+verification repository, which may be a fork, is not used. Missing, unsupported,
+or unavailable upstream metadata hides the prompts. Findings without an Issue
+link also offer **Add issue URL**. Both prompts disappear once an Issue link is
+registered; PR links alone do not hide them. Removing the Issue link restores them.
+The ordinary **Add issue or PR link** form remains available for other hosts.
 
-The GitHub creation page is prefilled with the Finding title and complete Markdown
-body, followed by one short sentence about formal verification with a visible URL
-to the origin Report revision. Metadata is not appended separately. If the
-encoded URL exceeds 8 KiB, copy the body from the preparation page and paste it into
-GitHub; unusually long titles also fall back to copying. The page works without
-JavaScript through text selection; copy buttons additionally use the Clipboard API.
+**Create GitHub issue** redirects directly to GitHub. When the repository has
+Issue templates or an Issue template configuration directory, it opens the
+GitHub template chooser with the title and no body. The lookup covers legacy
+Markdown templates in the root, `.github`, and `docs` directories, template/form
+folders, and defaults inherited from the owner's public `.github` repository.
+A failed or incomplete configuration lookup also uses the chooser without a body.
+Successful upstream and template lookups are cached in R2 for five minutes;
+GitHub requests have a shared five-second timeout and require no credentials.
+
+When no templates are configured, GitHub's creation page is prefilled with the
+Finding title and complete Markdown body, followed by one sentence linking to
+the origin Report revision. If the encoded URL exceeds 8 KiB, a local fallback
+page lets authors copy the complete body; unusually long titles also fall back
+to copying. Text selection works without JavaScript, and copy buttons use the
+Clipboard API when available.
+
 No GitHub write permission is requested and no issue is posted by the service.
-After posting on GitHub, return to **Add issue or PR link** to register its URL and
-edit the upstream status as appropriate. Opening the preparation page does not
-change Finding state. CLI previews do not expose this action. The local demo uses
-synthetic repository fixtures and never fetches crates.io for this feature.
-
-## Local CLI preview development
-
-`preview/server.ts` runs in Node.js 24+ and uses the same page shell, report/claim
-views, Markdown sanitizer, and recorded-run renderer as the Worker. Rust owns
-local configuration, recorded runs, read-only service requests, and publication
-state lookup. Versioned JSON Lines over child stdin/stdout carry snapshots;
-credentials never cross this boundary. Node stdout is reserved for this protocol.
-
-After changing shared views, public assets, or preview code, run
-`npm run build:preview`. Commit `cli/preview/server.cjs` and
-`cli/preview/THIRD_PARTY_NOTICES.txt`; `npm run check:preview` checks deterministic
-regeneration in CI and the CLI release workflow. Cargo packages these files and
-requires no npm build during installation. From the repository root:
-
-```sh
-npm run build:preview
-cargo build --manifest-path cli/Cargo.toml --locked
-python3 cli/tests/preview.py cli/target/debug/cargo-proofs
-npm run check:preview
-```
-
-The E2E test uses a local read-only mock service and a temporary project outside
-the source checkout. It checks new and revised reports, data reload, missing API
-metadata, state preservation, HTTP boundaries, and child-process cleanup.
-
-Use a separate Cargo target directory for builds from the packaged archive (CI
-uses `cli/target/package-check`) so they cannot replace the development binary.
-After rebuilding the bundle and CLI, stop and restart any running preview to pick
-up UI changes. Browser reload alone refreshes configuration and report data.
-
-The preview maps API names in the report to local claim pages, while the ordinary
-site keeps its API catalogue links. Metadata links use the configured service
-origin. Shared-view changes must preserve both sets of link behavior.
+After posting on GitHub, return to **Add issue or PR link** to register its URL
+and edit the upstream status as appropriate. Opening the action does not change
+Finding state. CLI previews do not expose it. The local demo uses synthetic
+repository and template fixtures without fetching crates.io or GitHub.
