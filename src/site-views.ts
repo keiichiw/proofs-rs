@@ -88,13 +88,16 @@ export function createViews(
   const plural = (n: number, noun: string, nouns = noun + "s") =>
     `${n} ${n === 1 ? noun : nouns}`;
   function reportSummary(c: any, hideCrate = false) {
+    const toolchainLabel = savedToolchainLabel(c);
     const meta = [
       hideCrate
         ? ""
         : `<a href="${crateHref(c.crate, c.version)}">${esc(c.crate)} ${esc(c.version)}</a>`,
       c.tool
-        ? savedToolchainLabel(c)
-          ? esc(savedToolchainLabel(c))
+        ? toolchainLabel
+          ? c.tool_id
+            ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(toolchainLabel)}</a>`
+            : esc(toolchainLabel)
           : `${c.tool_id ? `<a href="/reports?tool=${enc(c.tool_id)}">${esc(c.tool)}</a>` : esc(c.tool)} ${shortVersion(c.tool_version ?? "")}`
         : "",
       plural(c.claim_count ?? 0, "claim"),

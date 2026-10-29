@@ -30,6 +30,11 @@
         form.requestSubmit();
       });
   }
+  for (const form of document.querySelectorAll("form.report-filters")) {
+    form.querySelector('select[name="tool"]').addEventListener("change", () => {
+      form.requestSubmit();
+    });
+  }
   // Narrow the crate API catalogue in place; without JS every API stays listed.
   for (const form of document.querySelectorAll("form[data-api-filter]")) {
     const text = form.querySelector('input[type="search"]');
