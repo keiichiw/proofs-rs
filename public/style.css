@@ -932,3 +932,12 @@ textarea {
   height: 1em;
   object-fit: contain;
 }
+.report-share-help {
+  margin-bottom: 12px;
+}
+.report-share-help p {
+  margin: 0 0 8px;
+}
+.report-share-help textarea {
+  width: 100%;
+}

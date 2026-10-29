@@ -5,6 +5,29 @@
     if (url.origin === location.origin)
       location.replace(url.pathname + url.search + url.hash);
   }
+  for (const share of document.querySelectorAll("[data-report-share]")) {
+    const help = share.querySelector("[data-share-help]");
+    const text = share.querySelector("textarea");
+    const status = share.querySelector("[data-share-status]");
+    share
+      .querySelector("[data-share-bluesky]")
+      .addEventListener("click", () => {
+        help.hidden = false;
+      });
+    share
+      .querySelector("[data-copy-share]")
+      .addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text.value);
+          status.textContent = " Copied";
+        } catch {
+          share.querySelector("[data-share-manual]").hidden = false;
+          text.focus();
+          text.select();
+          status.textContent = " Selected — use your browser’s Copy command";
+        }
+      });
+  }
   for (const button of document.querySelectorAll("button[data-copy-formal]")) {
     button.addEventListener("click", async () => {
       const details = button.closest("details");

@@ -932,6 +932,15 @@ textarea {
   height: 1em;
   object-fit: contain;
 }
+.report-share-help {
+  margin-bottom: 12px;
+}
+.report-share-help p {
+  margin: 0 0 8px;
+}
+.report-share-help textarea {
+  width: 100%;
+}
 `},"/theme-a.css":{type:"text/css; charset=utf-8",content:`/* Presentation only. The unchanged style.css is the base theme. */
 /* Palette and typefaces follow rustdoc's light theme. */
 html:not([data-theme="base"]) {
@@ -1711,6 +1720,29 @@ html:not([data-theme="base"])
     const url = new URL(location.hash.slice(1), location.origin);
     if (url.origin === location.origin)
       location.replace(url.pathname + url.search + url.hash);
+  }
+  for (const share of document.querySelectorAll("[data-report-share]")) {
+    const help = share.querySelector("[data-share-help]");
+    const text = share.querySelector("textarea");
+    const status = share.querySelector("[data-share-status]");
+    share
+      .querySelector("[data-share-bluesky]")
+      .addEventListener("click", () => {
+        help.hidden = false;
+      });
+    share
+      .querySelector("[data-copy-share]")
+      .addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(text.value);
+          status.textContent = " Copied";
+        } catch {
+          share.querySelector("[data-share-manual]").hidden = false;
+          text.focus();
+          text.select();
+          status.textContent = " Selected \u2014 use your browser\u2019s Copy command";
+        }
+      });
   }
   for (const button of document.querySelectorAll("button[data-copy-formal]")) {
     button.addEventListener("click", async () => {

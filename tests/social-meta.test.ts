@@ -113,7 +113,7 @@ test("public cards use page types, strip action parameters and pin revisions", a
 });
 
 import { reportShare } from "../web/report-share";
-test("report shares include proofs.rs and pin the shown revision", () => {
+test("report shares use only the title and URL and pin the shown revision", () => {
   const url = "https://proofs.rs/report/9?v=2";
   const title = "日本語 & ".repeat(40);
   const doc = new JSDOM(reportShare(title, url, false)).window.document;
@@ -126,13 +126,14 @@ test("report shares include proofs.rs and pin the shown revision", () => {
   const bluesky = new URL(links[1].href);
   assert.equal(x.searchParams.get("url"), url);
   const text = x.searchParams.get("text")!;
-  assert.ok(text.endsWith("… · proofs.rs"));
-  assert.equal(Array.from(text).length, 162);
+  assert.ok(text.endsWith("…"));
+  assert.ok(!text.includes("proofs.rs"));
+  assert.equal(Array.from(text).length, 150);
   assert.equal(bluesky.searchParams.get("text"), `${text}\n${url}`);
   assert.equal(
     doc.querySelectorAll('img[alt=""][aria-hidden="true"]').length,
     2,
   );
-  assert.equal(doc.querySelector("button"), null);
+  assert.equal(doc.querySelector("textarea")?.value, `${text}\n${url}`);
   assert.equal(reportShare(title, url, true), "");
 });
