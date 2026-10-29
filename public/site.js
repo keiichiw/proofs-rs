@@ -5,7 +5,9 @@
     if (url.origin === location.origin)
       location.replace(url.pathname + url.search + url.hash);
   }
-  for (const button of document.querySelectorAll("button[data-copy-formal]")) {
+  for (const button of document.querySelectorAll(
+    "button[data-copy-formal], button[data-copy-badge]",
+  )) {
     button.addEventListener("click", async () => {
       const details = button.closest("details");
       const code = details.querySelector("code");

@@ -227,3 +227,25 @@ up UI changes. Browser reload alone refreshes configuration and report data.
 The preview maps API names in the report to local claim pages, while the ordinary
 site keeps its API catalogue links. Metadata links use the configured service
 origin. Shared-view changes must preserve both sets of link behavior.
+
+## Crate README badges
+
+Each crate page includes a Shields.io badge and a **Copy Markdown** button under
+**README badge**. Badges are pinned to the selected crate version. The public
+`GET /api/v1/crates/:name/:version/badge` endpoint returns Shields.io endpoint JSON:
+
+```json
+{
+  "schemaVersion": 1,
+  "label": "proofs.rs",
+  "message": "160 claims",
+  "color": "blue"
+}
+```
+
+The count includes claims in the latest revisions of public, non-withdrawn
+reports for that release, including zero when no such claims exist. Unknown
+crates or releases return 404. Use
+`https://img.shields.io/endpoint?url=<URL-encoded endpoint URL>` as the image URL
+and link it to the crate page with `?version=...`. Shields.io caches the image,
+so changes may take time to appear.

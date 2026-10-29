@@ -26,8 +26,8 @@ app.use("*", async (c, next) => {
   c.header(
     "Content-Security-Policy",
     c.req.path === "/api/docs"
-      ? `default-src 'self'; script-src 'self' 'nonce-${c.get("requestId")}' https://cdn.jsdelivr.net https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
-      : "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      ? `default-src 'self'; script-src 'self' 'nonce-${c.get("requestId")}' https://cdn.jsdelivr.net https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://img.shields.io; font-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`
+      : "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data: https://img.shields.io; connect-src 'self' https://cloudflareinsights.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   );
   if (c.env.ENVIRONMENT !== "production")
     c.header("X-Robots-Tag", "noindex, nofollow");
