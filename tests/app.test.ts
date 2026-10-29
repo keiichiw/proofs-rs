@@ -1500,6 +1500,44 @@ test("report list filters by keyword, tool and author", async () => {
   assert.equal(d.querySelectorAll("article.claim-item").length, 11);
   assert.equal(d.querySelector(".report-filters a"), null);
   assert.equal(d.querySelector(".report-filters option[selected]"), null);
+  const filterDOM = new JSDOM(d.documentElement.outerHTML, {
+    url: "https://example.test/reports?cursor=old",
+    runScripts: "outside-only",
+  });
+  filterDOM.window.eval(
+    readFileSync(new URL("../public/site.js", import.meta.url), "utf8"),
+  );
+  const form =
+    filterDOM.window.document.querySelector<HTMLFormElement>(
+      ".report-filters",
+    )!;
+  const toolSelect = form.querySelector(
+    'select[name="tool"]',
+  )! as unknown as { value: string; dispatchEvent(event: Event): boolean };
+  form.querySelector<HTMLInputElement>('[name="q"]')!.value = "verification";
+  form.querySelector<HTMLInputElement>('[name="author"]')!.value = "demo_mira";
+  const submissions: string[] = [];
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submissions.push(
+      new URLSearchParams(
+        new filterDOM.window.FormData(form) as any,
+      ).toString(),
+    );
+  });
+  toolSelect.value = "demo-kani";
+  toolSelect.dispatchEvent(
+    new filterDOM.window.Event("change", { bubbles: true }),
+  );
+  toolSelect.value = "";
+  toolSelect.dispatchEvent(
+    new filterDOM.window.Event("change", { bubbles: true }),
+  );
+  assert.deepEqual(submissions, [
+    "q=verification&tool=demo-kani&author=demo_mira",
+    "q=verification&tool=&author=demo_mira",
+  ]);
+  filterDOM.window.close();
   d = await page(
     `/reports?q=verification&tool=demo-kani&author=demo_mira&cursor=${cursor}`,
   );
