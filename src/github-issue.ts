@@ -193,7 +193,7 @@ export function githubIssueDraft(
   ).href;
   const body = [
     finding.body,
-    `This issue was discovered as part of formal verification work on proofs.rs; see ${reportURL} for details.`,
+    `---\nThis issue was discovered as part of formal verification work on proofs.rs; see ${reportURL} for details.`,
   ].join("\n\n");
   return { title: finding.title, body };
 }

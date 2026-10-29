@@ -237,7 +237,7 @@ test("issue draft preserves Markdown and provenance; URLs fall back without trun
   assert.equal(
     draft.body,
     finding.body +
-      "\n\nThis issue was discovered as part of formal verification work on proofs.rs; see https://proofs.example/report/42?v=2 for details.",
+      "\n\n---\nThis issue was discovered as part of formal verification work on proofs.rs; see https://proofs.example/report/42?v=2 for details.",
   );
   const full = githubIssueURL("https://github.com/upstream/repo", draft);
   assert.equal(full.prefill, "all");

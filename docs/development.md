@@ -214,8 +214,8 @@ Successful upstream and template lookups are cached in R2 for five minutes;
 GitHub requests have a shared five-second timeout and require no credentials.
 
 When no templates are configured, GitHub's creation page is prefilled with the
-Finding title and complete Markdown body, followed by one sentence linking to
-the origin Report revision. If the encoded URL exceeds 8 KiB, a local fallback
+Finding title and complete Markdown body, followed by a horizontal rule (`---`)
+and one sentence linking to the origin Report revision. If the encoded URL exceeds 8 KiB, a local fallback
 page lets authors copy the complete body; unusually long titles also fall back
 to copying. Text selection works without JavaScript, and copy buttons use the
 Clipboard API when available.
