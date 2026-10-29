@@ -7,6 +7,7 @@ export interface ViewOptions {
   external?: (path: string) => string;
   claim?: (id: string, revision: unknown) => string;
   preview?: boolean;
+  addIssue?: boolean;
 }
 type Crumb = { label: string; href: string };
 export function createViews(
@@ -233,13 +234,22 @@ export function createViews(
     editable = false,
     apis: any[] = [],
     compact = false,
+    canReportIssue = editable,
   ) {
     const permalink = `/finding/${enc(f.id)}`;
+    const needsIssue =
+      canReportIssue &&
+      f.github_issue_available === true &&
+      !options.preview &&
+      !f.draft &&
+      !f.withdrawn_at &&
+      !f.links.some((link: any) => link.kind === "issue" && !link.deleted_at);
     return `<article class="finding" id="finding-${esc(f.id)}"><h3><a href="${permalink}">${esc(f.title)}</a></h3>
       ${f.validity !== "reported" || f.upstream_status !== "not_reported" ? `<p class="meta">${statusBadge(f.validity)}${f.upstream_status !== "not_reported" ? ` ${statusBadge(f.upstream_status)}` : ""} (author reported)</p>` : ""}${f.withdrawn_at ? `<p class="meta">${badge("Report withdrawn", "warn")}</p>` : ""}
       ${f.apis.length ? `<p>${f.apis.map((a: any) => (a.unverified ? `<code>${esc(a.display_path)}</code> (API unverified)` : `<a href="${esc(external(`/api/${enc(a.id)}`))}"><code>${esc(a.display_path)}</code></a>`)).join(", ")}</p>` : ""}
       ${f.draft ? '<p class="meta">Local Finding draft · Not submitted</p>' : `<p class="meta">Found in <a href="${esc(external(`/report/${f.report_id}?v=${f.origin_revision_no}`))}">Report #${f.report_id} v${f.origin_revision_no}</a> · Updated ${date(f.updated_at)}</p>`}
       ${f.duplicate_of ? `<p>Duplicate of <a href="${esc(external(`/finding/${enc(f.duplicate_of)}`))}">${esc(f.duplicate_of)}</a></p>` : ""}
+      ${needsIssue ? `<div class="form-actions finding-issue-actions"><a class="button-link" href="${permalink}/github-issue">Create GitHub issue</a> <span>or</span> <a class="button-link" href="${permalink}?add_issue=1#finding-link-${enc(f.id)}">Add issue URL</a></div>` : ""}
       ${
         compact
           ? ""
@@ -247,7 +257,7 @@ export function createViews(
       ${f.links.length ? `<div class="finding-related-links"><h4>Related links</h4><ul class="finding-links">${f.links.map((l: any) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(findingLinkLabel(l))}</a>${editable ? action("delete-finding-link", { id: f.id, link_id: l.id, edit_version: f.edit_version, _back: permalink }, "Remove link") : ""}</li>`).join("")}</ul></div>` : ""}
       <div class="markdown-body">${renderMarkdown(f.body, 3)}</div>${f.evidence_url ? `<p><a href="${esc(f.evidence_url)}" target="_blank" rel="noopener noreferrer">Evidence</a></p>` : ""}
       ${f.draft ? "" : `<details><summary>Change history</summary>${f.events ? `<ol>${f.events.map((e: any) => `<li>v${e.edit_version} · ${esc(e.action)} · ${date(e.created_at)}<pre>${esc(JSON.stringify(JSON.parse(e.payload), null, 2))}</pre></li>`).join("")}</ol>` : `<p><a href="${esc(external(`/finding/${enc(f.id)}`))}">View full history</a></p>`}</details>`}
-      ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}`
+      ${editable ? `<details><summary>Edit</summary>${findingForm(f.report_id, f, apis)}</details><details id="finding-link-${esc(f.id)}"${options.addIssue ? " open" : ""}><summary>Add issue or PR link</summary>${findingLinkForm(f)}</details>` : ""}`
       } </article>`;
   }
   function findingForm(reportID: number, f?: any, apis: any[] = []) {

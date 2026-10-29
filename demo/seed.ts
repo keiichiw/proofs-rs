@@ -18,6 +18,26 @@ const quote = (value: unknown): string =>
 const insert = (table: string, row: Record<string, unknown>) =>
   `INSERT OR IGNORE INTO ${table}(${Object.keys(row).join(",")}) VALUES(${Object.values(row).map(quote).join(",")})`;
 
+async function seedRepositoryFixtures(env: Pick<Env, "DB" | "ARCHIVE">) {
+  const crates = (
+    await env.DB.prepare("SELECT name FROM crates").all<{ name: string }>()
+  ).results;
+  for (const crate of crates) {
+    await env.ARCHIVE.put(
+      `local-demo/github/issue-templates/example/${crate.name}.json`,
+      JSON.stringify({ hasTemplates: false }),
+    );
+    await env.ARCHIVE.put(
+      `local-demo/crates.io/repositories/${encodeURIComponent(crate.name)}.json`,
+      JSON.stringify({
+        name: crate.name,
+        repository: `https://github.com/example/${crate.name}`,
+      }),
+      { httpMetadata: { contentType: "application/json" } },
+    );
+  }
+}
+
 /** Uses real local D1/R2 bindings. Ready seeds are never reapplied over edits. */
 export async function seedDemo(
   env: Pick<Env, "DB" | "ARCHIVE" | "TERMS_VERSION">,
@@ -29,7 +49,10 @@ export async function seedDemo(
     throw new Error(
       "Demo fixture version changed. Run npm run demo:reset to rebuild the demo data.",
     );
-  if (current?.value === version) return false;
+  if (current?.value === version) {
+    await seedRepositoryFixtures(env);
+    return false;
+  }
   await env.DB.prepare(
     "INSERT OR REPLACE INTO settings(key,value) VALUES('local_demo_seed',?)",
   )
@@ -318,6 +341,7 @@ export async function seedDemo(
   const violations = await env.DB.prepare("PRAGMA foreign_key_check").all();
   if (violations.results.length)
     throw new Error("Demo fixture has foreign key violations");
+  await seedRepositoryFixtures(env);
   await env.DB.prepare(
     "UPDATE settings SET value=? WHERE key='local_demo_seed'",
   )

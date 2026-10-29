@@ -5,6 +5,263 @@ import { app } from "../src/worker";
 import { JSDOM } from "jsdom";
 import { hash } from "../src/core";
 
+test("unlinked findings offer issue creation or URL registration and hide the prompt after linking", async () => {
+  const { env, request, report, path } = await setup();
+  const id = (await request(path, "POST", findingInput)).body.id;
+  const html = async (path: string) => {
+    const response = await app.request(
+      `https://example.test${path}`,
+      { headers: { Cookie: "__Host-proofsr_session=alice" } },
+      env,
+    );
+    assert.equal(response.status, 200);
+    return new JSDOM(await response.text());
+  };
+  for (const page of [`/report/${report}`, `/finding/${id}`]) {
+    const dom = await html(page);
+    const prompt = dom.window.document.querySelector(
+      `#finding-${id} .finding-issue-actions`,
+    )!;
+    assert.ok(prompt.querySelector(`a[href="/finding/${id}/github-issue"]`));
+    const register = prompt.querySelector<HTMLAnchorElement>(
+      'a[href*="add_issue=1"]',
+    )!;
+    assert.equal(register.textContent, "Add issue URL");
+    const registration = await html(register.getAttribute("href")!);
+    const details =
+      registration.window.document.querySelector<HTMLDetailsElement>(
+        `#finding-link-${id}`,
+      )!;
+    assert.equal(details.open, true);
+    const kind = registration.window.document.querySelector(
+      `#finding-link-${id} select[name="kind"]`,
+    );
+    assert.ok(kind instanceof registration.window.HTMLSelectElement);
+    assert.equal(kind.value, "issue");
+    assert.ok(details.querySelector('input[name="url"]'));
+    registration.window.close();
+    dom.window.close();
+  }
+  const linked = await app.request(
+    "https://example.test/_actions/finding-link",
+    {
+      method: "POST",
+      headers: {
+        Origin: env.APP_ORIGIN,
+        Cookie: "__Host-proofsr_session=alice",
+      },
+      body: new URLSearchParams({
+        _csrf: "csrf",
+        _key: crypto.randomUUID(),
+        id,
+        edit_version: "1",
+        kind: "issue",
+        url: "https://github.com/upstream/project/issues/123",
+        _back: `/finding/${id}`,
+      }),
+    },
+    env,
+  );
+  assert.equal(linked.status, 303);
+  const finding = (await request(`/findings/${id}`)).body;
+  assert.equal(finding.links[0].kind, "issue");
+  for (const page of [`/report/${report}`, `/finding/${id}`]) {
+    const dom = await html(page);
+    assert.equal(
+      dom.window.document.querySelector(".finding-issue-actions"),
+      null,
+    );
+    dom.window.close();
+  }
+  assert.equal(
+    (
+      await request(`/findings/${id}/links/${finding.links[0].id}`, "DELETE", {
+        edit_version: finding.edit_version,
+      })
+    ).status,
+    200,
+  );
+  const restored = await html(`/finding/${id}`);
+  assert.ok(restored.window.document.querySelector(".finding-issue-actions"));
+  restored.window.close();
+});
+
+test("GitHub issue preparation uses the upstream, escapes the draft and leaves Finding state unchanged", async () => {
+  const { env, request, report, path } = await setup();
+  const input = {
+    ...findingInput,
+    title: '日本語 <script>alert("title")</script> & quotes',
+    body: '\n## Details\n\n```rust\npanic!();\n```\n\n</textarea><script>alert("body")</script>',
+    evidence_url: "https://example.test/evidence?a=1&b=2",
+  };
+  const id = (await request(path, "POST", input)).body.id;
+  env.EXTERNAL_FETCH_DISABLED = "true";
+  const originalGet = env.ARCHIVE.get.bind(env.ARCHIVE);
+  let repository: string | null = "https://github.com/upstream/project.git/";
+  Object.assign(env.ARCHIVE, {
+    get: async (key: string) =>
+      key.startsWith("local-demo/crates.io/repositories/")
+        ? { json: async () => ({ name: "sample", repository }) }
+        : originalGet(key),
+  });
+  const html = (url: string, user = "alice") =>
+    app.request(
+      `https://example.test${url}`,
+      { headers: user ? { Cookie: `__Host-proofsr_session=${user}` } : {} },
+      env,
+    );
+  const before = (await request(`/findings/${id}`)).body;
+  for (const page of [`/finding/${id}`, `/report/${report}`]) {
+    const dom = new JSDOM(await (await html(page)).text());
+    assert.ok(
+      dom.window.document.querySelector(
+        `a[href="/finding/${id}/github-issue"]`,
+      ),
+    );
+    dom.window.close();
+  }
+  for (const hasTemplates of [false, true, null]) {
+    const previousGet = env.ARCHIVE.get.bind(env.ARCHIVE);
+    Object.assign(env.ARCHIVE, {
+      get: async (key: string) =>
+        key.startsWith("local-demo/github/issue-templates/")
+          ? { json: async () => ({ hasTemplates }) }
+          : previousGet(key),
+    });
+    const response = await html(`/finding/${id}/github-issue`);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    const url = new URL(response.headers.get("Location")!);
+    assert.equal(url.origin, "https://github.com");
+    assert.equal(
+      url.pathname,
+      hasTemplates === false
+        ? "/upstream/project/issues/new"
+        : "/upstream/project/issues/new/choose",
+    );
+    assert.equal(url.searchParams.get("title"), input.title);
+    if (hasTemplates === false) {
+      const body = url.searchParams.get("body")!;
+      assert.ok(body.startsWith(before.body));
+      assert.ok(body.includes(`https://example.test/report/${report}?v=1`));
+      assert.ok(!body.includes(input.evidence_url));
+    } else assert.equal(url.searchParams.has("body"), false);
+    assert.deepEqual((await request(`/findings/${id}`)).body, before);
+  }
+  for (const value of [null, "https://gitlab.com/upstream/project"]) {
+    repository = value;
+    assert.equal((await html(`/finding/${id}/github-issue`)).status, 404);
+    for (const page of [`/finding/${id}`, `/report/${report}`]) {
+      const dom = new JSDOM(await (await html(page)).text());
+      assert.equal(
+        dom.window.document.querySelector('a[href$="/github-issue"]'),
+        null,
+      );
+      dom.window.close();
+    }
+  }
+});
+
+test("GitHub issue preparation enforces authorship, visibility and withdrawal before repository lookup", async () => {
+  const { db, env, request, report, path } = await setup();
+  const id = (await request(path, "POST", findingInput)).body.id;
+  let lookups = 0;
+  const originalGet = env.ARCHIVE.get.bind(env.ARCHIVE);
+  Object.assign(env.ARCHIVE, {
+    get: async (key: string) => {
+      if (key.includes("/repositories/")) lookups++;
+      return originalGet(key);
+    },
+  });
+  const page = (user: string, suffix = "/github-issue") =>
+    app.request(
+      `https://example.test/finding/${id}${suffix}`,
+      { headers: user ? { Cookie: `__Host-proofsr_session=${user}` } : {} },
+      env,
+    );
+  assert.equal((await page("bob")).status, 403);
+  const anonymous = await page("");
+  assert.equal(anonymous.status, 200);
+  const anonymousHTML = await anonymous.text();
+  assert.match(anonymousHTML, /Sign in/);
+  assert.doesNotMatch(anonymousHTML, /id="issue-body"/);
+  for (const user of ["bob", ""])
+    assert.doesNotMatch(
+      await (await page(user, "")).text(),
+      /Create GitHub issue/,
+    );
+  db.prepare("UPDATE reports SET withdrawn_at='2026-10-26' WHERE id=?").run(
+    report,
+  );
+  assert.equal((await page("alice")).status, 409);
+  assert.doesNotMatch(
+    await (await page("alice", "")).text(),
+    /Create GitHub issue/,
+  );
+  db.prepare("UPDATE reports SET visibility='hidden' WHERE id=?").run(report);
+  assert.equal((await page("alice")).status, 404);
+  assert.equal(lookups, 0);
+});
+
+test("long Issue drafts retain the complete body and title for copying", async () => {
+  const { env, request, path } = await setup();
+  const body = "日本語".repeat(3000);
+  const id = (await request(path, "POST", { ...findingInput, body })).body.id;
+  env.EXTERNAL_FETCH_DISABLED = "true";
+  Object.assign(env.ARCHIVE, {
+    get: async (key: string) => ({
+      json: async () =>
+        key.includes("/issue-templates/")
+          ? { hasTemplates: false }
+          : {
+              name: "sample",
+              repository: "https://github.com/upstream/project",
+            },
+    }),
+  });
+  const page = async () => {
+    const response = await app.request(
+      `https://example.test/finding/${id}/github-issue`,
+      { headers: { Cookie: "__Host-proofsr_session=alice" } },
+      env,
+    );
+    assert.equal(response.status, 200);
+    return new JSDOM(await response.text());
+  };
+  let dom = await page();
+  assert.match(dom.window.document.body.textContent!, /body is too long/);
+  assert.ok(
+    dom.window.document
+      .querySelector<HTMLTextAreaElement>("#issue-body")!
+      .value.startsWith(body),
+  );
+  let link = dom.window.document.querySelector<HTMLAnchorElement>(
+    'a[href*="/issues/new"]',
+  )!;
+  assert.equal(
+    new URL(link.href).searchParams.get("title"),
+    findingInput.title,
+  );
+  assert.equal(new URL(link.href).searchParams.has("body"), false);
+  dom.window.close();
+  const title = "日".repeat(1000);
+  assert.equal(
+    (await request(`/findings/${id}`, "PATCH", { edit_version: 1, title }))
+      .status,
+    200,
+  );
+  dom = await page();
+  assert.equal(
+    dom.window.document.querySelector<HTMLInputElement>("#issue-title")!.value,
+    title,
+  );
+  link = dom.window.document.querySelector<HTMLAnchorElement>(
+    'a[href*="/issues/new"]',
+  )!;
+  assert.equal(link.href, "https://github.com/upstream/project/issues/new");
+  dom.window.close();
+});
+
 const findingInput = {
   title: "Incorrect empty input result",
   body: "Expected an empty result, but `safe()` panics on empty input.",
@@ -906,7 +1163,12 @@ test("body migration preserves origin, links, APIs and immutable history without
   );
   assert.equal((await request("/findings/legacy")).body.body, f.body);
   // The running application expects the current Run projection schema too.
-  db.exec(readFileSync(new URL("../migrations/0014_run_toolchain.sql", import.meta.url), "utf8"));
+  db.exec(
+    readFileSync(
+      new URL("../migrations/0014_run_toolchain.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   // Submit the actual rendered form, including unchanged migrated prose.
   const page = await app.request(
     `https://example.test/finding/legacy`,
