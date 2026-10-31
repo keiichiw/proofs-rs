@@ -499,6 +499,29 @@ provenance distinguishes the resolved Aeneas Lean library and executed Lean chec
 from the Aeneas translator and Charon frontend, both marked not_run. Declaring their
 patches does not establish that they generated the saved models.
 
+### Concrete API instances
+
+`[tool].concrete_api = true` checks explicitly configured instances such as
+`Crc<u8, Table<0>>::checksum` with the native Rust compiler. It supports public
+structs, enums and aliases declared at the library root, simple root-local type
+arguments, primitive type arguments and integer const arguments. Unsupported
+forms are rejected. This mode is limited to the host cfg and is mutually
+exclusive with `expand_api`. Methods must resolve to a safe callable function item
+with at most eight arguments (including the receiver). Fully qualified trait
+paths, reexported owners, explicit lifetime arguments and general const expressions
+are not supported.
+
+Discovery expands cfg-selected declarations with `RUSTC_BOOTSTRAP=1` scoped to
+that compiler subprocess, matches a function on an applicable impl, then compiles
+function-item references in an isolated Cargo probe using the selected library
+and features. Callable and zero-sized function-item checks reject associated
+constants, including function-pointer constants. The probe rejects changes to
+the copied locked dependency graph. The inherited standard `Clone::clone_from`
+is checked through the actual trait implementation and compiler resolution.
+
+These are API presence checks, not surrogate crate implementations or formal
+proof results. The standard Lean build and theorem/axiom audit are unchanged.
+
 ### Macro-generated Rust APIs
 
 Aeneas reports that map derive or macro-generated implementations may set
