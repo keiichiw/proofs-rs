@@ -75,6 +75,9 @@ impl Report {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tool {
+    /// Check explicitly mapped concrete root-type APIs with the Rust compiler.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub concrete_api: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charon_patch: Option<PathBuf>,
     /// Expand Rust macros for public API discovery using the selected native compiler.
@@ -126,8 +129,9 @@ impl Tool {
                     && self.proofs.is_empty()
                     && self.proof_modules.is_empty()
                     && self.translation_manifest.is_none()
-                    && !self.expand_api),
-            "lean_dir and proofs apply only to Aeneas"
+                    && !self.expand_api
+                    && !self.concrete_api),
+            "Lean proof and API discovery options apply only to Aeneas"
         );
         ensure!(
             (self.patch.is_none() && self.charon_patch.is_none()) || self.is_aeneas(),
@@ -472,6 +476,22 @@ mod tests {
                     .is_err()
             );
         }
+    }
+    #[test]
+    fn concrete_api_requires_aeneas_and_excludes_expansion() {
+        let mut tool: Tool =
+            toml::from_str("name='kani'\nversion='0.66.0'\nconcrete_api=true").unwrap();
+        assert!(tool.validate().is_err());
+        tool.name = "aeneas".into();
+        tool.version = "a".repeat(40);
+        tool.lean_dir = Some("proofs".into());
+        assert!(tool.validate().is_ok());
+        tool.expand_api = true;
+        assert!(tool
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("not both"));
     }
     #[test]
     fn tool_targets() {
